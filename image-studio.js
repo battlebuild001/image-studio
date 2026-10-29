@@ -57,8 +57,8 @@ export function setupImageStudio(api) {
   const body=node('div','dialog-body');dialog.append(body);
   body.append(node('p','image-studio-intro','배경 설정과 메인 컨셉 이미지를 프로젝트에 고정해 두세요. 이번 장면에서 바꿀 내용만 적으면 선택한 레퍼런스 이미지 자체를 매번 함께 전달해요.'));
   const connection=node('div','image-service-state');connection.id='imageServiceState';connection.setAttribute('role','status');
-  const connectionText=node('span','','대본과 같은 AI 서버로 이미지도 생성할 수 있어요.'),connectionActions=node('div','image-service-actions');
-  const configure=button('configureImageAiBtn','AI 서버 연결','outline small'),refresh=button('refreshImageServiceBtn','연결 다시 확인','ghost small');
+  const connectionText=node('span','','대본과 같은 OpenAI 키로 이미지도 생성할 수 있어요.'),connectionActions=node('div','image-service-actions');
+  const configure=button('configureImageAiBtn','API 설정','outline small'),refresh=button('refreshImageServiceBtn','연결 다시 확인','ghost small');
   connectionActions.append(configure,refresh);connection.append(connectionText,connectionActions);body.append(connection);
   const columns=node('div','image-studio-columns');body.append(columns);const settingsPanel=node('section','image-reference-panel');settingsPanel.setAttribute('aria-label','고정 레퍼런스와 배경 설정');const scenePanel=node('section','image-generation-panel');scenePanel.setAttribute('aria-label','장면 요청과 생성 결과');columns.append(settingsPanel,scenePanel);
   settingsPanel.append(node('h3','','1. 고정 레퍼런스'));
@@ -151,15 +151,15 @@ export function setupImageStudio(api) {
   function stop(message='이미지 생성을 취소했어요. 고정 레퍼런스와 이전 결과는 유지했어요.'){operation++;controller?.abort();controller=null;if(busy)setBusy(false,message);}
   function cancelConnectionCheck(){connectionSequence++;connectionController?.abort();connectionController=null;if(connection.dataset.state==='loading')connectionChecked=false;}
   function configureConnection(){
-    if(typeof api.openApiSettings!=='function')throw new Error('AI 서버 연결 설정을 불러오지 못했어요. 페이지를 새로고침한 뒤 다시 연결해 주세요. 고정 레퍼런스와 입력은 유지돼요.');
+    if(typeof api.openApiSettings!=='function')throw new Error('API 설정을 불러오지 못했어요. 페이지를 새로고침한 뒤 다시 연결해 주세요. 고정 레퍼런스와 입력은 유지돼요.');
     return api.openApiSettings();
   }
   async function checkConnection(){
     cancelConnectionCheck();
     const seq=++connectionSequence;configured=false;connectionChecked=false;connectionText.textContent='이미지 서비스 연결을 확인하고 있어요.';connection.dataset.state='loading';refreshActions();
     const abort=new AbortController(),timeout=setTimeout(()=>abort.abort(),60000);connectionController=abort;
-    try{const config=await request('/api/image/config',{signal:abort.signal});if(seq!==connectionSequence)return;configured=config.configured===true;connectionChecked=true;connectionText.textContent=configured?'AI 이미지 생성이 연결됐어요. 고정 레퍼런스·배경 설정·장면 요청을 함께 반영해 새 이미지를 만들어요.':'이미지 AI를 사용하려면 ‘AI 서버 연결’을 설정하세요. 대본과 같은 서버의 OpenAI 키를 사용할 수 있어요. 고정 레퍼런스와 입력은 유지돼요.';connection.dataset.state=configured?'ready':'unavailable';}
-    catch{if(seq!==connectionSequence)return;connectionChecked=true;connectionText.textContent='이미지 AI 서버에 연결되지 않았어요. ‘AI 서버 연결’에서 대본과 같은 서버를 연결해 주세요. 고정 레퍼런스와 입력은 유지돼요.';connection.dataset.state='unavailable';}
+    try{const config=await request('/api/image/config',{signal:abort.signal});if(seq!==connectionSequence)return;configured=config.configured===true;connectionChecked=true;connectionText.textContent=configured?'AI 이미지 생성이 연결됐어요. 고정 레퍼런스·배경 설정·장면 요청을 함께 반영해 새 이미지를 만들어요.':'이미지 API가 설정되지 않았어요. ‘API 설정’에서 대본과 같은 OpenAI 키를 입력하면 이미지를 만들 수 있어요. 고정 레퍼런스와 입력은 유지돼요.';connection.dataset.state=configured?'ready':'unavailable';}
+    catch{if(seq!==connectionSequence)return;connectionChecked=true;connectionText.textContent='이미지 API에 연결되지 않았어요. ‘API 설정’에서 OpenAI 키를 입력하거나 기존 서버 연결을 확인해 주세요. 고정 레퍼런스와 입력은 유지돼요.';connection.dataset.state='unavailable';}
     finally{clearTimeout(timeout);if(seq===connectionSequence){connectionController=null;refreshActions();}}
   }
   async function addFiles(){
@@ -218,7 +218,7 @@ export function setupImageStudio(api) {
   closeFooter.addEventListener('click',run(()=>{flush();dialog.close();}));heading.addEventListener('submit',event=>{try{flush();}catch(cause){event.preventDefault();showError(cause.message);}});
   dialog.addEventListener('cancel',event=>{if(busy&&phase!=='generation'){event.preventDefault();return;}try{flush();}catch{}stop();});dialog.addEventListener('close',()=>{stop('');cancelConnectionCheck();clearTimeout(timer);timer=0;});
   window.addEventListener('studio-api-settings-change',()=>{
-    if(busy&&phase==='generation')stop('AI 서버 연결이 바뀌어 이미지 생성을 취소했어요. 고정 레퍼런스와 이전 결과는 유지했어요.');
+    if(busy&&phase==='generation')stop('API 설정이 바뀌어 이미지 생성을 취소했어요. 고정 레퍼런스와 이전 결과는 유지했어요.');
     cancelConnectionCheck();configured=false;connectionChecked=false;refreshActions();if(dialog.open)checkConnection();
   });
   for(const input of textInputs){input.addEventListener('input',()=>{showError('',false);refreshProvenance();queueSave();});input.addEventListener('change',()=>{try{flush();}catch(cause){showError(cause.message,false);}});}

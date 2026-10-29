@@ -88,7 +88,7 @@ export function setupScriptStudio(api) {
   const connection = node('div', 'script-service-state'); connection.id = 'scriptServiceState'; connection.setAttribute('role', 'status');
   const connectionText = node('span', '', '대본 서비스 연결 상태를 확인해 주세요.');
   const connectionActions = node('div', 'script-service-actions');
-  const configure = button('configureScriptAiBtn', 'AI 서버 연결', 'outline small');
+  const configure = button('configureScriptAiBtn', 'API 설정', 'outline small');
   const refresh = button('refreshScriptServiceBtn', '연결 다시 확인', 'ghost small'); connectionActions.append(configure, refresh); connection.append(connectionText, connectionActions); body.append(connection);
   const columns = node('div', 'script-studio-columns'); body.append(columns);
   const sourcePanel = node('section', 'script-input-panel'); sourcePanel.setAttribute('aria-label', '참고 자료와 분량'); columns.append(sourcePanel);
@@ -256,25 +256,25 @@ export function setupScriptStudio(api) {
     if (connection.dataset.state === 'loading') connectionChecked = false;
   }
   async function configureConnection() {
-    if (typeof api.openApiSettings !== 'function') throw new Error('AI 서버 연결 설정을 불러오지 못했어요. 페이지를 새로고침한 뒤 다시 시도해 주세요. 자료와 대본은 유지돼요.');
+    if (typeof api.openApiSettings !== 'function') throw new Error('API 설정을 불러오지 못했어요. 페이지를 새로고침한 뒤 다시 시도해 주세요. 자료와 대본은 유지돼요.');
     await api.openApiSettings();
   }
   async function checkConnection() {
     cancelConnectionCheck();
     const current = ++configSequence; configured = false; connectionChecked = false;
-    connectionText.textContent = 'AI 대본 서버 연결을 확인하고 있어요. 서버가 시작되는 동안에도 자료 입력과 수동 편집은 가능해요.'; connection.dataset.state = 'loading'; refreshGenerate();
+    connectionText.textContent = '대본 API 설정을 확인하고 있어요. 자료 입력과 수동 편집은 계속할 수 있어요.'; connection.dataset.state = 'loading'; refreshGenerate();
     const abort = new AbortController(), timeout = setTimeout(() => abort.abort(), 60000); configController = abort;
     try {
       const config = await request('/api/script/config', {signal: abort.signal});
       if (current !== configSequence) return;
       configured = config.configured === true; connectionChecked = true;
       connectionText.textContent = configured
-        ? 'AI 대본 서버가 연결됐어요. 참고 자료와 정리 방향을 반영해 웹에서 확인하고 새 한국어 대본을 작성해요.'
-        : '대본 AI 서버가 준비되지 않았어요. ‘AI 연결 설정’에서 서버를 연결하면 참고 자료와 정리 방향으로 한국어 대본을 만들 수 있어요. 기존 초안은 그대로 유지돼요.';
+        ? '대본 API가 설정됐어요. 참고 자료와 정리 방향을 반영해 웹에서 확인하고 새 한국어 대본을 작성해요.'
+        : '대본 API가 설정되지 않았어요. ‘API 설정’에서 OpenAI 키를 입력하면 자료와 정리 방향으로 한국어 대본을 작성할 수 있어요. 기존 초안은 유지돼요.';
       connection.dataset.state = configured ? 'ready' : 'unavailable';
     } catch {
       if (current !== configSequence) return;
-      connectionChecked = true; connectionText.textContent = '대본 AI 서버에 연결되지 않았어요. ‘AI 연결 설정’에서 서버 주소와 연결 상태를 확인해 주세요. 자료 입력과 수동 대본 작성·저장은 계속 사용할 수 있어요.'; connection.dataset.state = 'unavailable';
+      connectionChecked = true; connectionText.textContent = '대본 API에 연결되지 않았어요. ‘API 설정’에서 OpenAI 키를 입력하거나 기존 서버 연결을 확인해 주세요. 자료와 수동 대본은 유지돼요.'; connection.dataset.state = 'unavailable';
     } finally { clearTimeout(timeout); if (current === configSequence) { configController = null; refreshGenerate(); } }
   }
   async function importFiles() {
@@ -386,7 +386,7 @@ export function setupScriptStudio(api) {
   dialog.addEventListener('cancel', () => { try { flush(); } catch {} stop(); });
   dialog.addEventListener('close', () => { stop(''); cancelConnectionCheck(); clearTimeout(timer); timer = 0; });
   window.addEventListener('studio-api-settings-change', () => {
-    if (activeOperation === 'generation') stop('AI 서버 연결이 바뀌어 진행 중인 작성을 취소했어요. 기존 자료와 대본은 그대로 있어요.');
+    if (activeOperation === 'generation') stop('API 설정이 바뀌어 진행 중인 작성을 취소했어요. 기존 자료와 대본은 그대로 있어요.');
     cancelConnectionCheck(); configured = false; connectionChecked = false; refreshGenerate();
     if (dialog.open) checkConnection();
   });
