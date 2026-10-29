@@ -9,6 +9,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2310181c'/%3E%3Cpath d='M15 14h20l-8 14h22L27 52H15l13-21H15z' fill='%23dfbb84'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="./convenience.css">
+  <link rel="stylesheet" href="./workflow.css">
 </head>
 <body>
   <header class="topbar">
@@ -16,9 +17,16 @@
     <div class="top-actions"><span class="save-state" id="saveState"><i></i> 준비 중</span><button class="icon-button" id="undoBtn" title="되돌리기" aria-label="되돌리기" disabled>↶</button><button class="icon-button" id="redoBtn" title="다시 실행 (Ctrl+Shift+Z)" aria-label="다시 실행" disabled>↷</button><button class="ghost" id="helpBtn">사용법</button><button class="ghost hide-small" id="openProjectBtn">프로젝트 열기</button><button class="ghost hide-small" id="backupBtn">백업 저장</button><button class="primary" id="exportBtn"><span aria-hidden="true">↗</span> 영상 내보내기</button></div>
   </header>
   <div class="projectbar"><div class="project-title"><span class="eyebrow">YOUR STORY, FRAME BY FRAME</span><input id="projectTitle" type="text" maxlength="120" aria-label="프로젝트 제목" value="새 블랙아웃 영상"></div><div class="project-tools"><span class="local-pill"><i></i> 영상 편집은 이 브라우저에서 처리</span><button class="ghost small" id="newProjectBtn">새 프로젝트 +</button></div></div>
+  <nav class="production-flow" aria-label="영상 제작 순서">
+    <button id="workflowScriptBtn" class="production-step is-current" aria-current="step"><span class="production-number">1</span><span><strong>대본 작성</strong><small id="workflowScriptState">음성 API 없이 작성</small></span></button>
+    <span class="production-arrow" aria-hidden="true">→</span>
+    <button id="workflowVoiceBtn" class="production-step" disabled><span class="production-number">2</span><span><strong>음성 생성</strong><small id="workflowVoiceState">대본 작성 후 진행</small></span></button>
+    <span class="production-arrow" aria-hidden="true">→</span>
+    <button id="workflowEditBtn" class="production-step" disabled><span class="production-number">3</span><span><strong>영상 편집</strong><small id="workflowEditState">이미지 · 자막 · 영상 저장</small></span></button>
+  </nav>
   <main class="workspace">
     <aside class="panel scenes-panel">
-      <div class="panel-heading"><div><span class="step">01</span><h2>장면 이미지</h2><span class="count" id="sceneCount">0</span></div><button class="icon-button" id="addSceneBtn" aria-label="빈 장면 추가" title="빈 장면 추가">＋</button></div>
+      <div class="panel-heading"><div><h2>장면 이미지</h2><span class="count" id="sceneCount">0</span></div><button class="icon-button" id="addSceneBtn" aria-label="빈 장면 추가" title="빈 장면 추가">＋</button></div>
       <div class="dropzone" id="imageDropzone" tabindex="0" role="button" aria-label="장면 이미지 추가">
         <div class="upload-glyph" aria-hidden="true">↥</div><strong>이미지 추가</strong><span>끌어다 놓거나 <kbd>Ctrl</kbd> + <kbd>V</kbd></span><small>여러 장을 한 번에 넣어도 좋아요</small>
       </div>
@@ -34,10 +42,10 @@
       <div class="scene-panel-footer"><button class="ghost full" id="autoDurationBtn">↔ 음성 길이에 장면 맞추기</button><p>빈 장면부터 이미지를 채우고,<br>모두 채워지면 새 장면을 추가해요.</p></div>
     </aside>
     <section class="center-stage">
-      <div class="stage-header"><div><span class="step">02</span><h2>미리보기</h2></div><div class="stage-options"><span id="previewMode">16:9 · PREVIEW</span><select id="aspectSelect" aria-label="화면 비율"><option value="16:9">가로 16:9</option><option value="9:16">세로 9:16</option></select></div></div>
+      <div class="stage-header"><div><h2>미리보기</h2></div><div class="stage-options"><span id="previewMode">16:9 · PREVIEW</span><select id="aspectSelect" aria-label="화면 비율"><option value="16:9">가로 16:9</option><option value="9:16">세로 9:16</option></select></div></div>
       <div class="viewer-shell" id="viewerShell">
         <canvas id="previewCanvas" width="1280" height="720" aria-label="영상 미리보기"></canvas>
-        <div class="empty-preview" id="emptyPreview"><div class="frame-corners"><span>01</span></div><span class="eyebrow">MAKE YOUR FIRST FRAME</span><h1>이미지 한 장에서<br>이야기가 시작돼요.</h1><p>GPT로 만든 이미지를 붙여넣고<br>클로바 음성을 더해보세요.</p><div><button class="primary" id="emptyAddBtn">이미지 가져오기</button><button class="ghost" id="demoBtn">예시로 둘러보기 ↗</button></div></div>
+        <div class="empty-preview" id="emptyPreview"><div class="frame-corners"><span>01</span></div><span class="eyebrow">MAKE YOUR FIRST FRAME</span><h1>대본부터<br>영상을 만들어 보세요.</h1><p>대본을 작성하고 음성을 만든 뒤<br>이미지와 자막을 더해 완성하세요.</p><div><button class="primary" id="emptyScriptBtn">1. 대본 작성</button><button class="ghost" id="emptyAddBtn">이미지 가져오기</button><button class="ghost" id="demoBtn">예시로 둘러보기 ↗</button></div></div>
         <div class="viewer-badge" id="viewerBadge" hidden>SCENE 01</div>
       </div>
       <div class="player"><button class="play-button" id="playBtn" aria-label="미리보기 재생">▶</button><span class="timecode" id="currentTime">00:00</span><input type="range" id="seekSlider" min="0" max="1" step="0.01" value="0" aria-label="영상 재생 위치"><span class="timecode dim" id="totalTime">00:00</span><button class="icon-button" id="restartBtn" aria-label="처음으로 이동" title="처음으로">↤</button></div>
@@ -45,14 +53,14 @@
       <div class="timeline-tools"><label for="timelineZoom">타임라인 확대</label><input id="timelineZoom" type="range" min="1" max="4" step="0.25" value="1"><span>장면 끝 ↔ 드래그로 시간 조절</span></div>
       <div class="timeline" id="timeline" aria-label="영상 타임라인"></div>
       <div class="audio-grid">
-        <div class="audio-card" id="narrationDrop"><div class="audio-card-heading"><span class="audio-icon" aria-hidden="true">▥</span><div><h3>클로바 내레이션</h3><p id="narrationInfo">MP3 · WAV 파일을 넣어주세요</p></div><button class="icon-button remove-audio" id="removeNarrationBtn" title="음성 제거" aria-label="내레이션 제거" hidden>×</button></div><button class="outline full" id="narrationBtn">음성 파일 추가</button></div>
+        <div class="audio-card" id="narrationDrop"><div class="audio-card-heading"><span class="audio-icon" aria-hidden="true">▥</span><div><h3>내레이션</h3><p id="narrationInfo">MP3 · WAV 파일을 넣어주세요</p></div><button class="icon-button remove-audio" id="removeNarrationBtn" title="음성 제거" aria-label="내레이션 제거" hidden>×</button></div><button class="outline full" id="narrationBtn">음성 파일 추가</button></div>
         <div class="audio-card" id="bgmDrop"><div class="audio-card-heading"><span class="audio-icon" aria-hidden="true">♫</span><div><h3>배경음악 <span>선택</span></h3><p id="bgmInfo">설명 뒤에 잔잔하게 깔아주세요</p></div><button class="icon-button remove-audio" id="removeBgmBtn" title="배경음악 제거" aria-label="배경음악 제거" hidden>×</button></div><div class="bgm-controls"><button class="outline" id="bgmBtn">음악 추가</button><input type="range" id="bgmVolume" min="0" max="100" value="12" aria-label="배경음악 볼륨"><span id="bgmVolumeLabel">12%</span></div></div>
       </div>
       <div class="caption-strip"><div><span class="caption-symbol">CC</span><p id="captionStatus">대본을 넣으면 장면에 맞춰 자막이 생겨요.</p></div><button class="ghost small" id="importSrtBtn">SRT 불러오기</button><button class="ghost small" id="downloadSrtBtn">자막 저장 ↓</button></div>
-      <div class="workspace-foot"><span>음성 파일을 준비하고, 이미지는 고정 레퍼런스로 제작할 수 있어요.</span><span>추가 영상 생성 API 없이 편집</span></div>
+      <div class="workspace-foot"><span>대본 작성 → 음성 생성 → 이미지·자막 편집 순서로 진행하세요.</span><span>추가 영상 생성 API 없이 편집</span></div>
     </section>
     <aside class="panel inspector">
-      <div class="panel-heading"><div><span class="step">03</span><h2>장면 설정</h2></div><span class="selected-id" id="selectedId">—</span></div>
+      <div class="panel-heading"><div><h2>장면 설정</h2></div><span class="selected-id" id="selectedId">—</span></div>
       <div id="inspectorEmpty" class="inspector-empty"><span>⌖</span><h3>장면을 선택하세요</h3><p>이미지의 움직임과 자막을<br>여기서 조절할 수 있어요.</p></div>
       <div id="inspectorContent" hidden>
         <div class="selected-image" id="selectedImage"><span>이미지가 없는 장면</span></div>

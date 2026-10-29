@@ -168,7 +168,7 @@ function scriptTimestamp(value) {
   return timestamp.toISOString();
 }
 
-/** Drafts retain supplied references and search evidence, never provider credentials. */
+/** Spoken drafts can be written before narration; researched results retain their separate evidence. */
 function validateScriptDraft(input) {
   if (input === undefined || input === null) return null;
   if (!plainObject(input)) fail('대본 제작 자료 형식이 올바르지 않습니다.');
@@ -209,11 +209,20 @@ function validateScriptDraft(input) {
       webSearchUsed: true,
     };
   }
+  if (input.draftScript !== undefined && typeof input.draftScript !== 'string') {
+    fail('작성 대본 형식이 올바르지 않습니다.');
+  }
+  // An explicitly cleared editor stays empty even when previous research exists.
+  // Older version-one projects kept their editable narration in result.script.
+  const draftScript = input.draftScript === undefined
+    ? result?.script ?? ''
+    : scriptText(input.draftScript, '', 100000, '작성 대본');
   return {
     sourceText: scriptText(input.sourceText, '', 100000, '대본 참고 자료'),
     instructions: scriptText(input.instructions, '', 2000, '대본 작성 지시'),
     targetMinutes,
     charsPerMinute,
+    draftScript,
     result,
   };
 }
