@@ -100,6 +100,10 @@ const {chromium} = require('playwright');
     assert.ok(state.scenes.every(scene => scene.duration === 10));assert.equal(state.scenePlan.sourceScript.replace(/\s/gu, ''), script.replace(/\s/gu, ''));
     assert.equal(state.scenes.map(scene => scene.caption).join('').replace(/\s/gu, ''), script.replace(/\s/gu, ''));
     assert.equal((await planStatus()).valid, true);assert.equal(await page.locator('#sceneImageCount').innerText(), '이미지 0장');assert.deepEqual(allPosts, []);
+    assert.equal(await page.locator('#sceneImageBatchBtn').isEnabled(), true);
+    await page.locator('#sceneImageBatchBtn').click();await page.locator('#sceneImageBatchDialog').waitFor({state: 'visible'});
+    assert.equal(await page.locator('#startSceneImageBatchBtn').isDisabled(), true);
+    await page.locator('#closeSceneImageBatchBtn').click();assert.deepEqual(allPosts, []);
     console.log('PASS legacy 157 slots remain unchanged on load; only explicit timing confirmation creates exactly 48 slots with all script text retained');
 
     await configureTiming(1, 20);await previewCount(3);state = await confirmTiming();
