@@ -1,4 +1,6 @@
 import {extractReferenceFiles} from './script-local-files.js';
+import {apiFetch} from './api-client.js';
+import {validateProject} from './project.js';
 
 const LIMIT = 100000;
 const FILE_LIMIT = 10 * 1024 * 1024;
@@ -50,7 +52,7 @@ function downloadText(text, name, type) {
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 async function request(path, options = {}) {
-  const response = await fetch(path, {credentials: 'same-origin', ...options});
+  const response = await apiFetch(path, options);
   let data;
   try { data = await response.json(); } catch { throw new Error('대본 서비스의 응답을 읽지 못했어요. 잠시 뒤 다시 시도해 주세요.'); }
   if (!response.ok) {
@@ -64,7 +66,7 @@ function projectDraft(project) {
   return {...defaults(), ...value, draftScript: value.draftScript ?? value.result?.script ?? ''};
 }
 
-/** Local script writing is always available. Only optional web research needs an AI server. */
+/** AI research creates a new narration; manual editing remains available without a server. */
 export function setupScriptStudio(api) {
   if (!$('scriptStudioStyles')) {
     const style = node('link'); style.id = 'scriptStudioStyles'; style.rel = 'stylesheet';
@@ -76,16 +78,18 @@ export function setupScriptStudio(api) {
   dialog.setAttribute('aria-labelledby', 'scriptStudioTitle');
   const heading = node('form', 'dialog-heading'); heading.method = 'dialog';
   const titles = node('div'); titles.append(node('span', 'eyebrow', 'SCRIPT FIRST'));
-  const title = node('h2', '', '먼저 영상 대본 작성하기'); title.id = 'scriptStudioTitle'; titles.append(title);
+  const title = node('h2', '', '참고 자료로 AI 대본 만들기'); title.id = 'scriptStudioTitle'; titles.append(title);
   const close = node('button', 'icon-button', '×'); close.setAttribute('aria-label', '대본 제작 닫기'); heading.append(titles, close); dialog.append(heading);
   const body = node('div', 'dialog-body'); dialog.append(body);
   const workflow = node('ol', 'script-workflow'); workflow.setAttribute('aria-label', '영상 제작 순서');
   for (const text of ['1. 대본 작성', '2. 음성 생성', '3. 영상 편집']) workflow.append(node('li', '', text));
   workflow.firstElementChild.setAttribute('aria-current', 'step'); body.append(workflow);
-  const intro = node('p', 'script-studio-intro', '음성 API가 없어도 대본을 먼저 작성·저장할 수 있어요. 직접 작성하거나 자료를 초안으로 가져온 뒤, 완성한 대본을 다음 단계에서 음성으로 만들어요.'); body.append(intro);
+  const intro = node('p', 'script-studio-intro', '참고 자료와 정리 방향을 AI가 반영해 목표 분량의 한국어 내레이션 대본을 작성해요. 대본을 완성한 다음 음성으로 만들어요. 음성 API는 대본 작성에 필요하지 않아요.'); body.append(intro);
   const connection = node('div', 'script-service-state'); connection.id = 'scriptServiceState'; connection.setAttribute('role', 'status');
   const connectionText = node('span', '', '대본 서비스 연결 상태를 확인해 주세요.');
-  const refresh = button('refreshScriptServiceBtn', '연결 다시 확인', 'ghost small'); connection.append(connectionText, refresh); body.append(connection);
+  const connectionActions = node('div', 'script-service-actions');
+  const configure = button('configureScriptAiBtn', 'AI 서버 연결', 'outline small');
+  const refresh = button('refreshScriptServiceBtn', '연결 다시 확인', 'ghost small'); connectionActions.append(configure, refresh); connection.append(connectionText, connectionActions); body.append(connection);
   const columns = node('div', 'script-studio-columns'); body.append(columns);
   const sourcePanel = node('section', 'script-input-panel'); sourcePanel.setAttribute('aria-label', '참고 자료와 분량'); columns.append(sourcePanel);
   sourcePanel.append(node('h3', '', '참고 자료와 목표 분량'));
@@ -107,23 +111,27 @@ export function setupScriptStudio(api) {
   sourcePanel.append(node('p', 'script-studio-help', '260자: 차분하게 · 330자: 보통 · 400자: 빠르게. 목표 길이는 대본의 공백 제외 글자 수로 계산한 추정치이며, 실제 음성 길이는 읽는 방식에 따라 달라져요.'));
   const instructions = field('scriptInstructions', '정리 방향 (선택)', 'textarea'); instructions.input.rows = 3; instructions.input.maxLength = 2000;
   instructions.input.placeholder = '예: 초보자도 이해하기 쉽게. 공식 자료를 우선하고 확인되지 않은 설정은 구분해 주세요.'; sourcePanel.append(instructions.wrapper);
-  const privacy = node('p', 'script-privacy-note', '자료 파일은 이 브라우저에서 텍스트로 읽어요. 직접 작성·저장에는 API가 필요하지 않아요. ‘웹 검색 · 대본 작성’을 누를 때만 자료 텍스트가 대본 AI 서비스로 전송되며 사용 요금이 발생할 수 있어요. 음성 생성은 다음 단계에서 별도로 실행해요.'); sourcePanel.append(privacy);
+  const privacy = node('p', 'script-privacy-note', '자료 파일은 이 브라우저에서 텍스트로 읽어요. ‘AI로 대본 작성’을 누를 때만 참고 자료와 정리 방향을 대본 AI 서버에 보내 웹 검색과 대본 작성을 실행하며, 사용 요금이 발생할 수 있어요. 음성 생성은 다음 단계에서 별도로 실행해요.'); sourcePanel.append(privacy);
   const controls = node('div', 'script-generation-controls');
-  const generate = button('generateScriptBtn', '웹 검색 · 대본 작성', 'primary');
-  const useSource = button('useSourceAsDraftBtn', '자료를 대본 초안으로 가져오기', 'outline');
+  const generate = button('generateScriptBtn', 'AI 연결 설정', 'primary');
+  const useSource = button('useSourceAsDraftBtn', '원문을 그대로 넣기 (수동)', 'outline');
   const cancel = button('cancelScriptGenerationBtn', '작업 취소', 'ghost'); cancel.hidden = true;
-  const prompt = button('copyResearchPromptBtn', '제작 요청문 복사', 'outline'); controls.append(useSource, generate, cancel, prompt); sourcePanel.append(controls);
+  const prompt = button('copyResearchPromptBtn', '제작 요청문 복사', 'outline'); controls.append(generate, cancel); sourcePanel.append(controls);
+  const manualTools = node('details', 'script-manual-tools'); manualTools.id = 'scriptManualTools';
+  manualTools.append(node('summary', '', '수동 작업 · 제작 요청문'));
+  manualTools.append(node('p', 'script-studio-help', '원문 넣기는 자료를 그대로 복사하는 수동 작업이에요. AI 요약·번역·대본 작성은 실행하지 않아요.'));
+  const manualControls = node('div', 'script-generation-controls'); manualControls.append(useSource, prompt); manualTools.append(manualControls); sourcePanel.append(manualTools);
   const status = node('p', 'script-generation-status'); status.id = 'scriptGenerationStatus'; status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); sourcePanel.append(status);
   const error = node('p', 'script-studio-error'); error.id = 'scriptStudioError'; error.setAttribute('role', 'alert'); sourcePanel.append(error);
   const resultPanel = node('section', 'script-result-panel'); resultPanel.setAttribute('aria-label', '정리와 대본 결과'); columns.append(resultPanel);
-  resultPanel.append(node('h3', '', '작성할 대본'));
-  const empty = node('p', 'script-manual-notice', '아래에 직접 입력하거나 붙여넣으세요. 대본 작성과 저장은 음성 API 연결 없이 사용할 수 있어요.'); resultPanel.append(empty);
+  resultPanel.append(node('h3', '', '내레이션 대본'));
+  const empty = node('p', 'script-manual-notice', '아직 AI로 작성한 대본이 없어요. 왼쪽에서 ‘AI로 대본 작성’을 실행해 주세요. 아래에 수동으로 입력하거나 원문을 붙여넣은 내용은 AI가 정리한 결과가 아니며, 그대로 저장·수정할 수 있어요.'); resultPanel.append(empty);
   const results = node('div', 'script-result-content'); resultPanel.append(results);
   const resultTitle = node('h4'); resultTitle.id = 'generatedScriptTitle'; results.append(resultTitle);
   const summaryLabel = node('strong', 'script-result-label', '자료 정리');
   const summary = node('p', 'script-summary'); summary.id = 'researchSummary'; results.append(summaryLabel, summary);
   const resultField = field('generatedScript', '내레이션 대본', 'textarea'); resultField.input.rows = 17; resultField.input.maxLength = LIMIT * 2;
-  resultField.input.placeholder = '여기에 먼저 읽을 대본을 작성하세요.\n\n자료가 준비돼 있다면 왼쪽의 ‘자료를 대본 초안으로 가져오기’를 눌러 내용을 옮긴 뒤 문장을 다듬어도 좋아요.';
+  resultField.input.placeholder = '참고 자료와 정리 방향을 입력하고 ‘AI로 대본 작성’을 누르면 새 한국어 대본이 여기에 표시돼요.\n\n직접 작성한 대본도 이곳에서 편집하고 저장할 수 있어요.';
   const resultStats = node('p', 'script-result-metrics'); resultStats.id = 'generatedScriptStats'; resultStats.setAttribute('aria-live', 'polite');
   results.append(resultField.wrapper, resultStats);
   const stale = node('p', 'script-studio-help script-stale-goal'); stale.id = 'scriptGoalChanged'; results.append(stale);
@@ -144,7 +152,7 @@ export function setupScriptStudio(api) {
   let projectId = api.getProject().id;
   let draft = projectDraft(api.getProject());
   let fingerprint = JSON.stringify(api.getProject().scriptDraft || null);
-  let timer = 0, saving = false, busy = false, operation = 0, controller = null, configSequence = 0;
+  let timer = 0, saving = false, busy = false, operation = 0, controller = null, configSequence = 0, configController = null, activeOperation = '';
   let configured = false, connectionChecked = false;
   const inputControls = [files.input, source.input, minutes.input, pace.input, instructions.input, resultField.input];
   function showError(value, notify = true) { error.textContent = value || ''; if (value && notify) api.toast(value, true); }
@@ -174,11 +182,13 @@ export function setupScriptStudio(api) {
     clearTimeout(timer); timer = 0;
     if (api.getProject().id !== projectId) return;
     let value;
-    try { value = capture(); }
+    try { value = validateProject({...api.getProject(), scriptDraft: capture()}).scriptDraft; }
     catch (cause) { showError(cause.message, false); if (strict) throw cause; return; }
-    if (JSON.stringify(api.getProject().scriptDraft || defaults()) === JSON.stringify(value)) return;
+    if (JSON.stringify(api.getProject().scriptDraft || defaults()) === JSON.stringify(value)) {
+      draft = clone(value); fingerprint = JSON.stringify(api.getProject().scriptDraft || null); return;
+    }
     saving = true;
-    try { api.mutate(project => { project.scriptDraft = clone(value); }); fingerprint = JSON.stringify(api.getProject().scriptDraft || null); }
+    try { api.mutate(project => { project.scriptDraft = clone(value); }); draft = projectDraft(api.getProject()); fingerprint = JSON.stringify(api.getProject().scriptDraft || null); }
     finally { saving = false; }
   }
   function queueSave() {
@@ -191,8 +201,12 @@ export function setupScriptStudio(api) {
   function setBusy(value, message = '') {
     busy = value; dialog.setAttribute('aria-busy', String(value));
     for (const input of inputControls) input.disabled = value;
-    refresh.disabled = value; pickFiles.disabled = value; generate.disabled = value || !configured; prompt.disabled = value;
+    refresh.disabled = value; configure.disabled = value; pickFiles.disabled = value; prompt.disabled = value; refreshGenerate();
     cancel.hidden = !value; status.textContent = message; refreshApply();
+  }
+  function refreshGenerate() {
+    generate.disabled = busy;
+    generate.textContent = configured ? 'AI로 대본 작성' : 'AI 연결 설정';
   }
   function refreshApply() {
     const hasScript = Boolean(resultField.input.value.trim());
@@ -214,7 +228,7 @@ export function setupScriptStudio(api) {
   }
   function renderResults() {
     const result = draft.result; empty.hidden = !!result;
-    resultTitle.textContent = result?.title || '직접 작성하는 대본'; summary.textContent = result?.summary || '';
+    resultTitle.textContent = result?.title || 'AI로 작성되지 않은 초안'; summary.textContent = result?.summary || '';
     summaryLabel.hidden = summary.hidden = !result;
     sourcesLabel.hidden = sources.hidden = !result;
     if (document.activeElement !== resultField.input) resultField.input.value = draft.draftScript ?? result?.script ?? '';
@@ -234,25 +248,34 @@ export function setupScriptStudio(api) {
     resultField.input.value = draft.draftScript ?? draft.result?.script ?? ''; renderResults();
   }
   function stop(message = '작업을 취소했어요. 기존 자료와 대본은 그대로 있어요.') {
-    operation++; controller?.abort(); controller = null;
+    operation++; controller?.abort(); controller = null; activeOperation = '';
     if (busy) setBusy(false, message);
   }
+  function cancelConnectionCheck() {
+    configSequence++; configController?.abort(); configController = null;
+    if (connection.dataset.state === 'loading') connectionChecked = false;
+  }
+  async function configureConnection() {
+    if (typeof api.openApiSettings !== 'function') throw new Error('AI 서버 연결 설정을 불러오지 못했어요. 페이지를 새로고침한 뒤 다시 시도해 주세요. 자료와 대본은 유지돼요.');
+    await api.openApiSettings();
+  }
   async function checkConnection() {
+    cancelConnectionCheck();
     const current = ++configSequence; configured = false; connectionChecked = false;
-    connectionText.textContent = '대본 서비스 연결을 확인하고 있어요.'; connection.dataset.state = 'loading'; generate.disabled = true;
-    const abort = new AbortController(), timeout = setTimeout(() => abort.abort(), 8000);
+    connectionText.textContent = 'AI 대본 서버 연결을 확인하고 있어요. 서버가 시작되는 동안에도 자료 입력과 수동 편집은 가능해요.'; connection.dataset.state = 'loading'; refreshGenerate();
+    const abort = new AbortController(), timeout = setTimeout(() => abort.abort(), 60000); configController = abort;
     try {
       const config = await request('/api/script/config', {signal: abort.signal});
       if (current !== configSequence) return;
       configured = config.configured === true; connectionChecked = true;
       connectionText.textContent = configured
-        ? '웹 검색 AI를 사용할 수 있어요. 대본 작성은 음성 API와 별개로 진행돼요.'
-        : '직접 대본 작성·저장은 바로 사용할 수 있어요. 웹 검색 작성은 대본 AI 서버 연결이 필요해요. 음성 API는 대본 작성에 필요하지 않아요.';
+        ? 'AI 대본 서버가 연결됐어요. 참고 자료와 정리 방향을 반영해 웹에서 확인하고 새 한국어 대본을 작성해요.'
+        : '대본 AI 서버가 준비되지 않았어요. ‘AI 연결 설정’에서 서버를 연결하면 참고 자료와 정리 방향으로 한국어 대본을 만들 수 있어요. 기존 초안은 그대로 유지돼요.';
       connection.dataset.state = configured ? 'ready' : 'unavailable';
     } catch {
       if (current !== configSequence) return;
-      connectionChecked = true; connectionText.textContent = '직접 대본 작성·저장은 바로 사용할 수 있어요. 웹 검색 작성은 대본 AI 서버 연결이 필요해요. 음성 API는 대본 작성에 필요하지 않아요.'; connection.dataset.state = 'unavailable';
-    } finally { clearTimeout(timeout); if (current === configSequence) generate.disabled = busy || !configured; }
+      connectionChecked = true; connectionText.textContent = '대본 AI 서버에 연결되지 않았어요. ‘AI 연결 설정’에서 서버 주소와 연결 상태를 확인해 주세요. 자료 입력과 수동 대본 작성·저장은 계속 사용할 수 있어요.'; connection.dataset.state = 'unavailable';
+    } finally { clearTimeout(timeout); if (current === configSequence) { configController = null; refreshGenerate(); } }
   }
   async function importFiles() {
     const selection = [...files.input.files]; files.input.value = '';
@@ -266,7 +289,7 @@ export function setupScriptStudio(api) {
       if (!/\.(txt|md|pdf|docx)$/i.test(file.name)) throw new Error(`${file.name}: TXT·MD·PDF·DOCX 파일을 선택해 주세요.`);
     }
     flush(); showError('', false); const startedProject = projectId, seq = ++operation;
-    controller = new AbortController(); setBusy(true, '자료 파일에서 텍스트를 읽고 있어요.');
+    controller = new AbortController(); activeOperation = 'files'; setBusy(true, '자료 파일에서 텍스트를 읽고 있어요.');
     try {
       const values = await extractReferenceFiles(selection, {signal: controller.signal});
       const extracted = values.map(value => `[자료 파일: ${value.name}]\n${value.text.trim()}`);
@@ -277,7 +300,7 @@ export function setupScriptStudio(api) {
     } catch (cause) {
       if (seq !== operation || cause.name === 'AbortError') return;
       showError(cause.message); setBusy(false, '파일을 추가하지 못했어요. 기존 자료는 유지했어요.');
-    } finally { if (seq === operation) { controller = null; if (busy) setBusy(false); } }
+    } finally { if (seq === operation) { controller = null; activeOperation = ''; if (busy) setBusy(false); } }
   }
   function checkedResult(value, settings) {
     if (!value || value.webSearchUsed !== true || typeof value.script !== 'string' || !value.script.trim() || length(value.script) > LIMIT) throw new Error('웹 검색을 확인한 대본 결과를 받지 못했어요. 기존 대본은 유지했어요.');
@@ -290,10 +313,10 @@ export function setupScriptStudio(api) {
   }
   async function generateScript() {
     if (busy) return;
-    if (!configured) throw new Error('대본 생성 서비스 연결을 먼저 확인해 주세요. 제작 요청문은 바로 복사할 수 있어요.');
+    if (!configured) { await configureConnection(); return; }
     const value = validateSettings(); if (!value.sourceText.trim()) throw new Error('참고할 텍스트나 주제를 넣거나 자료 파일을 추가해 주세요.');
     flush(); showError('', false); const startedProject = projectId, seq = ++operation;
-    controller = new AbortController(); setBusy(true, '웹 자료를 검색하고 목표 분량에 맞게 대본을 작성하고 있어요.');
+    controller = new AbortController(); activeOperation = 'generation'; setBusy(true, '참고 자료와 정리 방향을 분석하고 웹에서 확인한 뒤, 목표 분량의 한국어 대본을 작성하고 있어요.');
     try {
       const result = await request('/api/script/generate', {method: 'POST', headers: {'Content-Type': 'application/json'}, signal: controller.signal,
         body: JSON.stringify({sourceText: value.sourceText, targetMinutes: value.targetMinutes, charsPerMinute: value.charsPerMinute, instructions: value.instructions, projectTitle: api.getProject().title})});
@@ -306,7 +329,7 @@ export function setupScriptStudio(api) {
     } catch (cause) {
       if (seq !== operation || cause.name === 'AbortError') return;
       showError(cause.message); setBusy(false, '대본 작성을 마치지 못했어요. 기존 자료와 대본은 유지했어요.'); renderResults();
-    } finally { if (seq === operation) { controller = null; if (busy) setBusy(false); } }
+    } finally { if (seq === operation) { controller = null; activeOperation = ''; if (busy) setBusy(false); } }
   }
   function researchPrompt() {
     const value = validateSettings(); if (!value.sourceText.trim()) throw new Error('참고할 자료나 주제를 먼저 입력해 주세요.');
@@ -324,6 +347,7 @@ export function setupScriptStudio(api) {
 
   open.addEventListener('click', run(async () => { api.pause(); showError('', false); render(); dialog.showModal(); if (!connectionChecked) await checkConnection(); }));
   refresh.addEventListener('click', run(checkConnection));
+  configure.addEventListener('click', run(configureConnection));
   pickFiles.addEventListener('click', event => { event.preventDefault(); if (!busy) files.input.click(); });
   files.input.addEventListener('change', run(importFiles));
   generate.addEventListener('click', run(generateScript)); cancel.addEventListener('click', () => stop());
@@ -335,7 +359,7 @@ export function setupScriptStudio(api) {
     if (!value.sourceText.trim()) throw new Error('대본 초안으로 가져올 자료를 먼저 넣어 주세요.');
     draft.result = null; draft.draftScript = value.sourceText.trim(); resultField.input.value = draft.draftScript;
     showError('', false); renderResults(); flush();
-    status.textContent = '자료를 대본 초안으로 그대로 가져왔어요. 웹 검색 검증은 하지 않았으니 읽을 문장으로 다듬어 주세요.';
+    status.textContent = '원문을 수동으로 그대로 복사했어요. AI 대본 작성·요약·번역·웹 검색은 실행하지 않았어요.';
   }));
   copy.addEventListener('click', run(async () => { const value = capture(); if (!value.draftScript.trim()) return; await copyText(value.draftScript); api.toast('내레이션 대본만 복사했어요.'); }));
   txt.addEventListener('click', run(() => downloadText(documentText(false), `${filename(draft.result?.title)}.txt`, 'text/plain;charset=utf-8')));
@@ -360,7 +384,12 @@ export function setupScriptStudio(api) {
   closeFooter.addEventListener('click', run(() => { flush(); dialog.close(); }));
   heading.addEventListener('submit', event => { try { flush(); } catch (cause) { event.preventDefault(); showError(cause.message); } });
   dialog.addEventListener('cancel', () => { try { flush(); } catch {} stop(); });
-  dialog.addEventListener('close', () => { stop(''); clearTimeout(timer); timer = 0; });
+  dialog.addEventListener('close', () => { stop(''); cancelConnectionCheck(); clearTimeout(timer); timer = 0; });
+  window.addEventListener('studio-api-settings-change', () => {
+    if (activeOperation === 'generation') stop('AI 서버 연결이 바뀌어 진행 중인 작성을 취소했어요. 기존 자료와 대본은 그대로 있어요.');
+    cancelConnectionCheck(); configured = false; connectionChecked = false; refreshGenerate();
+    if (dialog.open) checkConnection();
+  });
   for (const input of [source.input, instructions.input, minutes.input, pace.input, resultField.input]) {
     input.addEventListener('input', () => {
       if (input === resultField.input) { draft.draftScript = input.value; if (draft.result) draft.result.script = input.value; }
@@ -378,7 +407,7 @@ export function setupScriptStudio(api) {
     if (!saving && !timer && next !== fingerprint) { draft = projectDraft(project); fingerprint = next; hydrate(); }
     open.disabled = !$('exportProgress')?.hidden;
   }
-  function reset() { stop(''); clearTimeout(timer); timer = 0; if (dialog.open) dialog.close(); projectId = api.getProject().id; draft = projectDraft(api.getProject()); fingerprint = JSON.stringify(api.getProject().scriptDraft || null); hydrate(); }
+  function reset() { stop(''); cancelConnectionCheck(); clearTimeout(timer); timer = 0; if (dialog.open) dialog.close(); projectId = api.getProject().id; draft = projectDraft(api.getProject()); fingerprint = JSON.stringify(api.getProject().scriptDraft || null); hydrate(); }
   hydrate();
   return {render, flush, reset};
 }

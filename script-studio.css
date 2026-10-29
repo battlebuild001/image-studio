@@ -11,6 +11,10 @@
 .script-service-state[data-state=ready] { border-color: #425d49; background: #1b2a21; color: #adc7ae; }
 .script-service-state span { min-width: 0; overflow-wrap: anywhere; }
 .script-service-state button { flex-shrink: 0; font-size: 10px; min-height: 30px; }
+.script-service-actions { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 6px; }
+.script-manual-tools { margin-top: 15px; padding-top: 12px; border-top: 1px solid #2d414b; }
+.script-manual-tools > summary { cursor: pointer; color: #91a7ac; font-size: 11px; line-height: 1.7; }
+.script-manual-tools .script-generation-controls { margin-top: 9px; }
 .script-studio-columns { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 25px; align-items: start; }
 .script-input-panel, .script-result-panel { min-width: 0; }
 .script-input-panel > h3, .script-result-panel > h3 { font-size: 13px; color: #d9e1dc; margin: 0 0 15px; }
@@ -58,7 +62,7 @@
   .script-studio-modal .dialog-heading { padding: 17px 16px; }
   .script-studio-modal .dialog-heading h2 { font-size: 18px; }
   .script-service-state { align-items: flex-start; flex-direction: column; gap: 5px; }
-  .script-service-state button { padding-left: 0; }
+  .script-service-actions { width: 100%; }
   .script-length-settings { gap: 9px; }
   .script-studio-field { font-size: 10px; }
   .script-studio-field input, .script-studio-field textarea { font-size: 12px; }

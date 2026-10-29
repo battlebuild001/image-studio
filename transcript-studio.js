@@ -1,6 +1,7 @@
 import {getAudioWindow, prepareAssets} from './engine.js';
 import {getTimeline, validateProject} from './project.js';
 import {planAudioChunks, encodeAudioChunk, toBase64, groupTimedTranscript, isSilentAudioChunk} from './speech-timing.js';
+import {apiFetch} from './api-client.js';
 
 const $ = id => document.getElementById(id);
 const clone = value => structuredClone(value);
@@ -22,7 +23,7 @@ function abortCheck(signal) {
   if (signal?.aborted) throw new DOMException('음성 분석을 취소했어요.', 'AbortError');
 }
 async function request(path, options = {}) {
-  const response = await fetch(path, {credentials: 'same-origin', ...options});
+  const response = await apiFetch(path, options);
   let data;
   try {data = await response.json();} catch {throw new Error('음성 분석 서비스의 응답을 읽지 못했어요. 서버 연결을 확인해 주세요.');}
   if (!response.ok) {
@@ -85,7 +86,7 @@ export function setupTranscriptStudio(api) {
   footer.append(closeFooter, apply);dialog.append(footer);document.body.append(dialog);
 
   let projectId = api.getProject().id;
-  let busy = false, configured = false, config = null, connectionSequence = 0, operation = 0, controller = null;
+  let busy = false, configured = false, config = null, connectionSequence = 0, operation = 0, controller = null, connectionController = null;
   let lastResult = null, activeSignature = null;
   const showError = message => {error.textContent = message || '';};
   const run = task => event => {event?.preventDefault();Promise.resolve().then(task).catch(cause => showError(cause.message || '자동 자막 작업을 마치지 못했어요.'));};
@@ -124,6 +125,7 @@ export function setupTranscriptStudio(api) {
     operation++;controller?.abort();controller = null;activeSignature = null;
     setBusy(false);if (message) status.textContent = message;
   }
+  function cancelConnectionCheck() {connectionSequence++;connectionController?.abort();connectionController = null;}
   function renderSource() {
     try {
       const snapshot = captureSource();
@@ -153,10 +155,12 @@ export function setupTranscriptStudio(api) {
     cueList.append(fragment);
   }
   async function checkConnection() {
+    cancelConnectionCheck();
     const sequence = ++connectionSequence;
+    const abort = new AbortController(), timeout = setTimeout(() => abort.abort(), 60000);connectionController = abort;
     configured = false;refreshActions();service.dataset.state = 'checking';serviceText.textContent = '음성 분석 연결을 확인하고 있어요.';
     try {
-      const response = await request('/api/transcript/config');
+      const response = await request('/api/transcript/config', {signal: abort.signal});
       if (sequence !== connectionSequence) return;
       config = response;configured = response.configured === true;
       service.dataset.state = configured ? 'ready' : 'unavailable';
@@ -167,8 +171,7 @@ export function setupTranscriptStudio(api) {
       if (sequence !== connectionSequence) return;
       configured = false;service.dataset.state = 'unavailable';
       serviceText.textContent = `${cause.message} 음성 분석은 API 서버와 환경 설정의 비밀키가 필요해요.`;
-    }
-    refreshActions();
+    } finally {clearTimeout(timeout);if (sequence === connectionSequence) {connectionController = null;refreshActions();}}
   }
   async function analyzeNarration() {
     if (busy) return;
@@ -262,10 +265,15 @@ export function setupTranscriptStudio(api) {
   cancel.addEventListener('click', () => stop());apply.addEventListener('click', run(applyResult));
   close.addEventListener('click', closeDialog);closeFooter.addEventListener('click', closeDialog);
   dialog.addEventListener('cancel', event => {event.preventDefault();closeDialog();});
+  dialog.addEventListener('close', cancelConnectionCheck);
+  window.addEventListener('studio-api-settings-change', () => {
+    if (busy) stop('AI 서버 연결이 바뀌어 음성 분석을 취소했어요. 기존 결과와 자막은 유지했어요.');
+    cancelConnectionCheck();configured = false;config = null;refreshActions();if (dialog.open) checkConnection();
+  });
   function render() {
     const project = api.getProject();
     if (project.id !== projectId) {
-      stop('');connectionSequence++;projectId = project.id;lastResult = null;showError('');status.textContent = '';
+      stop('');cancelConnectionCheck();projectId = project.id;lastResult = null;showError('');status.textContent = '';
       if (dialog.open) dialog.close();renderResult();
     } else {
       let signature = null;
@@ -279,7 +287,7 @@ export function setupTranscriptStudio(api) {
     renderSource();refreshActions();
   }
   function reset() {
-    stop('');connectionSequence++;projectId = api.getProject().id;lastResult = null;showError('');status.textContent = '';
+    stop('');cancelConnectionCheck();projectId = api.getProject().id;lastResult = null;showError('');status.textContent = '';
     if (dialog.open) dialog.close();renderResult();render();
   }
   render();return {render, reset};

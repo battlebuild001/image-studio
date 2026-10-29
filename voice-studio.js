@@ -1,4 +1,5 @@
 import {combineVoiceChunks, VOICE_SAMPLE_RATE} from './voice-audio.js';
+import {apiFetch} from './api-client.js';
 
 const $ = id => document.getElementById(id);
 const characterCount = value => Array.from(String(value || '')).length;
@@ -16,7 +17,7 @@ function field(id, label, type = 'number') {
 function seconds(value) {const rounded = Math.round(Math.max(0, value));return `${Math.floor(rounded / 60)}분 ${String(rounded % 60).padStart(2, '0')}초`;}
 function filename(value) {return (String(value || '내레이션').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 80) || '내레이션') + '.wav';}
 async function request(path, options = {}) {
-  const response = await fetch(path, {credentials: 'same-origin', ...options});let data;
+  const response = await apiFetch(path, options);let data;
   try {data = await response.json();} catch {throw new Error('음성 생성 서버에 연결하지 못했어요. 대본은 그대로 사용할 수 있어요.');}
   if (!response.ok) throw new Error(typeof data.error === 'string' ? data.error.slice(0, 500) : '음성을 만들지 못했어요. 기존 대본과 음성은 유지했어요.');
   return data;
@@ -55,7 +56,7 @@ export function setupVoiceStudio(api) {
   const fileButton = button('importVoiceFileBtn', '음성 파일 불러오기', 'outline');const file = node('input');file.id = 'voiceFileInput';file.type = 'file';file.accept = 'audio/*';file.hidden = true;local.append(fileButton, file);body.append(local);
   const footer = node('div', 'dialog-footer');const closeFooter = button('closeVoiceStudioBtn', '닫기', 'ghost'), next = button('voiceToEditorBtn', '다음: 영상 편집', 'primary');footer.append(closeFooter, next);dialog.append(footer);document.body.append(dialog);
 
-  let projectId = api.getProject().id, busy = false, applying = false, configured = false, connectionSequence = 0, operation = 0, controller = null;
+  let projectId = api.getProject().id, busy = false, applying = false, configured = false, connectionSequence = 0, operation = 0, controller = null, connectionController = null;
   let lastResult = null, resultUrl = null, active = null, draftTitle = '', targetMinutes = 8;
   const run = task => event => {event?.preventDefault();Promise.resolve().then(task).catch(cause => {error.textContent = cause.message || '음성 작업을 마치지 못했어요.';});};
   const projectScript = () => {const p = api.getProject();return p.scriptDraft?.draftScript ?? p.scriptDraft?.result?.script ?? p.scenes.map(scene => scene.caption).join('\n\n');};
@@ -84,10 +85,13 @@ export function setupVoiceStudio(api) {
   function stop(message = '음성 생성을 취소했어요. 대본과 기존 내레이션은 그대로 있어요.') {
     operation++;controller?.abort();controller = null;active = null;busy = false;dialog.setAttribute('aria-busy', 'false');status.textContent = message;refreshActions();
   }
+  function cancelConnectionCheck() {connectionSequence++;connectionController?.abort();connectionController = null;}
   async function checkConnection() {
+    cancelConnectionCheck();
     const sequence = ++connectionSequence;configured = false;service.dataset.state = 'checking';serviceText.textContent = '음성 생성 연결을 확인하고 있어요.';refreshActions();
+    const abort = new AbortController(), timeout = setTimeout(() => abort.abort(), 60000);connectionController = abort;
     try {
-      const response = await request('/api/voice/config');if (sequence !== connectionSequence) return;
+      const response = await request('/api/voice/config', {signal: abort.signal});if (sequence !== connectionSequence) return;
       configured = response.configured === true;
       service.dataset.state = configured ? 'ready' : 'unavailable';
       serviceText.textContent = configured ? 'CLOVA Voice 한국어 음성을 사용할 수 있어요. ‘음성 생성’을 누를 때만 합성해요.'
@@ -95,8 +99,7 @@ export function setupVoiceStudio(api) {
     } catch {
       if (sequence !== connectionSequence) return;configured = false;service.dataset.state = 'unavailable';
       serviceText.textContent = '대본은 준비됐어요. 음성 생성 서버가 연결되지 않아도 파일 불러오기와 영상 편집을 계속할 수 있어요.';
-    }
-    refreshActions();
+    } finally {clearTimeout(timeout);if (sequence === connectionSequence) {connectionController = null;refreshActions();}}
   }
   async function generateVoice() {
     if (busy || applying) return;if (!configured) throw new Error('음성 생성 연결을 먼저 확인해 주세요. 대본 작성에는 이 연결이 필요하지 않아요.');
@@ -145,7 +148,7 @@ export function setupVoiceStudio(api) {
   function closeDialog() {if (busy) stop();audio.pause();dialog.close();}
   function render() {
     const p = api.getProject();
-    if (p.id !== projectId) {stop('');projectId = p.id;connectionSequence++;clearResult();text.input.value = '';error.textContent = '';if (dialog.open) dialog.close();}
+    if (p.id !== projectId) {stop('');projectId = p.id;cancelConnectionCheck();clearResult();text.input.value = '';error.textContent = '';if (dialog.open) dialog.close();}
     else if (!applying && ((busy && !matches(active)) || (lastResult && !matches(lastResult.snapshot)))) {
       if (busy) stop('대본이나 프로젝트가 바뀌어 음성 생성을 취소했어요. 다시 확인해 주세요.');
       if (dialog.open) status.textContent = '대본이나 기존 내레이션이 바뀌었어요. 새 내용으로 음성을 다시 만들어 주세요.';
@@ -155,6 +158,11 @@ export function setupVoiceStudio(api) {
   launcher.addEventListener('click', run(() => open()));close.addEventListener('click', closeDialog);closeFooter.addEventListener('click', closeDialog);
   refresh.addEventListener('click', run(checkConnection));generate.addEventListener('click', run(generateVoice));cancel.addEventListener('click', () => stop());apply.addEventListener('click', run(applyVoice));
   dialog.addEventListener('cancel', event => {event.preventDefault();closeDialog();});
+  dialog.addEventListener('close', cancelConnectionCheck);
+  window.addEventListener('studio-api-settings-change', () => {
+    if (busy) stop('AI 서버 연결이 바뀌어 음성 생성을 취소했어요. 대본과 기존 결과는 유지했어요.');
+    cancelConnectionCheck();configured = false;refreshActions();if (dialog.open) checkConnection();
+  });
   for (const input of [text.input, speaker.input, speed.input, pitch.input, volume.input]) input.addEventListener('input', () => {
     error.textContent = '';if (busy && !matches(active)) stop('대본이나 목소리 설정이 바뀌어 생성을 취소했어요. 다시 생성해 주세요.');refreshActions();
   });
@@ -168,6 +176,6 @@ export function setupVoiceStudio(api) {
     const script = text.input.value.trim();if (!script) throw new Error('먼저 대본을 작성해 주세요.');
     audio.pause();dialog.close();api.applyScriptDraft({script, title: draftTitle, targetMinutes});
   }));
-  function reset() {stop('');clearResult();text.input.value = '';projectId = api.getProject().id;connectionSequence++;if (dialog.open) dialog.close();render();}
+  function reset() {stop('');cancelConnectionCheck();clearResult();text.input.value = '';projectId = api.getProject().id;if (dialog.open) dialog.close();render();}
   render();return {open, render, reset};
 }

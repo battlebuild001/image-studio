@@ -1,3 +1,5 @@
+import {apiFetch} from './api-client.js';
+
 const MAX_REFERENCES = 5;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
@@ -17,7 +19,7 @@ function selectField(id,label,values) {const wrapper=node('label','image-studio-
 function safeFilename(value) {return(String(value||'reference-image').replace(/[<>:"/\\|?*\u0000-\u001f]/g,'_').slice(0,100)||'reference-image');}
 function download(blob,name) {const url=URL.createObjectURL(blob),link=node('a');link.href=url;link.download=name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);}
 async function copyText(value) {if(navigator.clipboard?.writeText){try{await navigator.clipboard.writeText(value);return;}catch{}}const input=node('textarea');input.value=value;input.style.position='fixed';input.style.opacity='0';document.body.append(input);input.select();const copied=document.execCommand('copy');input.remove();if(!copied)throw new Error('복사가 허용되지 않았어요. 요청 내용을 선택해 복사해 주세요.');}
-async function request(path,options={}) {const response=await fetch(path,{credentials:'same-origin',...options});let body;try{body=await response.json();}catch{throw new Error('이미지 서비스의 응답을 읽지 못했어요. 잠시 뒤 다시 시도해 주세요.');}if(!response.ok){const message=typeof body.error==='string'?body.error:body.error?.message||body.message;throw new Error(typeof message==='string'?message.slice(0,500):'이미지를 생성하지 못했어요. 잠시 뒤 다시 시도해 주세요.');}return body;}
+async function request(path,options={}) {const response=await apiFetch(path,options);let body;try{body=await response.json();}catch{throw new Error('이미지 서비스의 응답을 읽지 못했어요. 잠시 뒤 다시 시도해 주세요.');}if(!response.ok){const message=typeof body.error==='string'?body.error:body.error?.message||body.message;throw new Error(typeof message==='string'?message.slice(0,500):'이미지를 생성하지 못했어요. 잠시 뒤 다시 시도해 주세요.');}return body;}
 function blobBase64(blob) {return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(new Error('참조 이미지를 읽지 못했어요.'));reader.readAsDataURL(blob);});}
 function canvasBlob(canvas,type='image/png',quality) {return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('참조 이미지를 전송용으로 준비하지 못했어요.')),type,quality));}
 function checkAbort(signal) {if(signal?.aborted)throw new DOMException('이미지 생성을 취소했어요.','AbortError');}
@@ -77,7 +79,7 @@ export function setupImageStudio(api) {
   const footer=node('div','dialog-footer');const closeFooter=button('closeImageStudioBtn','닫기','ghost');footer.append(closeFooter);dialog.append(footer);document.body.append(dialog);
 
   let projectId=api.getProject().id,draft=clone(api.getProject().imageStudio||defaults()),fingerprint=JSON.stringify(api.getProject().imageStudio||defaults());
-  let timer=0,saving=false,busy=false,phase='',operation=0,controller=null,configured=false,connectionChecked=false,connectionSequence=0,lastResult=null;
+  let timer=0,saving=false,busy=false,phase='',operation=0,controller=null,configured=false,connectionChecked=false,connectionSequence=0,connectionController=null,lastResult=null;
   const ownThumbs=new Map();
   const textInputs=[background.input,style.input,avoid.input,prompt.input,size.input,quality.input];
   function showError(message,notify=true){error.textContent=message||'';if(message&&notify)api.toast(message,true);}
@@ -143,12 +145,14 @@ export function setupImageStudio(api) {
   function hydrate(){background.input.value=draft.background||'';style.input.value=draft.style||'';avoid.input.value=draft.negativePrompt||'';prompt.input.value=draft.prompt||'';size.input.value=draft.size||'1536x864';quality.input.value=draft.quality||'medium';renderReferences();}
   function releaseResult(){if(lastResult?.url)URL.revokeObjectURL(lastResult.url);lastResult=null;preview.removeAttribute('src');results.hidden=true;empty.hidden=false;refreshActions();}
   function stop(message='이미지 생성을 취소했어요. 고정 레퍼런스와 이전 결과는 유지했어요.'){operation++;controller?.abort();controller=null;if(busy)setBusy(false,message);}
+  function cancelConnectionCheck(){connectionSequence++;connectionController?.abort();connectionController=null;if(connection.dataset.state==='loading')connectionChecked=false;}
   async function checkConnection(){
+    cancelConnectionCheck();
     const seq=++connectionSequence;configured=false;connectionChecked=false;connectionText.textContent='이미지 서비스 연결을 확인하고 있어요.';connection.dataset.state='loading';refreshActions();
-    const abort=new AbortController(),timeout=setTimeout(()=>abort.abort(),8000);
+    const abort=new AbortController(),timeout=setTimeout(()=>abort.abort(),60000);connectionController=abort;
     try{const config=await request('/api/image/config',{signal:abort.signal});if(seq!==connectionSequence)return;configured=config.configured===true;connectionChecked=true;connectionText.textContent=configured?'레퍼런스 이미지로 새 장면을 생성할 수 있어요.':'이미지 생성 서비스가 아직 연결되지 않았어요. 고정 레퍼런스 저장과 제작 요청문 복사는 사용할 수 있어요.';connection.dataset.state=configured?'ready':'unavailable';}
     catch{if(seq!==connectionSequence)return;connectionChecked=true;connectionText.textContent='이미지 서비스에 연결하지 못했어요. 고정 자료는 유지돼요. 연결 상태를 다시 확인해 주세요.';connection.dataset.state='unavailable';}
-    finally{clearTimeout(timeout);if(seq===connectionSequence)refreshActions();}
+    finally{clearTimeout(timeout);if(seq===connectionSequence){connectionController=null;refreshActions();}}
   }
   async function addFiles(){
     const files=[...input.files];input.value='';if(!files.length||busy)return;flush();
@@ -204,15 +208,19 @@ export function setupImageStudio(api) {
   generate.addEventListener('click',run(generateImage));cancel.addEventListener('click',()=>stop());copy.addEventListener('click',run(async()=>{flush();await copyText(promptText());api.toast('요청문을 복사했어요. 외부 서비스에는 레퍼런스 이미지 파일도 함께 첨부하세요.');}));
   save.addEventListener('click',run(()=>{if(lastResult)download(lastResult.blob,lastResult.name.endsWith('.png')?lastResult.name:`${lastResult.name}.png`);}));apply.addEventListener('click',run(applyResult));
   closeFooter.addEventListener('click',run(()=>{flush();dialog.close();}));heading.addEventListener('submit',event=>{try{flush();}catch(cause){event.preventDefault();showError(cause.message);}});
-  dialog.addEventListener('cancel',event=>{if(busy&&phase!=='generation'){event.preventDefault();return;}try{flush();}catch{}stop();});dialog.addEventListener('close',()=>{stop('');clearTimeout(timer);timer=0;});
+  dialog.addEventListener('cancel',event=>{if(busy&&phase!=='generation'){event.preventDefault();return;}try{flush();}catch{}stop();});dialog.addEventListener('close',()=>{stop('');cancelConnectionCheck();clearTimeout(timer);timer=0;});
+  window.addEventListener('studio-api-settings-change',()=>{
+    if(busy&&phase==='generation')stop('AI 서버 연결이 바뀌어 이미지 생성을 취소했어요. 고정 레퍼런스와 이전 결과는 유지했어요.');
+    cancelConnectionCheck();configured=false;connectionChecked=false;refreshActions();if(dialog.open)checkConnection();
+  });
   for(const input of textInputs){input.addEventListener('input',()=>{showError('',false);refreshProvenance();queueSave();});input.addEventListener('change',()=>{try{flush();}catch(cause){showError(cause.message,false);}});}
   function render(){
     const project=api.getProject(),next=JSON.stringify(project.imageStudio||defaults());
-    if(project.id!==projectId){stop('');clearTimeout(timer);timer=0;projectId=project.id;draft=clone(project.imageStudio||defaults());fingerprint=next;releaseResult();if(dialog.open)dialog.close();hydrate();}
+    if(project.id!==projectId){stop('');cancelConnectionCheck();clearTimeout(timer);timer=0;projectId=project.id;draft=clone(project.imageStudio||defaults());fingerprint=next;releaseResult();if(dialog.open)dialog.close();hydrate();}
     else if(!saving&&!timer&&next!==fingerprint){draft=clone(project.imageStudio||defaults());fingerprint=next;hydrate();}
     open.disabled=!$('exportProgress')?.hidden;refreshActions();
   }
-  function reset(){stop('');clearTimeout(timer);timer=0;releaseResult();for(const url of ownThumbs.values())URL.revokeObjectURL(url);ownThumbs.clear();if(dialog.open)dialog.close();projectId=api.getProject().id;draft=clone(api.getProject().imageStudio||defaults());fingerprint=JSON.stringify(draft);hydrate();}
+  function reset(){stop('');cancelConnectionCheck();clearTimeout(timer);timer=0;releaseResult();for(const url of ownThumbs.values())URL.revokeObjectURL(url);ownThumbs.clear();if(dialog.open)dialog.close();projectId=api.getProject().id;draft=clone(api.getProject().imageStudio||defaults());fingerprint=JSON.stringify(draft);hydrate();}
   hydrate();
   return{render,flush,reset};
 }
