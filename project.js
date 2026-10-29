@@ -46,6 +46,7 @@ export function createProject(overrides = {}) {
     captionMode: 'auto',
     captionAnalysis: null,
     scriptDraft: null,
+    scenePlan: null,
     imageStudio: {background: '', style: '', negativePrompt: '', prompt: '',
       size: '1536x864', quality: 'medium', references: []},
     ...overrides,
@@ -227,6 +228,61 @@ function validateScriptDraft(input) {
   };
 }
 
+/** A confirmed schedule remains available after manual edits so it can be reviewed or undone.
+ * Whether it still matches the current scenes belongs to the planning workflow.
+ */
+function validateScenePlan(input) {
+  if (input === undefined || input === null) return null;
+  if (!plainObject(input) || input.version !== 1) fail('장면 이미지 계획 형식이 올바르지 않습니다.');
+  let serialized;
+  try { serialized = JSON.stringify(input); } catch { fail('장면 이미지 계획 형식이 올바르지 않습니다.'); }
+  if (typeof serialized !== 'string' || encoder.encode(serialized).byteLength > 3 * 1024 * 1024) {
+    fail('장면 이미지 계획은 합계 3MiB 이하로 줄여 주세요.');
+  }
+  const requiredNumber = (value, min, max, label) => {
+    if (typeof value !== 'number') fail(`${label} 값을 숫자로 입력해 주세요.`);
+    return finiteNumber(value, undefined, min, max, label);
+  };
+  const requiredText = (value, max, label) => {
+    if (typeof value !== 'string') fail(`${label} 형식이나 길이를 확인해 주세요.`);
+    return scriptText(value, '', max, label);
+  };
+  const intervalSeconds = requiredNumber(input.intervalSeconds, 1, 600, '이미지 전환 간격');
+  const durationSeconds = requiredNumber(input.durationSeconds, 0.25, 3600, '장면 계획 전체 길이');
+  if (!['target', 'narration', 'estimated', 'current'].includes(input.basis)) fail('장면 계획의 시간 기준이 올바르지 않습니다.');
+  if (typeof input.confirmedAt !== 'string' || input.confirmedAt.length > 40 ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(input.confirmedAt)) {
+    fail('장면 계획 확정 시각이 올바르지 않습니다.');
+  }
+  const confirmed = new Date(input.confirmedAt);
+  if (!Number.isFinite(confirmed.getTime()) || confirmed.toISOString().slice(0, 19) !== input.confirmedAt.slice(0, 19)) {
+    fail('장면 계획 확정 시각이 올바르지 않습니다.');
+  }
+  if (!Array.isArray(input.items) || input.items.length < 1 || input.items.length > 200) {
+    fail('장면 계획은 1~200개 장면으로 구성해 주세요.');
+  }
+  const ids = new Set();let previousEnd = 0;
+  const items = input.items.map(item => {
+    if (!plainObject(item)) fail('장면 계획 항목이 올바르지 않습니다.');
+    const sceneId = validId(item.sceneId, false, '계획한 장면');
+    if (ids.has(sceneId)) fail('장면 계획에 중복된 장면 식별자가 있습니다.');
+    ids.add(sceneId);
+    const start = requiredNumber(item.start, 0, 3600, '장면 계획 시작 시각');
+    const end = requiredNumber(item.end, 0, 3600, '장면 계획 종료 시각');
+    if (Math.abs(start - previousEnd) > 0.001 || end <= start || end - start < 0.25 - 1e-9 || end - start > 600 + 1e-9) {
+      fail('장면 계획의 시간은 빈틈이나 겹침 없이 이어지고 각 장면은 0.25~600초여야 합니다.');
+    }
+    previousEnd = end;
+    return {sceneId, start, end,
+      caption: textValue(requiredText(item.caption, 20000, '계획한 장면 대본'), '', 20000, '계획한 장면 대본'),
+      prompt: requiredText(item.prompt, 6000, '장면 이미지 생성 요청')};
+  });
+  if (Math.abs(previousEnd - durationSeconds) > 0.001) fail('마지막 장면의 종료 시각이 계획한 전체 길이와 다릅니다.');
+  return {version: 1, intervalSeconds, durationSeconds, basis: input.basis,
+    confirmedAt: confirmed.toISOString(), sourceScript: requiredText(input.sourceScript, 100000, '장면 계획 원본 대본'),
+    narrationKey: requiredText(input.narrationKey, 1000, '장면 계획 내레이션 정보'), items};
+}
+
 /** Reference metadata points to the same local Blob store as scene images. */
 function validateImageStudio(input) {
   if (input === undefined || input === null) input = {};
@@ -324,6 +380,7 @@ export function validateProject(input) {
     captionMode,
     captionAnalysis,
     scriptDraft: validateScriptDraft(input.scriptDraft),
+    scenePlan: validateScenePlan(input.scenePlan),
     imageStudio: validateImageStudio(input.imageStudio),
     settings: {
       transition: finiteNumber(settings.transition, 0.4, 0, 3, '전환 시간'),
