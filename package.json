@@ -22,7 +22,8 @@
     "deploy:server": "node scripts/publish-backend-source.mjs",
     "deploy:server:check": "node scripts/publish-backend-source.mjs --dry-run",
     "test:api-settings-browser": "node tests/api-settings.browser.cjs",
-    "test:ai-workflow-browser": "node tests/ai-connection-workflow.browser.cjs"
+    "test:ai-workflow-browser": "node tests/ai-connection-workflow.browser.cjs",
+    "test:image-connection-browser": "node tests/image-ai-connection.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

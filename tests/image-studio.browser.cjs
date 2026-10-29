@@ -7,7 +7,11 @@ async function referenceOnlyChecks(browser,fixture){
   await page.route('**/api/image/config',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({configured:false})}));
   await page.goto(process.env.STUDIO_URL||'http://127.0.0.1:4173/',{waitUntil:'networkidle'});
   await page.locator('#imageStudioBtn').click();await page.waitForFunction(()=>document.querySelector('#imageServiceState').dataset.state==='unavailable');
-  assert.ok(await page.locator('#generateReferenceImageBtn').isDisabled());
+  assert.equal(await page.locator('#generateReferenceImageBtn').isEnabled(),true);
+  assert.equal(await page.locator('#generateReferenceImageBtn').innerText(),'AI 연결 설정');
+  await page.locator('#generateReferenceImageBtn').click();await page.locator('#apiSettingsDialog').waitFor({state:'visible'});
+  assert.equal(await page.locator('#imageStudioDialog').evaluate(dialog=>dialog.open),true);
+  await page.locator('#closeApiSettingsBtn').click();
   await page.locator('#referenceImageFiles').setInputFiles(fixture+'image-test-1.png');await page.waitForFunction(()=>document.querySelectorAll('.image-reference-card').length===1);
   await page.locator('#imageBackground').fill('고정 배경 설정: 항구 도시의 지형과 색감을 유지합니다.');await page.locator('#imageScenePrompt').fill('같은 컨셉의 새로운 카메라 구도');
   await page.getByLabel('1번 레퍼런스 생성에 참조',{exact:true}).uncheck();await page.locator('#closeImageStudioBtn').click();

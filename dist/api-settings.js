@@ -22,11 +22,11 @@ export function setupApiSettings(api = {}) {
   if (!document.getElementById('apiSettingsStyles')) {const link = node('link');link.id = 'apiSettingsStyles';link.rel = 'stylesheet';link.href = new URL('./api-settings.css', import.meta.url).href;document.head.append(link);}
   const launcher = button('apiSettingsBtn', 'AI 서버 연결', 'outline api-settings-launcher');document.querySelector('.project-tools')?.append(launcher);
   const dialog = node('dialog', 'modal api-settings-modal');dialog.id = 'apiSettingsDialog';dialog.setAttribute('aria-labelledby', 'apiSettingsTitle');
-  const heading = node('div', 'dialog-heading'), titles = node('div');titles.append(node('span', 'eyebrow', 'AI SCRIPT SERVER'));
+  const heading = node('div', 'dialog-heading'), titles = node('div');titles.append(node('span', 'eyebrow', 'AI STUDIO SERVER'));
   const title = node('h2', '', 'AI 서버 연결');title.id = 'apiSettingsTitle';titles.append(title);
   const close = button('closeApiSettingsHeaderBtn', '×', 'icon-button');close.setAttribute('aria-label', 'AI 서버 연결 닫기');heading.append(titles, close);dialog.append(heading);
   const body = node('div', 'dialog-body');dialog.append(body);
-  body.append(node('p', 'api-settings-intro', '참고자료와 정리 방향으로 대본을 작성할 AI 서버를 연결하세요. 보이스 API 없이도 AI 대본을 먼저 만들 수 있어요.'));
+  body.append(node('p', 'api-settings-intro', '대본 작성과 레퍼런스 이미지 생성에 사용할 AI 서버를 연결하세요. 서버에 설정한 OpenAI 키를 함께 사용할 수 있어요. 보이스 API는 필요하지 않아요.'));
   const serverGuide = node('p', 'api-settings-help'), createServer = node('a', '', 'AI 서버 만들기 (Render 무료 플랜)');
   createServer.href = 'https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fbattlebuild001%2Fimage-studio%2Ftree%2Fimage-studio-server';createServer.target = '_blank';createServer.rel = 'noopener noreferrer';
   serverGuide.append('서버가 없다면 ', createServer, '에서 먼저 배포하세요. OpenAI API 사용료는 별도입니다.');body.append(serverGuide);
@@ -35,7 +35,7 @@ export function setupApiSettings(api = {}) {
   const code = field('apiAccessToken', '앱 접속코드 (제공자 API 키가 아니에요)', 'password');code.input.autocomplete = 'off';code.input.maxLength = 2048;code.input.spellcheck = false;
   code.input.setAttribute('aria-describedby', 'apiAccessTokenHelp');body.append(url.wrapper, code.wrapper);
   const codeHelp = node('p', 'api-settings-help', '서버에 설정한 앱 접속코드를 입력하세요. 접속코드는 현재 탭 세션에만 보관하며 프로젝트·백업에 넣지 않아요. 같은 서버에 저장된 코드를 유지하려면 빈칸으로 두세요.');codeHelp.id = 'apiAccessTokenHelp';body.append(codeHelp);
-  body.append(node('p', 'api-settings-privacy', 'OpenAI 등 제공자의 API 키는 서버에서만 설정해요. 이 화면에 API 키를 입력하지 마세요. ‘연결 확인·저장’은 서버 상태만 확인하며, 참고자료는 ‘AI 대본 작성’을 눌렀을 때만 연결한 서버로 보내요.'));
+  body.append(node('p', 'api-settings-privacy', 'OpenAI 등 제공자의 API 키는 서버에서만 설정해요. 이 화면에 API 키를 입력하지 마세요. ‘연결 확인·저장’은 서버 상태만 확인해요. 참고자료는 대본 작성, 선택한 레퍼런스 이미지와 설정은 이미지 생성 버튼을 눌렀을 때만 연결한 서버로 보내요.'));
   const actions = node('div', 'api-settings-actions'), connect = button('connectApiBtn', '연결 확인·저장', 'primary'), clear = button('clearApiSettingsBtn', '연결 해제', 'outline');actions.append(connect, clear);body.append(actions);
   const status = node('p', 'api-settings-status');status.id = 'apiSettingsStatus';status.setAttribute('role', 'status');status.setAttribute('aria-live', 'polite');
   const error = node('p', 'api-settings-error');error.id = 'apiSettingsError';error.setAttribute('role', 'alert');body.append(status, error);
