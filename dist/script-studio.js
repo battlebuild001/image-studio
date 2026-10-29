@@ -274,7 +274,7 @@ export function setupScriptStudio(api) {
       connection.dataset.state = configured ? 'ready' : 'unavailable';
     } catch {
       if (current !== configSequence) return;
-      connectionChecked = true; connectionText.textContent = '대본 API에 연결되지 않았어요. ‘API 설정’에서 OpenAI 키를 입력하거나 기존 서버 연결을 확인해 주세요. 자료와 수동 대본은 유지돼요.'; connection.dataset.state = 'unavailable';
+      connectionChecked = true; connectionText.textContent = '대본 API에 연결되지 않았어요. ‘API 설정’에서 OpenAI 키를 입력하거나 기존 서버 연결을 확인해 주세요. 자료는 유지돼요. 수동 대본 작성·저장은 계속 사용할 수 있어요.'; connection.dataset.state = 'unavailable';
     } finally { clearTimeout(timeout); if (current === configSequence) { configController = null; refreshGenerate(); } }
   }
   async function importFiles() {
@@ -386,7 +386,7 @@ export function setupScriptStudio(api) {
   dialog.addEventListener('cancel', () => { try { flush(); } catch {} stop(); });
   dialog.addEventListener('close', () => { stop(''); cancelConnectionCheck(); clearTimeout(timer); timer = 0; });
   window.addEventListener('studio-api-settings-change', () => {
-    if (activeOperation === 'generation') stop('API 설정이 바뀌어 진행 중인 작성을 취소했어요. 기존 자료와 대본은 그대로 있어요.');
+    if (activeOperation === 'generation') stop('API 연결이 바뀌어 진행 중인 작성을 취소했어요. 기존 자료와 대본은 그대로 있어요.');
     cancelConnectionCheck(); configured = false; connectionChecked = false; refreshGenerate();
     if (dialog.open) checkConnection();
   });

@@ -9,12 +9,14 @@ import {setupVoiceStudio} from './voice-studio.js';
 import {setupWorkspaceTabs} from './workspace-tabs.js';
 import {setupApiSettings} from './api-settings.js';
 import {initializeWorkspaces,loadWorkspace,saveWorkspaceProject,activateWorkspace,createWorkspace as storeCreateWorkspace,renameWorkspace as storeRenameWorkspace,moveWorkspace as storeMoveWorkspace,closeWorkspace as storeCloseWorkspace,reopenWorkspace as storeReopenWorkspace} from './workspace-store.js';
-import {planScriptScenes,scriptLength} from './script-planning.js';
+import {getScenePlanStatus} from './script-planning.js';
+import {setupSceneTimingUi} from './scene-timing-ui.js';
+import {setupSceneImageBatch} from './scene-image-batch.js';
 
 const $=id=>document.getElementById(id);
 let project=createProject(),assets=new Map(),selectedId=null,history=[],current=0,playing=false,frameId=0,playStart=0,playOffset=0;
 let playGeneration=0,playPending=false;
-let redoHistory=[],selectedIds=new Set(),copiedSettings=null,previewAudio=null,editorTools=null,libraryTools=null,scriptStudio=null,imageStudio=null,transcriptStudio=null,voiceStudio=null,apiSettings=null,pendingScriptTitle=null;
+let redoHistory=[],selectedIds=new Set(),copiedSettings=null,previewAudio=null,editorTools=null,libraryTools=null,scriptStudio=null,imageStudio=null,transcriptStudio=null,voiceStudio=null,apiSettings=null,sceneTimingUi=null,sceneImageBatch=null,pendingScriptTitle=null,timingApplying=false,timingGeneration=0;
 let narration=new Audio(),bgm=new Audio(),saveTimer=0,saveChain=Promise.resolve(),revision=0,savedRevision=0,exportController=null,exportURL=null,importing=false;
 let workspaceCatalog=null,workspaceTabs=null,workspaceReady=false,changingWorkspace=false,workspaceError='';
 const canvas=$('previewCanvas'),ctx=canvas.getContext('2d',{alpha:false});
@@ -62,7 +64,7 @@ async function changeWorkspace(action){
 function installWorkspace(loaded,decoded,catalog){
  for(const dialog of document.querySelectorAll('dialog[open]'))if(!['workspaceAddDialog','workspaceManageDialog','apiSettingsDialog'].includes(dialog.id))dialog.close();
  releaseAssets();project=loaded.project;assets=decoded;workspaceCatalog=catalog;selectedId=project.scenes[0]?.id||null;selectedIds=new Set(selectedId?[selectedId]:[]);history=[];redoHistory=[];current=0;copiedSettings=null;
- editorTools?.reset();scriptStudio?.reset();imageStudio?.reset();transcriptStudio?.reset();voiceStudio?.reset();rebuildAudio();revision++;savedRevision=revision;markSaved('자동 저장됨');
+ editorTools?.reset();scriptStudio?.reset();imageStudio?.reset();transcriptStudio?.reset();voiceStudio?.reset();sceneImageBatch?.reset();rebuildAudio();revision++;savedRevision=revision;markSaved('자동 저장됨');
 }
 async function activateLoadedWorkspace(id){
  const loaded=await loadWorkspace(id);let decoded;
@@ -102,7 +104,7 @@ function renderWorkflow(){
  $('workflowScriptBtn').disabled=blocked;$('workflowVoiceBtn').disabled=blocked||!hasScript;$('workflowEditBtn').disabled=blocked||(!hasScript&&!project.scenes.length);
  $('workflowScriptState').textContent=hasScript?'대본 저장됨':'음성 API 없이 작성';
  $('workflowVoiceState').textContent=hasVoice?'내레이션 준비됨':hasScript?'대본으로 음성 만들기':'대본 작성 후 진행';
- $('workflowEditState').textContent=project.scenes.length?`${project.scenes.length}개 장면 편집`:'이미지 · 자막 · 영상 저장';
+ $('workflowEditState').textContent=getScenePlanStatus(project).valid?`${project.scenes.length}개 장면 · ${project.scenePlan.intervalSeconds}초 전환`:project.scriptDraft?.draftScript?.trim()?'이미지 전환 타이밍 정하기':project.scenes.length?`${project.scenes.length}개 장면 편집`:'이미지 · 자막 · 영상 저장';
  const step=project.scenes.length?3:hasScript?2:1;
  for(const [index,id]of['workflowScriptBtn','workflowVoiceBtn','workflowEditBtn'].entries()){
   const element=$(id);element.classList.toggle('is-current',index+1===step);if(index+1===step)element.setAttribute('aria-current','step');else element.removeAttribute('aria-current');
@@ -120,6 +122,7 @@ async function addNarrationFile(file){
 }
 function openEditingStep(){
  if(importing||exportController)throw new Error('파일 처리나 영상 출력이 끝난 뒤 편집해 주세요.');
+ if(project.scenes.length&&project.scriptDraft?.draftScript?.trim()&&!getScenePlanStatus(project).valid)return openScript();
  if(!project.scenes.length){const text=spokenScript();if(!text.trim())throw new Error('대본을 먼저 입력해 주세요.');return applyScriptDraft({script:text,title:project.scriptDraft?.result?.title||project.title,targetMinutes:project.scriptDraft?.targetMinutes||8});}
  pause();canvas.scrollIntoView({behavior:'smooth',block:'center'});$('imageDropzone').focus();
 }
@@ -135,7 +138,7 @@ function captionStatus(cues){
  return cues.length?`대본 자막 ${cues.length}개 · 글자 수 기준 추정 배분`:'대본을 넣거나 내레이션을 분석해 자막을 만드세요.';
 }
 function renderSceneList(){
- const list=$('sceneList');list.replaceChildren();$('sceneCount').textContent=project.scenes.length;
+ const list=$('sceneList');list.replaceChildren();$('sceneCount').textContent=project.scenes.length;const sceneHeading=$('sceneCount').parentElement;sceneHeading.querySelector('h2').textContent='장면';let imageCount=$('sceneImageCount');if(!imageCount){imageCount=el('small','scene-image-count');imageCount.id='sceneImageCount';sceneHeading.append(imageCount);}imageCount.textContent=`이미지 ${project.scenes.filter(scene=>scene.imageId&&assets.has(scene.imageId)).length}장`;
  $('selectionCount').textContent=`${selectedIds.size}개 선택`;
  $('selectAllScenes').checked=project.scenes.length>0&&selectedIds.size===project.scenes.length;
  $('selectAllScenes').indeterminate=selectedIds.size>0&&selectedIds.size<project.scenes.length;
@@ -181,7 +184,7 @@ function renderTimeline(){
 }
 function renderInspector(){const scene=selected();$('inspectorEmpty').hidden=!!scene;$('inspectorContent').hidden=!scene;$('selectedId').textContent=scene?String(project.scenes.indexOf(scene)+1).padStart(2,'0'):'—';if(!scene)return;const holder=$('selectedImage');holder.replaceChildren();const asset=assets.get(scene.imageId);if(asset?.url){const image=el('img');image.src=asset.url;image.alt=`선택 장면 이미지: ${asset.name}`;holder.append(image);}else holder.append(el('span','','이미지가 없는 장면'));updateField('sceneCaption',scene.caption);$('sceneCaption').disabled=project.captionMode!=='auto';$('sceneCaption').title=project.captionMode!=='auto'?'별도 시간 자막을 사용 중이에요. 대본 자막으로 전환하면 이 문장이 표시돼요.':'';updateField('sceneDuration',Number(scene.duration.toFixed(2)));updateField('sceneMotion',scene.motion);updateField('sceneFit',scene.fit);$('moveUpBtn').disabled=project.scenes.indexOf(scene)===0;$('moveDownBtn').disabled=project.scenes.indexOf(scene)===project.scenes.length-1;}
 function renderAudio(){const voice=assets.get(project.audio.narrationId),music=assets.get(project.audio.bgmId);$('narrationInfo').textContent=voice?`${time(voice.duration)} · ${voice.name}`:'MP3 · WAV 파일을 넣어주세요';$('narrationBtn').textContent=voice?'음성 파일 교체':'음성 파일 추가';$('removeNarrationBtn').hidden=!voice;$('bgmInfo').textContent=music?`${time(music.duration)} · ${music.name}`:'설명 뒤에 잔잔하게 깔아주세요';$('bgmBtn').textContent=music?'음악 교체':'음악 추가';$('removeBgmBtn').hidden=!music;updateField('bgmVolume',Math.round(project.settings.bgmVolume*100));$('bgmVolumeLabel').textContent=`${Math.round(project.settings.bgmVolume*100)}%`;const length=total();if(voice&&Math.abs(length-((project.audio.narrationOffset||0)+getAudioWindow(project,assets,'narration').duration))>0.15)$('timingState').textContent=`영상 ${time(length)} / 음성 ${time((project.audio.narrationOffset||0)+getAudioWindow(project,assets,'narration').duration)} · 시간 조절 필요`;else $('timingState').textContent=voice?'음성 길이에 맞춰져 있어요':project.scenes.length?'장면 시간을 자유롭게 조절하세요':'이미지를 추가해 시작하세요';}
-function renderAll(refreshInspector=true){updateField('projectTitle',project.title);updateField('aspectSelect',project.aspect);$('previewMode').textContent=`${project.aspect} · PREVIEW`;const portrait=project.aspect==='9:16';$('viewerShell').classList.toggle('portrait',portrait);const width=portrait?720:1280,height=portrait?1280:720;if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}$('emptyPreview').hidden=project.scenes.length>0;$('viewerBadge').hidden=!project.scenes.length;$('playBtn').disabled=!project.scenes.length;$('exportBtn').disabled=!project.scenes.length;$('autoDurationBtn').disabled=!project.scenes.length||!project.audio.narrationId;$('downloadSrtBtn').disabled=!getCaptions(project).length;$('subtitlesToggle').checked=project.settings.subtitles;$('brandingToggle').checked=project.settings.branding;updateField('transitionSelect',project.settings.transition);updateField('fontSizeSelect',project.settings.fontSize);$('seekSlider').max=String(Math.max(0.01,total()));$('totalTime').textContent=time(total());$('undoBtn').disabled=!history.length;$('redoBtn').disabled=!redoHistory.length;selectedIds=new Set([...selectedIds].filter(id=>project.scenes.some(s=>s.id===id)));renderSceneList();renderTimeline();if(refreshInspector)renderInspector();renderAudio();const cues=getCaptions(project);$('captionStatus').textContent=captionStatus(cues);$('autoCaptionsBtn').hidden=project.captionMode==='auto';editorTools?.render();libraryTools?.render();scriptStudio?.render();imageStudio?.render();transcriptStudio?.render();voiceStudio?.render();workspaceTabs?.render();apiSettings?.render();renderWorkflow();renderPreview();}
+function renderAll(refreshInspector=true){updateField('projectTitle',project.title);updateField('aspectSelect',project.aspect);$('previewMode').textContent=`${project.aspect} · PREVIEW`;const portrait=project.aspect==='9:16';$('viewerShell').classList.toggle('portrait',portrait);const width=portrait?720:1280,height=portrait?1280:720;if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}$('emptyPreview').hidden=project.scenes.length>0;$('viewerBadge').hidden=!project.scenes.length;$('playBtn').disabled=!project.scenes.length;$('exportBtn').disabled=!project.scenes.length;$('autoDurationBtn').disabled=!project.scenes.length||!project.audio.narrationId;$('downloadSrtBtn').disabled=!getCaptions(project).length;$('subtitlesToggle').checked=project.settings.subtitles;$('brandingToggle').checked=project.settings.branding;updateField('transitionSelect',project.settings.transition);updateField('fontSizeSelect',project.settings.fontSize);$('seekSlider').max=String(Math.max(0.01,total()));$('totalTime').textContent=time(total());$('undoBtn').disabled=!history.length;$('redoBtn').disabled=!redoHistory.length;selectedIds=new Set([...selectedIds].filter(id=>project.scenes.some(s=>s.id===id)));renderSceneList();renderTimeline();if(refreshInspector)renderInspector();renderAudio();const cues=getCaptions(project);$('captionStatus').textContent=captionStatus(cues);$('autoCaptionsBtn').hidden=project.captionMode==='auto';editorTools?.render();libraryTools?.render();scriptStudio?.render();imageStudio?.render();transcriptStudio?.render();voiceStudio?.render();workspaceTabs?.render();apiSettings?.render();sceneImageBatch?.render();renderWorkflow();renderPreview();}
 function renderPreview(){
  const empty=project.scenes.length===0;
  canvas.hidden=empty;canvas.setAttribute('aria-hidden',String(empty));$('emptyPreview').hidden=!empty;$('viewerBadge').hidden=empty;
@@ -268,31 +271,43 @@ async function hydrate(media){
 function releaseAssets(){for(const asset of assets.values()){if(asset.url)URL.revokeObjectURL(asset.url);if(typeof ImageBitmap!=='undefined'&&asset.image instanceof ImageBitmap)asset.image.close();}assets.clear();}
 function autoDuration(){const voice=assets.get(project.audio.narrationId);if(!voice)throw new Error('내레이션 파일을 먼저 추가하거나 대본으로 음성을 만들어 주세요.');if(!project.scenes.length)throw new Error('장면을 먼저 추가해 주세요.');mutate(()=>project.scenes=distributeDurations(project.scenes,(project.audio.narrationOffset||0)+getAudioWindow(project,assets,'narration').duration));toast('대본의 글자 수를 기준으로 음성 길이에 맞췄어요. 미리보기로 확인해 주세요.');}
 function refreshScriptStats(){
- const pace=project.scriptDraft?.charsPerMinute||330,stats=scriptLength($('scriptText').value,pace);
- $('scriptStats').textContent=`${stats.characters.toLocaleString()}자 · 약 ${stats.estimatedMinutes.toFixed(1)}분 (추정)`;
- $('scriptGoalMinutes').disabled=!$('scriptUseDuration').checked;
+ sceneTimingUi?.refresh();
 }
 function openScript(){
+ if(importing||exportController||timingApplying)throw new Error('현재 작업이 끝난 뒤 이미지 전환 타이밍을 정해 주세요.');
  const existing=project.scenes.map(s=>s.caption).filter(Boolean).join('\n\n');
  const draft=project.scriptDraft;
- $('scriptText').value=existing||(draft?.draftScript??draft?.result?.script??'');
+ const draftText=draft?.draftScript??draft?.result?.script,compact=text=>String(text||'').normalize('NFC').replace(/\u0000|\s/gu,'');
+ const draftChanged=project.scenePlan&&draftText!==undefined&&compact(draftText)!==compact(project.scenePlan.sourceScript);
+ const sceneTextChanged=project.scenePlan&&compact(existing)!==compact(project.scenePlan.items.map(item=>item.caption).join(''));
+ $('scriptText').value=draftChanged?draftText:sceneTextChanged?existing:existing||(draftText??'');
  $('scriptUseDuration').checked=!existing&&Boolean((draft?.draftScript??draft?.result?.script??'').trim())&&!project.audio.narrationId;
  $('scriptGoalMinutes').value=String(draft?.targetMinutes||8);
  pendingScriptTitle=!existing?draft?.result?.title||null:null;
- $('promptTopic').value=['BLKOUT 설정 이야기','새 콘텐츠 프로젝트'].includes(project.title)?'':project.title;refreshScriptStats();$('scriptDialog').showModal();
+ $('promptTopic').value=['BLKOUT 설정 이야기','새 콘텐츠 프로젝트'].includes(project.title)?'':project.title;timingGeneration++;sceneTimingUi.reset({preferExistingTimeline:true});$('scriptDialog').showModal();
 }
 function applyScriptDraft({script,title,targetMinutes}){
- if(exportController||importing)throw new Error('현재 파일 처리나 출력이 끝난 뒤 대본을 적용해 주세요.');
+ if(exportController||importing||timingApplying)throw new Error('현재 파일 처리나 타이밍 저장이 끝난 뒤 대본을 적용해 주세요.');
  pause();$('scriptText').value=script;$('scriptUseDuration').checked=!project.audio.narrationId;$('scriptGoalMinutes').value=String(targetMinutes);
- pendingScriptTitle=title||null;$('promptTopic').value=title||project.title;refreshScriptStats();$('scriptDialog').showModal();
+ pendingScriptTitle=title||null;$('promptTopic').value=title||project.title;timingGeneration++;sceneTimingUi.reset();$('scriptDialog').showModal();
 }
-function applyScript(){
+async function applyScript(){
+ if(timingApplying)return;
  const raw=$('scriptText').value.trim(),targetMinutes=Number($('scriptGoalMinutes').value);
- const targetSeconds=$('scriptUseDuration').checked?targetMinutes*60:null;
- const voice=assets.get(project.audio.narrationId),narrationSeconds=voice?(project.audio.narrationOffset||0)+getAudioWindow(project,assets,'narration').duration:0;
- const scenes=planScriptScenes(raw,project.scenes,{keepImages:$('keepImages').checked,targetSeconds,narrationSeconds});
- mutate(p=>{p.scenes=scenes;p.captionMode='auto';p.captions=[];p.scriptDraft={...(p.scriptDraft||{sourceText:'',instructions:'',charsPerMinute:330,result:null}),draftScript:raw,targetMinutes:Number.isInteger(targetMinutes)&&targetMinutes>=1&&targetMinutes<=60?targetMinutes:(p.scriptDraft?.targetMinutes||8)};if(p.scriptDraft.result)p.scriptDraft.result.script=raw;if(pendingScriptTitle)p.title=pendingScriptTitle.slice(0,120);selectedId=p.scenes[0]?.id;selectedIds=new Set(selectedId?[selectedId]:[]);current=0;});
- pendingScriptTitle=null;$('scriptDialog').close();toast(`${project.scenes.length}개 장면으로 나눴어요${targetSeconds!==null?` · 목표 ${targetMinutes}분`:''}. 장면별 이미지를 넣어주세요.`);
+ const prepared=sceneTimingUi.getPlan(),owner=workspaceCatalog?.activeId,id=project.id,request=timingGeneration;
+ const normalized=text=>String(text).normalize('NFC').replace(/\u0000|\s/gu,'');
+ const previousScript=project.scriptDraft?.draftScript??project.scriptDraft?.result?.script??project.scenes.map(scene=>scene.caption).join('');
+ const timedCaptions=getCaptions(project);
+ const preserveTimedCaptions=project.captionMode!=='auto'&&timedCaptions.length>0&&(normalized(timedCaptions.map(cue=>cue.text).join(''))===normalized(raw)||normalized(previousScript)===normalized(raw));
+ const controls=[...$('scriptDialog').querySelectorAll('input,textarea,button:not(#cancelScriptBtn):not(.icon-button)')],disabled=controls.map(control=>control.disabled);
+ timingApplying=true;$('scriptDialog').setAttribute('aria-busy','true');controls.forEach(control=>control.disabled=true);
+ try{
+  if(project.scenes.length)await archiveCurrent();
+  if(!($('scriptDialog').open&&request===timingGeneration&&project.id===id&&workspaceCatalog?.activeId===owner))return;
+  mutate(p=>{p.scenes=prepared.scenes;p.scenePlan={...prepared.scenePlan,confirmedAt:new Date().toISOString()};if(!preserveTimedCaptions){p.captionMode='auto';p.captions=[];p.captionAnalysis=null;}p.scriptDraft={...(p.scriptDraft||{sourceText:'',instructions:'',charsPerMinute:330,result:null}),draftScript:raw,targetMinutes:Number.isInteger(targetMinutes)&&targetMinutes>=1&&targetMinutes<=60?targetMinutes:(p.scriptDraft?.targetMinutes||8)};if(p.scriptDraft.result)p.scriptDraft.result.script=raw;if(pendingScriptTitle)p.title=pendingScriptTitle.slice(0,120);selectedId=p.scenes[0]?.id;selectedIds=new Set(selectedId?[selectedId]:[]);current=0;});
+  await persist();if(!($('scriptDialog').open&&request===timingGeneration&&project.id===id&&workspaceCatalog?.activeId===owner))return;pendingScriptTitle=null;$('scriptDialog').close();toast(`${project.scenes.length}개 장면의 전환 타이밍을 확정했어요. ‘확정한 장면 이미지 생성’에서 요청을 확인한 뒤 생성하세요.`);
+ }catch(error){$('sceneTimingError').textContent=error.message;throw error;}
+ finally{timingApplying=false;$('scriptDialog').setAttribute('aria-busy','false');controls.forEach((control,index)=>control.disabled=disabled[index]);if($('scriptDialog').open)sceneTimingUi.refresh();}
 }
 
 async function importSrtFile(file){
@@ -349,20 +364,21 @@ async function addReferenceImages(fileList,{role='concept'}={}){
   throw error;
  }finally{setMediaBusy(false);}
 }
-async function applyGeneratedImage({blob,name='생성 이미지.png',sceneId=null}){
+async function applyGeneratedImage({blob,name='생성 이미지.png',sceneId=null,guard=null}){
  if(importing||exportController)throw new Error('현재 파일 처리나 영상 출력이 끝난 뒤 이미지를 적용해 주세요.');
+ if(guard&&!guard())throw new Error('장면 계획이 바뀌어 이미지 적용을 취소했어요. 기존 이미지는 유지돼요.');
  if(!(blob instanceof Blob)||!blob.size)throw new Error('생성 이미지를 읽지 못했어요.');
  if(sceneId!==null&&!project.scenes.some(scene=>scene.id===sceneId))throw new Error('적용할 장면을 다시 선택해 주세요.');
  if(sceneId===null&&project.scenes.length>=200)throw new Error('장면은 최대 200개까지 만들 수 있어요.');
- ensureSpace([blob]);pause();setMediaBusy(true);let imageId;
+ ensureSpace([blob]);pause();setMediaBusy(true);let imageId,decodedAsset;
  try{
-  const asset=await decodeImage(blob,name);imageId=createId('image');assets.set(imageId,asset);
+  decodedAsset=await decodeImage(blob,name);if(guard&&!guard())throw new Error('장면 계획이 바뀌어 이미지 적용을 취소했어요. 기존 이미지는 유지돼요.');imageId=createId('image');assets.set(imageId,decodedAsset);
   mutate(p=>{
    let scene=sceneId===null?null:p.scenes.find(item=>item.id===sceneId);
    if(!scene){scene=createScene({imageId});p.scenes.push(scene);}else scene.imageId=imageId;
    selectedId=scene.id;selectedIds=new Set([scene.id]);current=getTimeline(p).scenes.find(item=>item.id===scene.id)?.start||0;
   });
- }catch(error){if(imageId)pruneAssets();throw error;}
+ }catch(error){if(imageId)pruneAssets();else if(decodedAsset?.url)URL.revokeObjectURL(decodedAsset.url);throw error;}
  finally{setMediaBusy(false);}
 }
 
@@ -472,14 +488,15 @@ on('bulkApplyBtn','click',()=>{
  if(!Object.keys(patch).length)throw new Error('한꺼번에 적용할 시간·움직임·맞춤을 선택해 주세요.');
  mutate(p=>Object.assign(p,updateScenes(p,selection(),patch)));toast(`${selectedIds.size}개 장면에 설정을 적용했어요.`);
 });
+$('scriptDialog').addEventListener('close',()=>{timingGeneration++;});
 on('timelineZoom','input',renderTimeline);
 on('workflowScriptBtn','click',()=>{if(exportController)throw new Error('영상 출력이 끝난 뒤 대본을 작성해 주세요.');$('scriptStudioBtn').click();});
 on('emptyScriptBtn','click',()=>$('workflowScriptBtn').click());
 on('workflowVoiceBtn','click',()=>openVoiceStudio());on('workflowEditBtn','click',openEditingStep);
 const toolsApi={getProject:()=>project,getAssets:()=>assets,getCurrent:()=>current,getSelectedId:()=>selectedId,getCanvas:()=>canvas,
  mutate:(action,options)=>{if(importing||exportController)throw new Error('파일 처리나 영상 출력이 끝난 뒤 편집해 주세요.');return mutate(action,options);},
- pause,seek,toast,report,renderPreview,renderAll,persist,replaceProject,addTemplateScene,applyScriptDraft,addReferenceImages,applyGeneratedImage,openVoiceStudio,openApiSettings:()=>apiSettings.open(),addNarrationFile,getWorkspaceId:()=>workspaceCatalog?.activeId||null,getWorkspaceCatalog:()=>workspaceCatalog,getWorkspaceError:()=>workspaceError,canChangeWorkspace:()=>workspaceReady&&!importing&&!exportController&&!changingWorkspace,createWorkspace,switchWorkspace,renameWorkspace,moveWorkspace,closeWorkspace,reopenWorkspace};
-apiSettings=setupApiSettings(toolsApi);editorTools=setupEditorTools(toolsApi);libraryTools=setupLibraryTools(toolsApi);scriptStudio=setupScriptStudio(toolsApi);imageStudio=setupImageStudio(toolsApi);transcriptStudio=setupTranscriptStudio(toolsApi);voiceStudio=setupVoiceStudio(toolsApi);workspaceTabs=setupWorkspaceTabs(toolsApi);
+ pause,seek,toast,report,renderPreview,renderAll,persist,replaceProject,addTemplateScene,applyScriptDraft,addReferenceImages,applyGeneratedImage,openVoiceStudio,openApiSettings:()=>apiSettings.open(),openTimingPlan:openScript,openImageStudio:()=>imageStudio.open(),canUseSceneImages:()=>!importing&&!exportController&&!changingWorkspace&&!timingApplying,addNarrationFile,getWorkspaceId:()=>workspaceCatalog?.activeId||null,getWorkspaceCatalog:()=>workspaceCatalog,getWorkspaceError:()=>workspaceError,canChangeWorkspace:()=>workspaceReady&&!importing&&!exportController&&!changingWorkspace,createWorkspace,switchWorkspace,renameWorkspace,moveWorkspace,closeWorkspace,reopenWorkspace};
+apiSettings=setupApiSettings(toolsApi);editorTools=setupEditorTools(toolsApi);libraryTools=setupLibraryTools(toolsApi);scriptStudio=setupScriptStudio(toolsApi);imageStudio=setupImageStudio(toolsApi);sceneImageBatch=setupSceneImageBatch(toolsApi);sceneTimingUi=setupSceneTimingUi({getProject:()=>project,getNarrationDuration:()=>assets.get(project.audio.narrationId)?(project.audio.narrationOffset||0)+getAudioWindow(project,assets,'narration').duration:0,getTimedCaptions:()=>project.captionMode==='auto'?[]:getCaptions(project)});transcriptStudio=setupTranscriptStudio(toolsApi);voiceStudio=setupVoiceStudio(toolsApi);workspaceTabs=setupWorkspaceTabs(toolsApi);
 const shortcuts=el('p','keyboard-help','단축키: Space 재생 · Ctrl/Cmd+Z 되돌리기 · Ctrl/Cmd+Shift+Z 다시 실행 · Ctrl/Cmd+D 장면 복제 · Ctrl/Cmd+A 전체 선택 · Ctrl/Cmd+C/V 장면 설정 복사/붙이기 · Delete 선택 장면 삭제 · ←/→ 0.1초 이동 (Shift: 1초) · PageUp/Down 이전/다음 장면. 입력칸에서는 일반 글 편집이 우선이에요.');
 $('helpDialog').querySelector('.dialog-body').append(shortcuts);
 boot().catch(report);

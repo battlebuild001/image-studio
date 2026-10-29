@@ -48,6 +48,28 @@ function imageBlob(value) {
   return new Blob([bytes],{type:'image/png'});
 }
 
+/** Share the exact reference-pixel preparation used by single and timed scene generation. */
+export async function prepareReferenceImageRequest({settings,assets,prompt=settings?.prompt,signal}={}) {
+  if(!settings||!(assets instanceof Map))throw new Error('고정 레퍼런스 설정을 확인해 주세요.');
+  const value={prompt,background:settings.background||'',style:settings.style||'',negativePrompt:settings.negativePrompt||'',size:settings.size||'1536x864',quality:settings.quality||'medium'};
+  for(const[key,max,label]of [['prompt',10000,'장면 요청'],['background',20000,'배경 설정'],['style',4000,'화풍'],['negativePrompt',2000,'피할 요소']])if(typeof value[key]!=='string'||count(value[key])>max)throw new Error(`${label}의 길이나 형식을 확인해 주세요.`);
+  if(!value.prompt.trim())throw new Error('장면 이미지 요청을 입력해 주세요.');
+  if(!SIZES.some(([size])=>size===value.size)||!['low','medium','high'].includes(value.quality))throw new Error('이미지 비율과 품질을 확인해 주세요.');
+  const selected=(settings.references||[]).filter(reference=>reference.enabled!==false).map(reference=>({...reference})).sort((a,b)=>(a.role==='concept'?0:1)-(b.role==='concept'?0:1));
+  if(!selected.length||selected.length>MAX_REFERENCES)throw new Error('생성에 사용할 고정 레퍼런스를 1~5장 선택해 주세요.');
+  const total=selected.reduce((bytes,reference)=>bytes+(assets.get(reference.assetId)?.blob?.size||0),0);
+  if(total>MAX_TOTAL_BYTES||selected.some(reference=>(assets.get(reference.assetId)?.blob?.size||0)>MAX_FILE_BYTES))throw new Error('레퍼런스 원본은 한 장 10MB, 합계 20MB 이하로 준비해 주세요.');
+  const references=[];for(const reference of selected){checkAbort(signal);references.push(await normalizedReference(assets.get(reference.assetId),reference,signal));}
+  checkAbort(signal);return{...value,references};
+}
+
+/** Decode and validate the actual PNG before any timed slot is changed. */
+export async function decodeReferenceImageResult(value,{signal}={}) {
+  const blob=imageBlob(value?.image),url=URL.createObjectURL(blob),image=new Image();
+  try{checkAbort(signal);image.src=url;await image.decode();checkAbort(signal);if(!image.naturalWidth||!image.naturalHeight||image.naturalWidth*image.naturalHeight>40_000_000)throw new Error('생성 이미지 크기를 확인해 주세요.');return{blob,name:safeFilename(value.image.name||'reference-generated.png'),width:image.naturalWidth,height:image.naturalHeight};}
+  finally{URL.revokeObjectURL(url);}
+}
+
 /** Persistent concepts and actual reference pixels are used together on each explicit generation. */
 export function setupImageStudio(api) {
   if(!$('imageStudioStyles')){const style=node('link');style.id='imageStudioStyles';style.rel='stylesheet';style.href=new URL('./image-studio.css',import.meta.url).href;document.head.append(style);}
@@ -210,7 +232,8 @@ export function setupImageStudio(api) {
     try{await api.applyGeneratedImage({blob:lastResult.blob,name:lastResult.name,sceneId});dialog.close();api.toast(sceneId?'선택한 장면 이미지를 바꿨어요.':'생성 이미지를 새 장면으로 추가했어요.');}
     finally{setBusy(false);}
   }
-  open.addEventListener('click',run(async()=>{api.pause();showError('',false);render();dialog.showModal();refreshActions();if(!connectionChecked)await checkConnection();}));
+  async function openDialog(){api.pause();showError('',false);render();if(!dialog.open)dialog.showModal();refreshActions();if(!connectionChecked)await checkConnection();}
+  open.addEventListener('click',run(openDialog));
   configure.addEventListener('click',run(configureConnection));refresh.addEventListener('click',run(checkConnection));upload.addEventListener('click',event=>{event.preventDefault();if(!busy)input.click();});input.addEventListener('change',run(addFiles));fromScene.addEventListener('click',run(addSelected));
   useCaption.addEventListener('click',run(()=>{const scene=api.getProject().scenes.find(item=>item.id===api.getSelectedId());if(scene?.caption){prompt.input.value=scene.caption;queueSave();}}));
   generate.addEventListener('click',run(generateImage));cancel.addEventListener('click',()=>stop());copy.addEventListener('click',run(async()=>{flush();await copyText(promptText());api.toast('요청문을 복사했어요. 외부 서비스에는 레퍼런스 이미지 파일도 함께 첨부하세요.');}));
@@ -230,5 +253,5 @@ export function setupImageStudio(api) {
   }
   function reset(){stop('');cancelConnectionCheck();clearTimeout(timer);timer=0;releaseResult();for(const url of ownThumbs.values())URL.revokeObjectURL(url);ownThumbs.clear();if(dialog.open)dialog.close();projectId=api.getProject().id;draft=clone(api.getProject().imageStudio||defaults());fingerprint=JSON.stringify(draft);hydrate();}
   hydrate();
-  return{render,flush,reset};
+  return{open:openDialog,render,flush,reset};
 }

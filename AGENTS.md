@@ -10,6 +10,7 @@ Keep the default workflow free from paid video-generation APIs and preserve the
 Korean interface. Manual draft editing and document extraction work without APIs.
 Optional researched script creation, CLOVA voice synthesis, fixed-reference image
 generation and narration transcription use providers only on explicit actions.
+Users choose an image-change interval, review and confirm the timeline, then explicitly authorize sequential image generation for its slots. Sentence count must not automatically determine new image slots.
 Users configure their own OpenAI key in the app Settings for browser-direct script, image and timestamped transcription requests; Render is optional.
 Category workspaces keep independent in-progress projects; users can add their
 own topics beyond the four defaults. Keep branding and new-project titles neutral.
@@ -33,6 +34,9 @@ own topics beyond the four defaults. Keep branding and new-project titles neutra
 - `dist/api-client.js` and `dist/api-settings.js` / `.css`: global app Settings for personal OpenAI API keys/models and optional authenticated server connection. Keys are memory-only by default; explicit remember-for-tab consent permits sessionStorage, never localStorage or project/backups. Backend endpoint may remain in localStorage and app access code only in sessionStorage.
 - `dist/direct-openai.js`: browser requests to fixed HTTPS api.openai.com endpoints, without custom destinations, redirects or automatic paid retries.
 - `dist/script-protocol.js`, `dist/transcript-protocol.js`, `dist/image-prompt.js`: browser-safe shared request/response validation and reference-image prompt construction. Preserve real search/citation and speech timestamp requirements in both transports.
+- `dist/script-planning.js`: fixed-interval timeline construction, script/cue placement, narration signature and stale-plan checks.
+- `dist/scene-timing-ui.js` / `.css`: preview-only image cadence/duration/count review before explicit confirmation.
+- `dist/scene-image-batch.js` / `.css`: reviewed, confirmed-plan image generation, sequential application to existing slot IDs, safe cancellation and explicit resumption.
 - `dist/script-studio.js` / `.css`: actual AI rewriting of reference files/text and user production instructions, target duration,
   always-available manual draft editing, researched results, sources and handoff.
 - `dist/script-local-files.js` and `dist/vendor/`: local TXT/MD/PDF/DOCX extraction
@@ -81,6 +85,9 @@ extraction need no API key. Image generation and transcription add no package de
   Chromium IndexedDB and media roundtrips to verify isolation and migration.
 - Script-to-voice workflow regression: `npm run test:voice-browser`. Synthetic
   MP3/WAV and mocked API responses do not establish live Korean TTS quality.
+- Timing preview regression: `npm run test:scene-timing-browser`.
+- Confirmed-scene image batch regression: `npm run test:scene-batch-browser`.
+- Whole timed-scene workflow regression: `npm run test:timed-workflow-browser`.
 - Reference-image browser regression: `npm run test:image-browser`. Fixture-based
   AI responses verify UI behavior, never live model/search/image quality.
 - Narration-caption browser regression: `npm run test:transcript-browser`. Real
@@ -194,18 +201,49 @@ for credential values in chat. Inspect configured presence without exposing valu
 - Image requests must contain the actual enabled images, locally resized to a
   1536px maximum long edge, plus their ordered roles and the saved settings.
   Never replace reference bytes with names or a text-only prompt and call it
-  reference-conditioned generation. Generation produces one preview at a time.
-  Offer PNG downloads; only explicit Apply places results in existing/new scenes. Preserve
-  settings, source media and previous results on validation/provider errors,
-  cancellation and stale project responses. Do not guarantee identical likeness.
-  Prompt-copy fallback requires the user to attach the reference files manually.
+  reference-conditioned generation. The manual one-image tool stages one preview at
+  a time; only explicit Apply places it in an existing/new scene, and PNG download
+  remains available. The separately authorized confirmed-plan batch may instead
+  generate and apply one image at a time to its existing scene IDs after the user
+  reviews all prompts/references/settings/count and checks its acknowledgement.
+  Preserve settings, source media and completed results on validation/provider
+  errors, cancellation and stale project responses. Do not guarantee identical
+  likeness. Prompt-copy fallback requires attaching the actual references manually.
 - Reference files: TXT/MD/PDF/DOCX, at most 10MiB each, 5 files/20MiB per batch,
   and at most 100,000 combined text characters. Scanned/image PDFs have no OCR.
   Preserve user input on extraction failure; never silently truncate it.
 - Script target duration is an integer 1..60 minutes; reading speed is 200..500
   non-whitespace characters/minute (defaults 8 minutes and 330 characters/minute).
-  Generated duration is an estimate. Applying a draft sets the requested scene
-  duration and groups long scripts to keep the 200-scene limit.
+  Generated duration is an estimate. New image slot count follows the user's
+  interval between images (default 10 seconds), never paragraph/sentence count.
+  At 8 minutes, a 10-second interval creates 48 slots and 20 seconds creates 24. Preview must not mutate scenes or call any
+  image API; explicit timing confirmation creates/replaces only the planned slots.
+  The 200-scene limit requires an actionable request to increase the interval,
+  never a silently changed cadence or appended leftover image scenes.
+- Scene planning is explicitly staged: interval/duration -> review timestamps and
+  slot count -> confirm -> review per-slot visual requests, references/settings and
+  actual request count -> acknowledge and start paid generation. Existing loaded
+  projects (including old drafts with 157 slots) are never automatically replanned or
+  generated. The panel count is scene slots, not generated-image/API-call count.
+  Archive the existing project/media to the library before explicit retiming and
+  retain undo/backups; a failed archive must leave the current work untouched.
+- Optional project.scenePlan is compatible with schema version 1 and persists bounded
+  confirmedAt/sourceScript/interval/duration/basis/narrationKey/items with expected
+  scene IDs, start/end times, captions and editable prompts. Keep stale plans saved
+  for undo, but block generation until changes to script, scene order/timing or
+  narration/trim are reviewed and confirmed again. Image-only application does
+  not invalidate timing; never generate extra scenes or change durations in a batch.
+- Batch generation skips filled slots by default; replacing existing images is an
+  explicit opt-in. Show each time range and the resulting request count, require
+  the review acknowledgement, then issue sequential image requests only after
+  Start. Apply each successful result to its exact planned scene; preserve completed
+  results on Stop/error/stale changes and stop future requests. No automatic paid
+  retry, restart or resumption. Resuming requires a new review and explicit Start.
+- Preserve matching speech/SRT captions and their actual times during retiming.
+  Use cue-based script placement only when cue text matches the complete draft and
+  lies within the selected narration/current timeline. Otherwise use a clearly
+  labelled proportional text estimate without claiming speech recognition or
+  silently dropping source text. Duration/cadence changes never fabricate ASR.
 - Keep the right-hand draft editor usable with no AI backend or key. Treat absent
   optional APIs on static Pages as normal informational state, not a generic red
   failure. Store manual text in schema-version-1 `project.scriptDraft.draftScript`
@@ -293,6 +331,17 @@ For optional research, test duration estimates, validated source links, cancella
 draft restoration and handoff to scene creation. API/unit/browser fixtures must
 not be described as verified live AI generation. Without configured credentials,
 finish independent tests and report live web-search/generation as unverified.
+For timing/batch changes, verify 157-sentence text becomes48slots at8minutes/10s,
+partial final intervals, all-text preservation, <=200 bounds and stable preview IDs.
+Verify no mutation/provider call before confirmation and no image call on timing
+confirmation; old project/media archival precedes retiming. Exercise per-slot prompt
+review, required acknowledgement, exact scene/time application, skip/replace,
+partial completion/error/cancel, explicit resume, stale reference/script/voice
+rejection, and plan retention in workspace/library/backups/undo. Matching speech/SRT
+keeps actual cue times; mismatched text falls back without fake alignment.
+Use npm run test:scene-timing-browser, test:scene-batch-browser and
+test:timed-workflow-browser plus npm test. Synthetic image fixtures do not prove
+live generation quality, model permissions, per-image pricing or billing.
 For fixed references, verify original Blob roundtrips, disabled-reference retention,
 shared scene/reference IDs, undo/redo and reference-only archives. Inspect mocked
 provider requests for real image bytes and ordered roles. Verify preview download,

@@ -24,7 +24,10 @@
     "test:api-settings-browser": "node tests/api-settings.browser.cjs",
     "test:ai-workflow-browser": "node tests/ai-connection-workflow.browser.cjs",
     "test:image-connection-browser": "node tests/image-ai-connection.browser.cjs",
-    "test:direct-api-browser": "node tests/direct-api-settings.browser.cjs"
+    "test:direct-api-browser": "node tests/direct-api-settings.browser.cjs",
+    "test:scene-timing-browser": "node tests/scene-timing-ui.browser.cjs",
+    "test:scene-batch-browser": "node tests/scene-image-batch.browser.cjs",
+    "test:timed-workflow-browser": "node tests/timed-scenes-workflow.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",
