@@ -1,3 +1,4 @@
+const {reveal}=require('./ui-navigation.browser.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -61,7 +62,7 @@ const url = process.env.STUDIO_URL || 'http://127.0.0.1:4173/';
     assert.ok(combined.rms > .001);assert.equal(combined.mp3Frames, combined.expectedMp3Frames);assert.equal(combined.aborted, true);assert.equal(combined.invalid, true);
     console.log('PASS actual WAV and MP3 decoding/continuous mono PCM merge, exact sample counts, invalid input and pre-abort');
 
-    configured = true;await page.locator('#workflowVoiceBtn').click();await ready();assert.equal(requests.length, 0);
+    configured = true;await reveal(page, '#workflowVoiceBtn');await page.locator('#workflowVoiceBtn').click();await ready();assert.equal(requests.length, 0);
     await page.locator('#generateVoiceBtn').click();await page.waitForFunction(() => !document.querySelector('#applyVoiceBtn').disabled);
     assert.equal(requests.length, 1);assert.deepEqual(Object.keys(requests[0]).sort(), ['pitch', 'speaker', 'speed', 'text', 'volume']);assert.equal(requests[0].text, text);
     project = await stored();assert.equal(project.audio.narrationId, null);
@@ -82,7 +83,7 @@ const url = process.env.STUDIO_URL || 'http://127.0.0.1:4173/';
     project = await stored();assert.equal(project.audio.narrationId, appliedId);assert.equal(project.scriptDraft.draftScript, text);
     console.log('PASS explicit generation, preview/download, narration Apply and actual-length video handoff/reload');
 
-    await page.locator('#workflowVoiceBtn').click();await ready();mode = 'success';await page.locator('#generateVoiceBtn').click();await page.waitForFunction(() => !document.querySelector('#applyVoiceBtn').disabled);
+    await reveal(page, '#workflowVoiceBtn');await page.locator('#workflowVoiceBtn').click();await ready();mode = 'success';await page.locator('#generateVoiceBtn').click();await page.waitForFunction(() => !document.querySelector('#applyVoiceBtn').disabled);
     const previousUrl = await page.locator('#voiceResultAudio').getAttribute('src');mode = 'error';await page.locator('#generateVoiceBtn').click();
     await page.waitForFunction(() => document.querySelector('#voiceError').textContent.includes('모의 음성 생성 실패'));
     assert.equal(await page.locator('#voiceResultAudio').getAttribute('src'), previousUrl);assert.equal((await stored()).audio.narrationId, appliedId);

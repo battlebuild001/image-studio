@@ -1,3 +1,4 @@
+const {reveal}=require('./ui-navigation.browser.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -56,7 +57,7 @@ const {chromium} = require('playwright');
     await page.waitForFunction(() => document.querySelector('#saveState').textContent.includes('자동 저장됨'));
     return page.evaluate(async () => {const {loadProject} = await import('/project.js');return (await loadProject()).project;});
   };
-  const change = async (id, value) => {await page.locator(`#${id}`).fill(value);await page.locator(`#${id}`).dispatchEvent('change');};
+  const change = async (id, value) => {await reveal(page, `#${id}`);await page.locator(`#${id}`).fill(value);await page.locator(`#${id}`).dispatchEvent('change');};
   const closedSettings = async () => {await page.locator('#closeApiSettingsBtn').click();await page.locator('#apiSettingsDialog').waitFor({state: 'hidden'});};
   const completed = () => page.waitForFunction(() => document.querySelector('#imageStudioDialog').getAttribute('aria-busy') === 'false');
   const pixels = async (encoded, original) => page.evaluate(async ({encoded, original}) => {
@@ -72,7 +73,7 @@ const {chromium} = require('playwright');
   }, {encoded, original});
   try {
     await page.goto(base.href, {waitUntil: 'networkidle'});await ready();
-    await page.locator('#imageStudioBtn').click();await page.waitForFunction(() => document.querySelector('#imageServiceState').dataset.state === 'unavailable');
+    await reveal(page, '#imageStudioBtn');await page.locator('#imageStudioBtn').click();await page.waitForFunction(() => document.querySelector('#imageServiceState').dataset.state === 'unavailable');
     assert.equal(await page.locator('#generateReferenceImageBtn').innerText(), 'AI 연결 설정');assert.equal(await page.locator('#generateReferenceImageBtn').isEnabled(), true);
     await page.locator('#generateReferenceImageBtn').click();await page.locator('#apiSettingsDialog').waitFor({state: 'visible'});
     assert.equal(await page.locator('#imageStudioDialog').evaluate(dialog => dialog.open), true);assert.deepEqual(posts, []);await closedSettings();
@@ -132,14 +133,14 @@ const {chromium} = require('playwright');
     assert.equal(requests.length, 5);assert.equal(requests.at(-1).body.references.length, 1);assert.equal(requests.at(-1).body.references[0].role, 'concept');
     await page.locator('#generatedImageTarget').selectOption('new');await page.locator('#applyGeneratedImageBtn').click();await page.locator('#imageStudioDialog').waitFor({state: 'hidden'});
     const project = await saved();assert.equal(project.scenes.length, 1);assert.equal(project.imageStudio.references.length, 2);assert.equal(project.imageStudio.references[0].enabled, false);assert.equal(project.audio.narrationId, null);
-    const event = page.waitForEvent('download');await page.locator('#backupBtn').click();const download = await event;
+    const event = page.waitForEvent('download');await reveal(page, '#backupBtn');await page.locator('#backupBtn').click();const download = await event;
     await download.saveAs('/tmp/image-ai-connected-backup.bth.json');const backupText = await fs.readFile('/tmp/image-ai-connected-backup.bth.json', 'utf8'), backup = JSON.parse(backupText);
     assert.equal(backup.project.scenes.length, 1);assert.equal(backup.project.imageStudio.references.length, 2);assert.equal(backup.assets.length, 3);
     assert.equal(backupText.includes(appCode), false);assert.equal(backupText.includes(backend), false);assert.equal(backupText.includes('bth-studio-api-'), false);
     for (const [reference, bytes] of [[project.imageStudio.references[0], originalBackground], [project.imageStudio.references[1], originalConcept]]) {
       assert.equal(backup.assets.find(asset => asset.id === reference.assetId).data, bytes);
     }
-    await page.reload({waitUntil: 'networkidle'});await ready();await page.locator('#imageStudioBtn').click();
+    await page.reload({waitUntil: 'networkidle'});await ready();await reveal(page, '#imageStudioBtn');await page.locator('#imageStudioBtn').click();
     await page.waitForFunction(() => document.querySelector('#imageServiceState').dataset.state === 'ready');assert.equal(await page.locator('.image-reference-card').count(), 2);
     assert.equal(await page.locator('#imageBackground').inputValue(), '고정 배경: 항구 도시의 지형과 조명을 유지합니다.');
     assert.equal(await page.getByLabel('1번 레퍼런스 생성에 참조', {exact: true}).isChecked(), false);assert.equal(requests.length, 5);

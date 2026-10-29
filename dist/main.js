@@ -12,11 +12,12 @@ import {initializeWorkspaces,loadWorkspace,saveWorkspaceProject,activateWorkspac
 import {getScenePlanStatus} from './script-planning.js';
 import {setupSceneTimingUi} from './scene-timing-ui.js';
 import {setupSceneImageBatch} from './scene-image-batch.js';
+import {setupStudioLayout} from './studio-layout.js';
 
 const $=id=>document.getElementById(id);
 let project=createProject(),assets=new Map(),selectedId=null,history=[],current=0,playing=false,frameId=0,playStart=0,playOffset=0;
 let playGeneration=0,playPending=false;
-let redoHistory=[],selectedIds=new Set(),copiedSettings=null,previewAudio=null,editorTools=null,libraryTools=null,scriptStudio=null,imageStudio=null,transcriptStudio=null,voiceStudio=null,apiSettings=null,sceneTimingUi=null,sceneImageBatch=null,pendingScriptTitle=null,timingApplying=false,timingGeneration=0;
+let redoHistory=[],selectedIds=new Set(),copiedSettings=null,previewAudio=null,editorTools=null,libraryTools=null,scriptStudio=null,imageStudio=null,transcriptStudio=null,voiceStudio=null,apiSettings=null,sceneTimingUi=null,sceneImageBatch=null,studioLayout=null,pendingScriptTitle=null,timingApplying=false,timingGeneration=0;
 let narration=new Audio(),bgm=new Audio(),saveTimer=0,saveChain=Promise.resolve(),revision=0,savedRevision=0,exportController=null,exportURL=null,importing=false;
 let workspaceCatalog=null,workspaceTabs=null,workspaceReady=false,changingWorkspace=false,workspaceError='';
 const canvas=$('previewCanvas'),ctx=canvas.getContext('2d',{alpha:false});
@@ -100,13 +101,18 @@ function spokenScript(){
  return draft?.result?.script??project.scenes.map(scene=>scene.caption).filter(Boolean).join('\n\n');
 }
 function renderWorkflow(){
- const hasScript=!!spokenScript().trim(),hasVoice=!!assets.get(project.audio.narrationId),blocked=importing||!!exportController;
- $('workflowScriptBtn').disabled=blocked;$('workflowVoiceBtn').disabled=blocked||!hasScript;$('workflowEditBtn').disabled=blocked||(!hasScript&&!project.scenes.length);
- $('workflowScriptState').textContent=hasScript?'대본 저장됨':'음성 API 없이 작성';
- $('workflowVoiceState').textContent=hasVoice?'내레이션 준비됨':hasScript?'대본으로 음성 만들기':'대본 작성 후 진행';
- $('workflowEditState').textContent=getScenePlanStatus(project).valid?`${project.scenes.length}개 장면 · ${project.scenePlan.intervalSeconds}초 전환`:project.scriptDraft?.draftScript?.trim()?'이미지 전환 타이밍 정하기':project.scenes.length?`${project.scenes.length}개 장면 편집`:'이미지 · 자막 · 영상 저장';
- const step=project.scenes.length?3:hasScript?2:1;
- for(const [index,id]of['workflowScriptBtn','workflowVoiceBtn','workflowEditBtn'].entries()){
+ const hasScript=!!spokenScript().trim(),hasVoice=!!assets.get(project.audio.narrationId),hasScenes=project.scenes.length>0,blocked=importing||!!exportController||timingApplying;
+ const planned=getScenePlanStatus(project),filled=project.scenes.filter(scene=>scene.imageId&&assets.has(scene.imageId)).length;
+ $('workflowScriptBtn').disabled=blocked;$('workflowVoiceBtn').disabled=blocked||!hasScript;
+ $('workflowTimingBtn').disabled=blocked||(!hasScript&&!project.scenes.some(scene=>scene.caption.trim()));
+ $('workflowImagesBtn').disabled=blocked||!planned.valid;$('workflowEditBtn').disabled=blocked||!hasScenes;
+ $('workflowScriptState').textContent=hasScript?'대본 준비됨':'자료로 대본 작성';
+ $('workflowVoiceState').textContent=hasVoice?'내레이션 준비됨':hasScript?'대본으로 만들기':'대본 작성 후 사용';
+ $('workflowTimingState').textContent=planned.valid?`${project.scenePlan.intervalSeconds}초 · ${project.scenes.length}장면`:project.scenePlan?'타이밍 다시 확인':'길이·전환 간격';
+ $('workflowImagesState').textContent=hasScenes?`이미지 ${filled}/${project.scenes.length}`:'확정 후 생성';
+ $('workflowEditState').textContent=hasScenes?'미리보기·내보내기':'장면 구성 후 편집';
+ const step=!hasScript&&!hasScenes?1:planned.valid&&filled<project.scenes.length?3:hasScenes&&filled===project.scenes.length?4:hasScript?2:4;
+ for(const [index,id] of ['workflowScriptBtn','workflowTimingBtn','workflowImagesBtn','workflowEditBtn'].entries()){
   const element=$(id);element.classList.toggle('is-current',index+1===step);if(index+1===step)element.setAttribute('aria-current','step');else element.removeAttribute('aria-current');
  }
 }
@@ -122,7 +128,6 @@ async function addNarrationFile(file){
 }
 function openEditingStep(){
  if(importing||exportController)throw new Error('파일 처리나 영상 출력이 끝난 뒤 편집해 주세요.');
- if(project.scenes.length&&project.scriptDraft?.draftScript?.trim()&&!getScenePlanStatus(project).valid)return openScript();
  if(!project.scenes.length){const text=spokenScript();if(!text.trim())throw new Error('대본을 먼저 입력해 주세요.');return applyScriptDraft({script:text,title:project.scriptDraft?.result?.title||project.title,targetMinutes:project.scriptDraft?.targetMinutes||8});}
  pause();canvas.scrollIntoView({behavior:'smooth',block:'center'});$('imageDropzone').focus();
 }
@@ -184,7 +189,7 @@ function renderTimeline(){
 }
 function renderInspector(){const scene=selected();$('inspectorEmpty').hidden=!!scene;$('inspectorContent').hidden=!scene;$('selectedId').textContent=scene?String(project.scenes.indexOf(scene)+1).padStart(2,'0'):'—';if(!scene)return;const holder=$('selectedImage');holder.replaceChildren();const asset=assets.get(scene.imageId);if(asset?.url){const image=el('img');image.src=asset.url;image.alt=`선택 장면 이미지: ${asset.name}`;holder.append(image);}else holder.append(el('span','','이미지가 없는 장면'));updateField('sceneCaption',scene.caption);$('sceneCaption').disabled=project.captionMode!=='auto';$('sceneCaption').title=project.captionMode!=='auto'?'별도 시간 자막을 사용 중이에요. 대본 자막으로 전환하면 이 문장이 표시돼요.':'';updateField('sceneDuration',Number(scene.duration.toFixed(2)));updateField('sceneMotion',scene.motion);updateField('sceneFit',scene.fit);$('moveUpBtn').disabled=project.scenes.indexOf(scene)===0;$('moveDownBtn').disabled=project.scenes.indexOf(scene)===project.scenes.length-1;}
 function renderAudio(){const voice=assets.get(project.audio.narrationId),music=assets.get(project.audio.bgmId);$('narrationInfo').textContent=voice?`${time(voice.duration)} · ${voice.name}`:'MP3 · WAV 파일을 넣어주세요';$('narrationBtn').textContent=voice?'음성 파일 교체':'음성 파일 추가';$('removeNarrationBtn').hidden=!voice;$('bgmInfo').textContent=music?`${time(music.duration)} · ${music.name}`:'설명 뒤에 잔잔하게 깔아주세요';$('bgmBtn').textContent=music?'음악 교체':'음악 추가';$('removeBgmBtn').hidden=!music;updateField('bgmVolume',Math.round(project.settings.bgmVolume*100));$('bgmVolumeLabel').textContent=`${Math.round(project.settings.bgmVolume*100)}%`;const length=total();if(voice&&Math.abs(length-((project.audio.narrationOffset||0)+getAudioWindow(project,assets,'narration').duration))>0.15)$('timingState').textContent=`영상 ${time(length)} / 음성 ${time((project.audio.narrationOffset||0)+getAudioWindow(project,assets,'narration').duration)} · 시간 조절 필요`;else $('timingState').textContent=voice?'음성 길이에 맞춰져 있어요':project.scenes.length?'장면 시간을 자유롭게 조절하세요':'이미지를 추가해 시작하세요';}
-function renderAll(refreshInspector=true){updateField('projectTitle',project.title);updateField('aspectSelect',project.aspect);$('previewMode').textContent=`${project.aspect} · PREVIEW`;const portrait=project.aspect==='9:16';$('viewerShell').classList.toggle('portrait',portrait);const width=portrait?720:1280,height=portrait?1280:720;if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}$('emptyPreview').hidden=project.scenes.length>0;$('viewerBadge').hidden=!project.scenes.length;$('playBtn').disabled=!project.scenes.length;$('exportBtn').disabled=!project.scenes.length;$('autoDurationBtn').disabled=!project.scenes.length||!project.audio.narrationId;$('downloadSrtBtn').disabled=!getCaptions(project).length;$('subtitlesToggle').checked=project.settings.subtitles;$('brandingToggle').checked=project.settings.branding;updateField('transitionSelect',project.settings.transition);updateField('fontSizeSelect',project.settings.fontSize);$('seekSlider').max=String(Math.max(0.01,total()));$('totalTime').textContent=time(total());$('undoBtn').disabled=!history.length;$('redoBtn').disabled=!redoHistory.length;selectedIds=new Set([...selectedIds].filter(id=>project.scenes.some(s=>s.id===id)));renderSceneList();renderTimeline();if(refreshInspector)renderInspector();renderAudio();const cues=getCaptions(project);$('captionStatus').textContent=captionStatus(cues);$('autoCaptionsBtn').hidden=project.captionMode==='auto';editorTools?.render();libraryTools?.render();scriptStudio?.render();imageStudio?.render();transcriptStudio?.render();voiceStudio?.render();workspaceTabs?.render();apiSettings?.render();sceneImageBatch?.render();renderWorkflow();renderPreview();}
+function renderAll(refreshInspector=true){updateField('projectTitle',project.title);updateField('aspectSelect',project.aspect);$('previewMode').textContent=`${project.aspect} · PREVIEW`;const portrait=project.aspect==='9:16';$('viewerShell').classList.toggle('portrait',portrait);const width=portrait?720:1280,height=portrait?1280:720;if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}$('emptyPreview').hidden=project.scenes.length>0;$('viewerBadge').hidden=!project.scenes.length;$('playBtn').disabled=!project.scenes.length;$('exportBtn').disabled=!project.scenes.length;$('autoDurationBtn').disabled=!project.scenes.length||!project.audio.narrationId;$('downloadSrtBtn').disabled=!getCaptions(project).length;$('subtitlesToggle').checked=project.settings.subtitles;$('brandingToggle').checked=project.settings.branding;updateField('transitionSelect',project.settings.transition);updateField('fontSizeSelect',project.settings.fontSize);$('seekSlider').max=String(Math.max(0.01,total()));$('totalTime').textContent=time(total());$('undoBtn').disabled=!history.length;$('redoBtn').disabled=!redoHistory.length;selectedIds=new Set([...selectedIds].filter(id=>project.scenes.some(s=>s.id===id)));renderSceneList();renderTimeline();if(refreshInspector)renderInspector();renderAudio();const cues=getCaptions(project);$('captionStatus').textContent=captionStatus(cues);$('autoCaptionsBtn').hidden=project.captionMode==='auto';editorTools?.render();libraryTools?.render();scriptStudio?.render();imageStudio?.render();transcriptStudio?.render();voiceStudio?.render();workspaceTabs?.render();apiSettings?.render();sceneImageBatch?.render();studioLayout?.render();renderWorkflow();renderPreview();}
 function renderPreview(){
  const empty=project.scenes.length===0;
  canvas.hidden=empty;canvas.setAttribute('aria-hidden',String(empty));$('emptyPreview').hidden=!empty;$('viewerBadge').hidden=empty;
@@ -446,9 +451,9 @@ on('scriptBtn','click',openScript);on('cancelScriptBtn','click',()=>$('scriptDia
 document.addEventListener('paste',e=>{if(exportController||document.querySelector('dialog[open]'))return;const images=[...(e.clipboardData?.items||[])].filter(item=>item.type.startsWith('image/')).map(item=>item.getAsFile()).filter(Boolean);if(images.length){e.preventDefault();addImages(images).catch(report);}});
 let dragDepth=0;document.addEventListener('dragenter',e=>{if(e.dataTransfer.types.includes('Files')){dragDepth++;if(!e.target.closest?.('.audio-card'))$('globalDropOverlay').hidden=false;}});document.addEventListener('dragleave',()=>{dragDepth=Math.max(0,dragDepth-1);if(!dragDepth)$('globalDropOverlay').hidden=true;});document.addEventListener('dragover',e=>{if(e.dataTransfer.types.includes('Files'))e.preventDefault();});document.addEventListener('drop',e=>{dragDepth=0;$('globalDropOverlay').hidden=true;if(e.dataTransfer.files.length){e.preventDefault();if(exportController||document.querySelector('dialog[open]'))return;const files=[...e.dataTransfer.files];if(files.some(f=>f.type.startsWith('image/')))addImages(files).catch(report);else if(files[0].type.startsWith('audio/'))addAudio(files[0],'narration').catch(report);else toast('이미지 파일을 놓거나, 음성은 아래 음성 영역에 놓아주세요.',true);}});
 document.addEventListener('keydown',e=>{
- if(e.defaultPrevented||e.target.closest?.('input,textarea,select,[contenteditable=true],[role=tab]')||document.querySelector('dialog[open]')||exportController||importing)return;
+ if(e.defaultPrevented||e.target.closest?.('input,textarea,select,summary,[contenteditable=true],[role=tab]')||document.querySelector('dialog[open]')||exportController||importing)return;
  const mod=e.ctrlKey||e.metaKey,key=e.key.toLowerCase();
- if(!mod&&e.code==='Space'&&e.target.closest?.('button'))return;
+ if(!mod&&e.code==='Space'&&e.target.closest?.('button,summary,[role=button]'))return;
  try{
   if(mod&&key==='z'){e.preventDefault();e.shiftKey?redo():undo();}
   else if(mod&&key==='y'){e.preventDefault();redo();}
@@ -492,11 +497,11 @@ $('scriptDialog').addEventListener('close',()=>{timingGeneration++;});
 on('timelineZoom','input',renderTimeline);
 on('workflowScriptBtn','click',()=>{if(exportController)throw new Error('영상 출력이 끝난 뒤 대본을 작성해 주세요.');$('scriptStudioBtn').click();});
 on('emptyScriptBtn','click',()=>$('workflowScriptBtn').click());
-on('workflowVoiceBtn','click',()=>openVoiceStudio());on('workflowEditBtn','click',openEditingStep);
+on('workflowVoiceBtn','click',()=>openVoiceStudio());on('workflowTimingBtn','click',openScript);on('workflowImagesBtn','click',()=>sceneImageBatch.open());on('workflowEditBtn','click',openEditingStep);
 const toolsApi={getProject:()=>project,getAssets:()=>assets,getCurrent:()=>current,getSelectedId:()=>selectedId,getCanvas:()=>canvas,
  mutate:(action,options)=>{if(importing||exportController)throw new Error('파일 처리나 영상 출력이 끝난 뒤 편집해 주세요.');return mutate(action,options);},
  pause,seek,toast,report,renderPreview,renderAll,persist,replaceProject,addTemplateScene,applyScriptDraft,addReferenceImages,applyGeneratedImage,openVoiceStudio,openApiSettings:()=>apiSettings.open(),openTimingPlan:openScript,openImageStudio:()=>imageStudio.open(),canUseSceneImages:()=>!importing&&!exportController&&!changingWorkspace&&!timingApplying,addNarrationFile,getWorkspaceId:()=>workspaceCatalog?.activeId||null,getWorkspaceCatalog:()=>workspaceCatalog,getWorkspaceError:()=>workspaceError,canChangeWorkspace:()=>workspaceReady&&!importing&&!exportController&&!changingWorkspace,createWorkspace,switchWorkspace,renameWorkspace,moveWorkspace,closeWorkspace,reopenWorkspace};
-apiSettings=setupApiSettings(toolsApi);editorTools=setupEditorTools(toolsApi);libraryTools=setupLibraryTools(toolsApi);scriptStudio=setupScriptStudio(toolsApi);imageStudio=setupImageStudio(toolsApi);sceneImageBatch=setupSceneImageBatch(toolsApi);sceneTimingUi=setupSceneTimingUi({getProject:()=>project,getNarrationDuration:()=>assets.get(project.audio.narrationId)?(project.audio.narrationOffset||0)+getAudioWindow(project,assets,'narration').duration:0,getTimedCaptions:()=>project.captionMode==='auto'?[]:getCaptions(project)});transcriptStudio=setupTranscriptStudio(toolsApi);voiceStudio=setupVoiceStudio(toolsApi);workspaceTabs=setupWorkspaceTabs(toolsApi);
+apiSettings=setupApiSettings(toolsApi);editorTools=setupEditorTools(toolsApi);libraryTools=setupLibraryTools(toolsApi);scriptStudio=setupScriptStudio(toolsApi);imageStudio=setupImageStudio(toolsApi);sceneImageBatch=setupSceneImageBatch(toolsApi);sceneTimingUi=setupSceneTimingUi({getProject:()=>project,getNarrationDuration:()=>assets.get(project.audio.narrationId)?(project.audio.narrationOffset||0)+getAudioWindow(project,assets,'narration').duration:0,getTimedCaptions:()=>project.captionMode==='auto'?[]:getCaptions(project)});transcriptStudio=setupTranscriptStudio(toolsApi);voiceStudio=setupVoiceStudio(toolsApi);workspaceTabs=setupWorkspaceTabs(toolsApi);studioLayout=setupStudioLayout(toolsApi);
 const shortcuts=el('p','keyboard-help','단축키: Space 재생 · Ctrl/Cmd+Z 되돌리기 · Ctrl/Cmd+Shift+Z 다시 실행 · Ctrl/Cmd+D 장면 복제 · Ctrl/Cmd+A 전체 선택 · Ctrl/Cmd+C/V 장면 설정 복사/붙이기 · Delete 선택 장면 삭제 · ←/→ 0.1초 이동 (Shift: 1초) · PageUp/Down 이전/다음 장면. 입력칸에서는 일반 글 편집이 우선이에요.');
 $('helpDialog').querySelector('.dialog-body').append(shortcuts);
 boot().catch(report);

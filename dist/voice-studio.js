@@ -26,10 +26,10 @@ async function request(path, options = {}) {
 /** Step 2 is optional: writing/saving the script never depends on this service. */
 export function setupVoiceStudio(api) {
   if (!$('voiceStudioStyles')) {const link = node('link');link.id = 'voiceStudioStyles';link.rel = 'stylesheet';link.href = new URL('./voice-studio.css', import.meta.url).href;document.head.append(link);}
-  const launcher = button('voiceStudioBtn', '2. 대본으로 음성 만들기', 'outline full voice-studio-open');$('narrationDrop').prepend(launcher);
+  const launcher = button('voiceStudioBtn', '대본으로 AI 음성 만들기', 'outline full voice-studio-open');$('narrationDrop').prepend(launcher);
   const dialog = node('dialog', 'modal voice-studio-modal');dialog.id = 'voiceStudioDialog';dialog.setAttribute('aria-labelledby', 'voiceStudioTitle');
   const heading = node('div', 'dialog-heading'), titles = node('div');titles.append(node('span', 'eyebrow', 'SCRIPT → VOICE → VIDEO'));
-  const title = node('h2', '', '2. 완성한 대본으로 음성 만들기');title.id = 'voiceStudioTitle';titles.append(title);
+  const title = node('h2', '', '대본으로 음성 만들기');title.id = 'voiceStudioTitle';titles.append(title);
   const close = button('closeVoiceHeaderBtn', '×', 'icon-button');close.setAttribute('aria-label', '음성 만들기 닫기');heading.append(titles, close);dialog.append(heading);
   const body = node('div', 'dialog-body');dialog.append(body);
   body.append(node('p', 'voice-intro', '먼저 작성한 대본을 확인한 뒤 음성을 만들어요. 음성 API가 없어도 대본 작성·저장과 영상 편집을 계속할 수 있어요.'));

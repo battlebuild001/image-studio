@@ -1,3 +1,4 @@
+const {reveal}=require('./ui-navigation.browser.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -67,7 +68,7 @@ const {chromium} = require('playwright');
     assert.fail('Direct settings metadata did not reach the expected state');
   }
   const stored = () => page.evaluate(() => ({local: {...localStorage}, session: {...sessionStorage}}));
-  const change = async (id, value) => {await page.locator('#' + id).fill(value);await page.locator('#' + id).dispatchEvent('change');};
+  const change = async (id, value) => {await reveal(page, '#' + id);await page.locator('#' + id).fill(value);await page.locator('#' + id).dispatchEvent('change');};
   const settings = async () => {await page.locator('#apiSettingsBtn').click();await page.locator('#apiSettingsDialog').waitFor({state: 'visible'});};
   const closeSettings = async () => {await page.locator('#closeApiSettingsBtn').click();await page.locator('#apiSettingsDialog').waitFor({state: 'hidden'});};
   const saved = async () => {
@@ -128,7 +129,7 @@ const {chromium} = require('playwright');
     await page.locator('#closeScriptStudioBtn').click();assert.equal((await saved()).scriptDraft.result.webSearchUsed, true);
     console.log('PASS no-backend direct Responses request carries references, direction and duration; completed search/citations produce the new Korean narration');
 
-    await page.locator('#imageStudioBtn').click();await page.waitForFunction(() => document.querySelector('#imageServiceState').dataset.state === 'ready');
+    await reveal(page, '#imageStudioBtn');await page.locator('#imageStudioBtn').click();await page.waitForFunction(() => document.querySelector('#imageServiceState').dataset.state === 'ready');
     await page.locator('#referenceUploadRole').selectOption('background');await page.locator('#referenceImageFiles').setInputFiles(path.join(fixtures, 'image-test-1.png'));
     await page.waitForFunction(() => document.querySelectorAll('.image-reference-card').length === 1 && document.querySelector('#imageStudioDialog').getAttribute('aria-busy') === 'false');
     await page.locator('#referenceUploadRole').selectOption('concept');await page.locator('#referenceImageFiles').setInputFiles(path.join(fixtures, 'image-test-2.png'));
@@ -164,11 +165,11 @@ const {chromium} = require('playwright');
     console.log('PASS explicit direct image multipart includes actual concept-first pixels; preview waits for Apply and errors/cancellation/key removal retain project inputs and prior image');
 
     await settings();await page.locator('#openAiApiKey').fill(keyTwo);await page.locator('#saveOpenAiSettingsBtn').click();await waitMeta(value => value.enabled && value.hasKey);
-    await closeSettings();const backupEvent = page.waitForEvent('download');await page.locator('#backupBtn').click();const backupDownload = await backupEvent;
+    await closeSettings();const backupEvent = page.waitForEvent('download');await reveal(page, '#backupBtn');await page.locator('#backupBtn').click();const backupDownload = await backupEvent;
     await backupDownload.saveAs('/tmp/direct-api-settings-backup.bth.json');const backupText = await fs.readFile('/tmp/direct-api-settings-backup.bth.json', 'utf8');
     for (const key of [keyOne, keyTwo, rejectedKey]) assert.equal(backupText.includes(key), false);
     assert.equal(JSON.parse(backupText).project.scriptDraft.draftScript, narrative);
-    await page.locator('#libraryBtn').click();await page.locator('#saveLibraryBtn').click();
+    await reveal(page, '#libraryBtn');await page.locator('#libraryBtn').click();await page.locator('#saveLibraryBtn').click();
     await page.waitForFunction(() => document.querySelectorAll('.library-project').length >= 1);
     const library = await page.evaluate(async () => {const {listLibraryProjects, loadLibraryProject} = await import('/project.js');const entries = await listLibraryProjects();return (await loadLibraryProject(entries[0].id)).project;});
     assert.equal(JSON.stringify(library).includes(keyTwo), false);

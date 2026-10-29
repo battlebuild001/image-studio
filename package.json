@@ -27,7 +27,8 @@
     "test:direct-api-browser": "node tests/direct-api-settings.browser.cjs",
     "test:scene-timing-browser": "node tests/scene-timing-ui.browser.cjs",
     "test:scene-batch-browser": "node tests/scene-image-batch.browser.cjs",
-    "test:timed-workflow-browser": "node tests/timed-scenes-workflow.browser.cjs"
+    "test:timed-workflow-browser": "node tests/timed-scenes-workflow.browser.cjs",
+    "test:layout-browser": "node tests/studio-layout.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

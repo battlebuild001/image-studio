@@ -3,8 +3,9 @@
 ## Purpose
 
 Korean browser-based video editor combining user-provided images, narration,
-captions, motion, and optional BGM. The primary workflow is draft script, generate
-API narration, then edit video. Users may also import externally prepared narration
+captions, motion, and optional BGM. The primary navigation is 대본 → 타이밍 → 이미지
+→ 편집·저장. Narration and subtitles are optional tools in the initially closed
+음성·자막 drawer. Users may generate or import externally prepared narration
 and either import images or explicitly request optional reference-based image generation.
 Keep the default workflow free from paid video-generation APIs and preserve the
 Korean interface. Manual draft editing and document extraction work without APIs.
@@ -20,6 +21,9 @@ own topics beyond the four defaults. Keep branding and new-project titles neutra
 - `dist/index.html` and `dist/style.css`: editor UI.
 - `dist/main.js`: state, media import, multi-selection, scene operations, undo/redo,
   keyboard controls, timeline resizing, preview, autosave, export flow.
+- `dist/studio-layout.js` / `.css`: presentation-only grouping of existing controls
+  into native details drawers and the project menu, with keyboard/focus handling.
+  Initialize after all tool and workspace setup; refresh its derived status on render.
 - `dist/workspace-store.js`: category records, per-workspace project/media saves,
   legacy autosave migration and safe active-workspace transitions.
 - `dist/workspace-tabs.js` / `.css`: category tabs, add/rename/reorder and reversible
@@ -88,6 +92,9 @@ extraction need no API key. Image generation and transcription add no package de
 - Timing preview regression: `npm run test:scene-timing-browser`.
 - Confirmed-scene image batch regression: `npm run test:scene-batch-browser`.
 - Whole timed-scene workflow regression: `npm run test:timed-workflow-browser`.
+- Layout/navigation browser regression: `npm run test:layout-browser`. Existing
+  browser suites use `tests/ui-navigation.browser.cjs` to open real details summaries
+  before interacting with their controls; never force clicks on hidden controls.
 - Reference-image browser regression: `npm run test:image-browser`. Fixture-based
   AI responses verify UI behavior, never live model/search/image quality.
 - Narration-caption browser regression: `npm run test:transcript-browser`. Real
@@ -142,6 +149,21 @@ for credential values in chat. Inspect configured presence without exposing valu
 
 ## Behavior to preserve
 
+- Keep four primary actions: 대본 → 타이밍 → 이미지 → 편집·저장. Voice remains
+  optional in the initially closed 음성·자막 drawer. Group new/open/backup/library/
+  help/example actions in the top 프로젝트 menu while keeping API 설정 visible.
+  Optional manual/reference-single-image/template/PNG tools belong in 제작 도구;
+  multiselect/bulk controls in 선택 장면 편집; motion/framing/actions in
+  움직임·장면 도구; global transitions/caption style in 영상·자막 스타일.
+  Reparent existing nodes without replacing IDs/listeners or changing project data.
+  Preserve drawer open state across renders and workspace switches in page memory
+  only, never in projects or backups. Opening drawers must not invoke AI/network
+  requests or paid actions. Keep batch count/cost/acknowledgement controls visible
+  in the generation dialog and retain the explicit confirmation gate.
+- Native details summaries must retain keyboard behavior and be excluded from
+  global editor shortcuts. Restore focus only when a closed dialog's native opener
+  is hidden; never steal focus from a newer visible user target. Retain accessible
+  labels, mobile layouts and normal modal focus handling.
 - Default category tabs are 블랙아웃, 사만, 에오지 and 데이터 분석. Add arbitrary
   names of 1..40 characters, at most 50 records including archived categories.
   Rename/reorder/archive/reopen are supported; archiving retains content and the
@@ -326,7 +348,8 @@ browser checks until their actual results have been verified.
 For script creation, test local extraction with actual synthetic TXT/MD/PDF/DOCX
 bytes and no original-file upload, including static Pages with absent API routes.
 Verify manual draft editing, explicit source copy and independent persistence with
-`result:null`, plus the draft → voice → video handoff without an OpenAI key.
+`result:null`, plus draft → timing → image/edit handoff without a voice API key
+and the optional draft → voice → video handoff without an OpenAI key.
 For optional research, test duration estimates, validated source links, cancellation/error preservation,
 draft restoration and handoff to scene creation. API/unit/browser fixtures must
 not be described as verified live AI generation. Without configured credentials,
@@ -342,6 +365,12 @@ keeps actual cue times; mismatched text falls back without fake alignment.
 Use npm run test:scene-timing-browser, test:scene-batch-browser and
 test:timed-workflow-browser plus npm test. Synthetic image fixtures do not prove
 live generation quality, model permissions, per-image pricing or billing.
+For layout changes, run npm run test:layout-browser and relevant existing browser
+suites through actual menu/drawer interactions. Verify initially closed optional
+tools, project menu actions, summary keyboard handling, modal return focus, retained
+drawer state across rerenders/workspaces, and mobile access without horizontal
+overflow. Presentation changes must not affect project/media persistence, provider
+request authorization, API-key lifetime or the image batch confirmation gate.
 For fixed references, verify original Blob roundtrips, disabled-reference retention,
 shared scene/reference IDs, undo/redo and reference-only archives. Inspect mocked
 provider requests for real image bytes and ordered roles. Verify preview download,

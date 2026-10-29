@@ -1,3 +1,4 @@
+const {reveal}=require('./ui-navigation.browser.cjs');
 const assert=require('node:assert/strict');
 const path=require('node:path');
 const {chromium}=require('playwright');
@@ -55,7 +56,7 @@ const {chromium}=require('playwright');
   await select('사만');await count(0);await emptyState();
   await select('블랙아웃');await count(1);await sceneState();
   await page.evaluate(()=>{window.__previewTextPaints=[];});
-  await page.locator('#deleteSceneBtn').click();await count(0);await emptyState();
+  await reveal(page, '#deleteSceneBtn');await page.locator('#deleteSceneBtn').click();await count(0);await emptyState();
   assert.deepEqual(await page.evaluate(()=>window.__previewTextPaints),[]);
   await page.locator('#undoBtn').click();await count(1);await sceneState();
   await page.locator('#redoBtn').click();await count(0);await emptyState();

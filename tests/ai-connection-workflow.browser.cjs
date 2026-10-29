@@ -1,3 +1,4 @@
+const {reveal}=require('./ui-navigation.browser.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const {chromium} = require('playwright');
@@ -41,7 +42,7 @@ const {chromium} = require('playwright');
     await page.waitForFunction(() => document.querySelector('#saveState').textContent.includes('자동 저장됨'));
     return page.evaluate(async () => {const {loadProject} = await import('/project.js');return (await loadProject()).project;});
   };
-  const change = async (id, value) => {await page.locator(`#${id}`).fill(value);await page.locator(`#${id}`).dispatchEvent('change');};
+  const change = async (id, value) => {await reveal(page, `#${id}`);await page.locator(`#${id}`).fill(value);await page.locator(`#${id}`).dispatchEvent('change');};
   const closeScript = async () => {await page.locator('#closeScriptStudioBtn').click();await page.locator('#scriptStudioDialog').waitFor({state: 'hidden'});};
   const select = async name => {await page.locator('#workspaceTabList').getByRole('tab', {name, exact: true}).click();await page.waitForFunction(name => document.querySelector('#workspaceTabList [aria-selected=true]')?.textContent === name, name);await ready();};
   try {
@@ -84,7 +85,7 @@ const {chromium} = require('playwright');
     const settings = await page.evaluate(async () => {const {getApiSettings} = await import('/api-client.js');return {publicSettings: getApiSettings(), local: {...localStorage}, session: {...sessionStorage}};});
     assert.deepEqual(settings.publicSettings, {baseUrl: backend, hasToken: true});assert.equal(JSON.stringify(settings.local).includes(appCode), false);assert.ok(settings.session['bth-studio-api-token-v1'].includes(appCode));
     await page.locator('#closeApiSettingsBtn').click();await closeScript();
-    const downloadEvent = page.waitForEvent('download');await page.locator('#backupBtn').click();const download = await downloadEvent;
+    const downloadEvent = page.waitForEvent('download');await reveal(page, '#backupBtn');await page.locator('#backupBtn').click();const download = await downloadEvent;
     await download.saveAs('/tmp/image-studio-ai-connection-backup.json');const backupText = await fs.readFile('/tmp/image-studio-ai-connection-backup.json', 'utf8');
     const backup = JSON.parse(backupText);assert.equal(backup.project.scriptDraft.draftScript, narrative);
     assert.equal(backupText.includes(appCode), false);assert.equal(backupText.includes(backend), false);assert.equal(backupText.includes('bth-studio-api-'), false);

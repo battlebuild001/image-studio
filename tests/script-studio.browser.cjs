@@ -1,3 +1,4 @@
+const {reveal}=require('./ui-navigation.browser.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -19,7 +20,7 @@ async function voiceHandoffChecks(browser,base) {
     async persist(){window.__persistCalls++;window.__handoffEvents.push('persist');if(window.__persistFails)throw Error('모의 저장 실패');window.__handoffEvents.push('saved');},
     openVoiceStudio(value){window.__handoffEvents.push('voice');window.__voiceHandoffs.push(value);},applyScriptDraft(){throw Error('Unexpected editing handoff');}});
   });
-  await page.locator('#scriptStudioBtn').click();
+  await reveal(page, '#scriptStudioBtn');await page.locator('#scriptStudioBtn').click();
   const script='먼저 저장한 한국어 대본만 음성 생성 단계로 전달합니다. 음성 서비스가 없어도 이 단계까지 작성할 수 있습니다.';
   await page.locator('#generatedScript').fill(script);await page.locator('#scriptMinutes').fill('3');await page.locator('#scriptToVoiceBtn').click();
   await page.waitForFunction(()=>document.querySelector('#scriptStudioError').textContent.includes('모의 저장 실패'));
@@ -62,7 +63,7 @@ async function aiWorkflowChecks(browser,base) {
    window.__scriptStudio=setupScriptStudio({getProject:()=>window.__draftProject,pause(){},toast(){},openApiSettings(){window.__configOpens++;},
     mutate(fn){if(window.__mutationsLocked)throw Error('변경 없는 flush가 프로젝트를 다시 수정했습니다.');window.__scriptMutations++;fn(window.__draftProject);window.__draftProject=validateProject(window.__draftProject);},persist(){},applyScriptDraft(){}});
   });
-  await page.locator('#scriptStudioBtn').click();await page.waitForFunction(()=>document.querySelector('#scriptServiceState').dataset.state==='unavailable');
+  await reveal(page, '#scriptStudioBtn');await page.locator('#scriptStudioBtn').click();await page.waitForFunction(()=>document.querySelector('#scriptServiceState').dataset.state==='unavailable');
   await page.locator('#researchSource').fill(reference);await page.locator('#scriptInstructions').fill(directions);
   assert.equal(await page.locator('#generateScriptBtn').textContent(),'AI 연결 설정');assert.ok(await page.locator('#generateScriptBtn').isEnabled());
   await page.locator('#generateScriptBtn').click();await page.waitForFunction(()=>window.__configOpens===1);
@@ -138,7 +139,7 @@ async function aiWorkflowChecks(browser,base) {
   page.on('request',request=>{if(request.url().includes('/api/script/extract'))forbiddenScriptUploads++;if(request.url().includes('/api/voice/generate'))earlyVoiceRequests++;});
   await page.goto(base,{waitUntil:'networkidle'});
   await page.waitForFunction(()=>document.querySelector('#saveState').textContent.includes('자동 저장 준비'));
-  await page.locator('#scriptStudioBtn').click();await page.waitForFunction(()=>document.querySelector('#scriptServiceState').dataset.state==='unavailable');
+  await reveal(page, '#scriptStudioBtn');await page.locator('#scriptStudioBtn').click();await page.waitForFunction(()=>document.querySelector('#scriptServiceState').dataset.state==='unavailable');
   assert.equal(await page.locator('#scriptMinutes').inputValue(),'8');
   assert.match(await page.locator('#scriptTargetBudget').textContent(),/2,640/);
   assert.ok(await page.locator('#generateScriptBtn').isEnabled());assert.equal(await page.locator('#generateScriptBtn').textContent(),'AI 연결 설정');
@@ -149,11 +150,11 @@ async function aiWorkflowChecks(browser,base) {
   await page.locator('#generatedScript').fill(manual);await page.locator('#scriptMinutes').fill('2');await page.locator('#generatedScript').blur();
   assert.ok(await page.locator('#scriptToVoiceBtn').isEnabled());assert.ok(await page.locator('#applyGeneratedScriptBtn').isEnabled());
   await close();let project=await saved();assert.equal(project.scriptDraft.draftScript,manual);assert.equal(project.scriptDraft.result,null);assert.equal(project.audio.narrationId,null);
-  await page.reload({waitUntil:'networkidle'});await page.locator('#scriptStudioBtn').click();
+  await page.reload({waitUntil:'networkidle'});await reveal(page, '#scriptStudioBtn');await page.locator('#scriptStudioBtn').click();
   assert.equal(await page.locator('#generatedScript').inputValue(),manual);assert.equal(await page.locator('#scriptMinutes').inputValue(),'2');
   let manualDownloadEvent=page.waitForEvent('download');await page.locator('#downloadScriptTxtBtn').click();let manualDownload=await manualDownloadEvent;
   await manualDownload.saveAs('/tmp/image-studio-manual-script.txt');assert.equal((await fs.readFile('/tmp/image-studio-manual-script.txt','utf8')).trim(),manual);
-  await page.locator('#generatedScript').fill('');await close();await saved();await page.reload({waitUntil:'networkidle'});await page.locator('#scriptStudioBtn').click();
+  await page.locator('#generatedScript').fill('');await close();await saved();await page.reload({waitUntil:'networkidle'});await reveal(page, '#scriptStudioBtn');await page.locator('#scriptStudioBtn').click();
   assert.equal(await page.locator('#generatedScript').inputValue(),'');assert.ok(await page.locator('#scriptToVoiceBtn').isDisabled());
   const rawSource='파일이나 텍스트로 준비한 자료를 초안으로 가져옵니다. 사실 확인과 문장 다듬기는 별도로 진행합니다.';
   await source.fill(rawSource);await page.locator('#scriptManualTools summary').click();await page.locator('#useSourceAsDraftBtn').click();assert.equal(await page.locator('#generatedScript').inputValue(),rawSource);
@@ -162,7 +163,7 @@ async function aiWorkflowChecks(browser,base) {
   assert.equal(await page.locator('#scriptText').inputValue(),rawSource);await page.locator('#applyScriptBtn').click();project=await saved();
   assert.equal(project.audio.narrationId,null);assert.equal(project.scriptDraft.result,null);assert.equal(project.scenes.reduce((sum,scene)=>sum+scene.duration,0),120);
   assert.equal(earlyVoiceRequests,0);
-  await page.locator('#scriptStudioBtn').click();await page.locator('#scriptMinutes').fill('8');
+  await reveal(page, '#scriptStudioBtn');await page.locator('#scriptStudioBtn').click();await page.locator('#scriptMinutes').fill('8');
   console.log('PASS backend-free manual script writing/save/reload/explicit deletion/TXT and editing without voice API');
 
   await source.fill('사용자가 직접 입력한 자료입니다.');
@@ -171,7 +172,7 @@ async function aiWorkflowChecks(browser,base) {
   const imported=await source.inputValue();
   assert.match(imported,/사용자가 직접 입력/);assert.match(imported,/reference-test\.pdf/);assert.match(imported,/reference-test\.docx/);assert.match(imported,/한국어 자료/);
   await close();project=await saved();assert.equal(project.scriptDraft.sourceText,imported);assert.equal(forbiddenScriptUploads,0);
-  await page.reload({waitUntil:'networkidle'});await page.locator('#scriptStudioBtn').click();assert.equal(await source.inputValue(),imported);
+  await page.reload({waitUntil:'networkidle'});await reveal(page, '#scriptStudioBtn');await page.locator('#scriptStudioBtn').click();assert.equal(await source.inputValue(),imported);
   console.log('PASS browser-only TXT/PDF/DOCX extraction and draft restoration without uploads');
 
   await page.unroute('**/api/script/config');await page.route('**/api/script/config',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({configured:true})}));
@@ -216,10 +217,10 @@ async function aiWorkflowChecks(browser,base) {
   assert.equal(project.scenes.map(scene=>scene.caption).join('').replace(/\s/g,''),script.replace(/\s/g,''));
   console.log('PASS generated draft applies to storyboard at exactly four minutes with all text retained');
 
-  downloadEvent=page.waitForEvent('download');await page.locator('#backupBtn').click();download=await downloadEvent;await download.saveAs('/tmp/image-studio-script-backup.bth.json');
+  downloadEvent=page.waitForEvent('download');await reveal(page, '#backupBtn');await page.locator('#backupBtn').click();download=await downloadEvent;await download.saveAs('/tmp/image-studio-script-backup.bth.json');
   const backup=JSON.parse(await fs.readFile('/tmp/image-studio-script-backup.bth.json','utf8'));
   assert.equal(backup.project.scriptDraft.sourceText,imported);assert.equal(backup.project.scriptDraft.result.sources.length,1);
-  await page.locator('#scriptStudioBtn').click();await page.locator('#scriptMinutes').fill('0');await page.keyboard.press('Escape');
+  await reveal(page, '#scriptStudioBtn');await page.locator('#scriptStudioBtn').click();await page.locator('#scriptMinutes').fill('0');await page.keyboard.press('Escape');
   await page.locator('#projectTitle').fill('잘못된 대본 입력 후에도 저장');await page.locator('#projectTitle').blur();await saved();
   project=await stored();assert.equal(project.title,'잘못된 대본 입력 후에도 저장');assert.equal(project.scriptDraft.targetMinutes,4);
   assert.deepEqual(errors,[]);

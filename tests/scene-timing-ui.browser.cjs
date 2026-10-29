@@ -1,3 +1,4 @@
+const {reveal}=require('./ui-navigation.browser.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const {chromium} = require('playwright');
@@ -11,7 +12,7 @@ const {chromium} = require('playwright');
   page.setDefaultTimeout(15000);page.on('pageerror', value => errors.push(value.message));
   page.on('request', request => {if (request.method() === 'POST') posts.push(request.url());});
   const url = new URL('scene-timing-ui-harness', base).href;
-  const change = async (id, value) => {await page.locator(`#${id}`).fill(value);await page.locator(`#${id}`).dispatchEvent('change');};
+  const change = async (id, value) => {await reveal(page, `#${id}`);await page.locator(`#${id}`).fill(value);await page.locator(`#${id}`).dispatchEvent('change');};
   try {
     await page.route(url, route => route.fulfill({contentType: 'text/html', body: html}));
     await page.goto(url, {waitUntil: 'networkidle'});
