@@ -16,6 +16,37 @@ function fixture(fetchImpl) {
   return {client, localStorage, sessionStorage, requests, changes};
 }
 
+test('direct OpenAI requests bypass the backend while CLOVA and explicit server checks keep separate authentication', async () => {
+  const requests = [], directRequests = [], localStorage = new Storage(), sessionStorage = new Storage();
+  let enabled = true;
+  const client = createApiClient({localStorage, sessionStorage, directClient: {
+    getSettings: () => ({enabled}), handles: path => path.startsWith('/api/script/') || path.startsWith('/api/image/'),
+    fetch: async (path, options) => {directRequests.push({path, options});return Response.json({direct: true});},
+  }, fetchImpl: async (url, options) => {requests.push({url, options});return Response.json({configured: true});}});
+  client.setApiSettings({baseUrl: 'https://optional.example/studio', accessToken: ACCESS_CODE});
+  const body = JSON.stringify({sourceText: 'reference', targetMinutes: 8});
+  assert.deepEqual(await (await client.apiFetch('/api/script/generate', {method: 'POST', body})).json(), {direct: true});
+  assert.equal(requests.length, 0);assert.equal(directRequests[0].options.body, body);
+  await client.apiFetch('/api/voice/config');
+  assert.equal(requests[0].url, 'https://optional.example/studio/api/voice/config');
+  assert.equal(requests[0].options.headers.get('Authorization'), `Bearer ${ACCESS_CODE}`);
+  await client.candidateApiFetch('/api/script/config', {baseUrl: 'https://candidate.example'});
+  assert.equal(requests[1].url, 'https://candidate.example/api/script/config');
+  assert.equal(requests[1].options.headers.has('Authorization'), false);
+  assert.equal(directRequests.length, 1);
+  enabled = false;await client.apiFetch('/api/script/config');
+  assert.equal(requests[2].url, 'https://optional.example/studio/api/script/config');
+});
+
+test('direct routing still rejects arbitrary paths and caller-supplied authorization before any provider call', async () => {
+  let calls = 0;
+  const client = createApiClient({directClient: {getSettings: () => ({enabled: true}), handles: () => true,
+    fetch: async () => {calls++;return Response.json({});}}});
+  await assert.rejects(client.apiFetch('https://attacker.example/collect'), error => error.code === 'invalid-path');
+  await assert.rejects(client.apiFetch('/api/image/generate', {headers: {Authorization: 'Bearer caller-key'}}), error => error.code === 'request-credential');
+  assert.equal(calls, 0);
+});
+
 test('same-origin API remains available with no connection and sends no credential', async () => {
   const {client, requests, localStorage, sessionStorage} = fixture();
   assert.deepEqual(client.getApiSettings(), {baseUrl: '', hasToken: false});
@@ -111,7 +142,7 @@ test('corrupted saved settings fail closed and never reuse a code bound to anoth
   ];
   for (const [base, token] of corruptions) {
     localStorage.setItem(BASE_KEY, base);if (token) sessionStorage.setItem(TOKEN_KEY, token);else sessionStorage.removeItem(TOKEN_KEY);
-    assert.throws(() => client.apiFetch('/api/script/generate', {method: 'POST', body: 'private-reference'}), error => error.code === 'saved-settings');
+    await assert.rejects(client.apiFetch('/api/script/generate', {method: 'POST', body: 'private-reference'}), error => error.code === 'saved-settings');
     assert.deepEqual(client.getApiSettings(), {baseUrl: '', hasToken: false});
   }
   assert.equal(requests.length, 0);

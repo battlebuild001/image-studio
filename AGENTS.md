@@ -10,6 +10,7 @@ Keep the default workflow free from paid video-generation APIs and preserve the
 Korean interface. Manual draft editing and document extraction work without APIs.
 Optional researched script creation, CLOVA voice synthesis, fixed-reference image
 generation and narration transcription use providers only on explicit actions.
+Users configure their own OpenAI key in the app Settings for browser-direct script, image and timestamped transcription requests; Render is optional.
 Category workspaces keep independent in-progress projects; users can add their
 own topics beyond the four defaults. Keep branding and new-project titles neutral.
 
@@ -29,7 +30,9 @@ own topics beyond the four defaults. Keep branding and new-project titles neutra
   source audio trims, waveform and A–B repeat.
 - `dist/library-tools.js` / `.css`: local project shelf/copy, reusable title cards
   with optional local logos, current-frame PNG downloads.
-- `dist/api-client.js` and `dist/api-settings.js` / `.css`: global authenticated backend connection; endpoint in localStorage, app access token only in sessionStorage and never in project/backups.
+- `dist/api-client.js` and `dist/api-settings.js` / `.css`: global app Settings for personal OpenAI API keys/models and optional authenticated server connection. Keys are memory-only by default; explicit remember-for-tab consent permits sessionStorage, never localStorage or project/backups. Backend endpoint may remain in localStorage and app access code only in sessionStorage.
+- `dist/direct-openai.js`: browser requests to fixed HTTPS api.openai.com endpoints, without custom destinations, redirects or automatic paid retries.
+- `dist/script-protocol.js`, `dist/transcript-protocol.js`, `dist/image-prompt.js`: browser-safe shared request/response validation and reference-image prompt construction. Preserve real search/citation and speech timestamp requirements in both transports.
 - `dist/script-studio.js` / `.css`: actual AI rewriting of reference files/text and user production instructions, target duration,
   always-available manual draft editing, researched results, sources and handoff.
 - `dist/script-local-files.js` and `dist/vendor/`: local TXT/MD/PDF/DOCX extraction
@@ -48,7 +51,7 @@ own topics beyond the four defaults. Keep branding and new-project titles neutra
 - `scripts/serve.mjs`: development server; serves only `dist/` as static files and
   routes `/api/script/*`, `/api/voice/*`, `/api/image/*` and `/api/transcript/*` requests.
 - `scripts/backend-access.mjs`: authenticated public API gateway, exact CORS origins, bounded request rate and one active paid request. `/healthz` is public.
-- `render.yaml` and `docs/AI_SERVER_DEPLOY.md`: free Render Node backend deployment from `image-studio-server`; user enters provider key securely on Render. Never treat a source upload as a running backend.
+- `render.yaml` and `docs/AI_SERVER_DEPLOY.md`: optional free Render Node backend deployment from `image-studio-server`, required for CLOVA or shared server-held provider keys. Personal OpenAI direct mode needs no Render account. Never treat a source upload as a running backend.
 - `scripts/script-api.mjs`: server-only AI configuration and web-search script generation.
 - `scripts/voice-api.mjs`: server-only CLOVA Voice Premium credentials and Korean
   MP3 generation through the official Naver endpoint.
@@ -85,12 +88,30 @@ extraction need no API key. Image generation and transcription add no package de
   Korean speech-recognition accuracy.
 
 The server never serves repository files or credentials as static assets.
+The user explicitly requested API configuration inside the app. This authorizes
+personal key input through Settings and supersedes the earlier blanket ban on
+browser key input. Direct OpenAI mode calls Responses web_search, Images edits
+and timestamped transcription through standard CORS; it does not use a cloud
+server key or require Render. Keep the key in module memory by default and only
+remember it in sessionStorage when the user explicitly opts in. Never embed keys
+in shipped code, localStorage, project/library data, backups, tests or logs; getters
+and status text expose only presence, never values. Clear/mask fields after use,
+clear remembered values on removal and abort obsolete requests on settings changes.
+Connection checking uses non-paid GET /v1/models without reference/media uploads.
+Allow explicit save without model-list verification for restricted keys; a models
+403 does not prove the key lacks generation permissions. Actual content generation
+requires its own explicit action. Direct keys go only to fixed HTTPS api.openai.com
+routes with credentials omitted and redirects rejected, never to a configured
+third-party backend. Do not silently switch to server billing after direct-mode
+failure. CLOVA has no verified browser CORS route and remains server-only.
+
+The following environment variables apply only to optional server mode.
 Optional script generation reads `SCRIPT_AI_API_KEY` on the server (ordinary local
 machines may use `OPENAI_API_KEY` as fallback) and `SCRIPT_AI_MODEL` (default
 `gpt-5-mini`). The selected model must support the Responses API web-search tool.
 Cloud setup uses the non-reserved secret name `SCRIPT_AI_API_KEY` with HTTPS
-destination `api.openai.com`; preserve proxy/CA verification. Do not put keys in
-frontend code, localStorage, project state, saved instructions or tests.
+destination `api.openai.com`; preserve proxy/CA verification. Server-held credentials must not be returned to the browser. Never put secret values in
+shipped frontend code, localStorage, project state, saved instructions or tests.
 Optional image generation uses `IMAGE_AI_MODEL` (default `gpt-image-2`) and the
 first available server key: `IMAGE_AI_API_KEY`, `SCRIPT_AI_API_KEY`, then local
 `OPENAI_API_KEY`. Reuse the existing cloud key binding and `api.openai.com`
@@ -282,8 +303,8 @@ format, contiguous chunk coverage and source timestamps through trim and offset.
 Verify preview/Apply, SRT and export integration, undo/redo, reload/backups,
 cancellation/error/stale preservation and mobile controls. Test malformed or absent
 provider timestamps, silence and segment-only timing without fabricated fallback.
-Current runtime credentials are absent: finish independent unit/API/browser tests
-with synthetic audio and clearly report live Korean recognition as unverified.
+Current cloud server credentials are absent; users may still supply a personal key in app Settings for direct requests. Finish independent unit/API/browser tests
+with synthetic audio and clearly report live Korean recognition as unverified unless an actual authorized request succeeds.
 For CLOVA voice, inspect real text/form request bytes, exact Unicode chunk
 preservation, credential isolation and sanitized failures. Test actual synthetic
 MP3 decoding, measured-duration WAV merging, preview/download/Apply, undo/redo,
@@ -295,8 +316,10 @@ pronunciation, audio quality, account permissions or billing.
 
 The latest public static editor is https://battlebuild001.github.io/image-studio/,
 served from the owned image-studio-web branch. The older chatgpt.site deployment
-was not updated. The optional AI/TTS APIs remain unavailable on static Pages;
-manual drafts, local document extraction and normal media editing work there.
+was not updated. Static Pages hosts no Node API, but app-configured personal OpenAI
+keys support browser-direct script/image/transcription requests. CLOVA and shared
+server-key mode need the optional authenticated backend. Manual drafts, local
+document extraction and normal media editing work without credentials.
 
 The user explicitly requested a deploy tool and publication of the latest editor.
 `npm run deploy:check` validates a static release without network access;
@@ -326,12 +349,13 @@ synthesis after drafting. This authorizes the explicit draft-to-voice workflow
 and publication of its static UI; it does not authorize paid video-generation
 services or publishing user media. Static `dist/` deployment alone does not run
 `/api/script/*`, `/api/voice/*`, `/api/image/*` or `/api/transcript/*`.
-Public AI deployments require a backend plus authentication and
-per-user usage controls;
+Public shared-key API backends require authentication and per-user usage controls;
 do not expose the local development server as an unauthenticated billing proxy.
+Personal browser-direct OpenAI mode uses the user-supplied key and account limits
+and must not embed or distribute a shared provider credential.
 
 ## Public AI connection
 
-Use `apiFetch` for all frontend provider API requests. Connection changes abort obsolete requests and must not trigger paid generation or copy references into a draft. The primary script action sends source text, production instructions and duration to the real server; manual reference copying stays explicitly separate. Missing CLOVA keys never block script generation. Accept cross-origin provider routes only after `createBackendAccess` sets the internal `req.studioAuthenticated` marker; never trust an incoming marker/header. Provider credentials never go to the browser. Public APIs require a separate app access token, exact allowed origin, at most ten accepted POST requests per minute and one active paid job per server.
+Use `apiFetch` for frontend studio requests; it selects the explicitly configured direct OpenAI or authenticated server transport. Connection changes abort obsolete requests and must not trigger paid generation or copy references into a draft. Script generation sends source text, production instructions and duration to the chosen provider transport; manual reference copying stays explicitly separate. Missing CLOVA keys never block script or image generation. In optional server mode accept cross-origin provider routes only after `createBackendAccess` sets the internal `req.studioAuthenticated` marker; never trust an incoming marker/header. Server-held credentials never go to the browser. Public server APIs require a separate app access token, exact allowed origin, at most ten accepted POST requests per minute and one active paid job per server.
 
-Image creation shares the same backend connection and may reuse SCRIPT_AI_API_KEY. The image dialog must offer AI server settings when unavailable, keeping references/input/results intact. Opening settings and checking configuration never uploads image pixels or starts paid generation. Verify authenticated cross-origin image bytes with tests/image-backend-integration.test.mjs and the browser connection flow with tests/image-ai-connection.browser.cjs. These use synthetic provider responses, not live AI fidelity checks.
+Image creation shares the same personal OpenAI settings/key as script creation. Optional server mode may reuse SCRIPT_AI_API_KEY. Unavailable studios must open app API settings while keeping references/input/results intact. Opening settings and checking configuration never uploads image pixels or starts paid generation. Verify authenticated cross-origin image bytes with tests/image-backend-integration.test.mjs and the browser connection flow with tests/image-ai-connection.browser.cjs. These use synthetic provider responses, not live AI fidelity checks.

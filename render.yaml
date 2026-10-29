@@ -19,8 +19,6 @@ services:
         value: https://battlebuild001.github.io
       - key: STUDIO_ACCESS_TOKEN
         generateValue: true
-      - key: SCRIPT_AI_API_KEY
-        sync: false
       - key: SCRIPT_AI_MODEL
         value: gpt-5-mini
       - key: IMAGE_AI_MODEL

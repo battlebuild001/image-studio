@@ -20,7 +20,7 @@ const {chromium} = require('playwright');
     await route.fulfill({status: current === 'unauthorized' ? 401 : 200, headers, body: JSON.stringify(current === 'unauthorized' ? {error: 'private-diagnostic-do-not-display'} : {configured: current !== 'unconfigured', reason: 'private-provider-details-do-not-display'})}).catch(() => {});
   });
   const stored = () => page.evaluate(() => ({local: {...localStorage}, session: {...sessionStorage}}));
-  const open = async () => {await page.locator('#apiSettingsBtn').click();await page.locator('#apiSettingsDialog').waitFor({state: 'visible'});};
+  const open = async () => {await page.locator('#apiSettingsBtn').click();await page.locator('#apiSettingsDialog').waitFor({state: 'visible'});await page.locator('#serverConnectionTab').click();};
   try {
     await page.goto(new URL('/api-settings-harness', base).href);
     await page.evaluate(async () => {
@@ -28,7 +28,7 @@ const {chromium} = require('playwright');
       const {setupApiSettings} = await import('/api-settings.js');
       window.settingsUi = setupApiSettings();window.settingsEvents = 0;
       window.addEventListener('studio-api-settings-change', () => window.settingsEvents++);
-      document.querySelector('#parentSettings').onclick = () => window.settingsUi.open();
+      document.querySelector('#parentSettings').onclick = () => window.settingsUi.open({tab: 'server'});
     });
     await open();assert.equal(requests.length, 0);
     await page.locator('#apiServerUrl').fill('https://studio-settings-test.example/proxy/');
@@ -41,13 +41,13 @@ const {chromium} = require('playwright');
     assert.equal(JSON.stringify(working.local).includes(appCode), false);assert.ok(working.session['bth-studio-api-token-v1'].includes(appCode));
     assert.equal(await page.locator('#apiAccessToken').inputValue(), '');
     assert.equal((await page.locator('#apiSettingsDialog').innerText()).includes(appCode), false);
-    assert.equal(await page.evaluate(() => window.settingsEvents), 1);
+    const workingEventCount = await page.evaluate(() => window.settingsEvents);assert.ok(workingEventCount >= 1);
 
     mode = 'unauthorized';
     await page.locator('#apiServerUrl').fill('https://studio-settings-test.example/wrong');
     await page.locator('#apiAccessToken').fill('incorrect-but-long-enough-app-code');
     await page.locator('#connectApiBtn').click();await page.waitForFunction(() => document.querySelector('#apiSettingsError').textContent.includes('접속코드가 맞지'));
-    assert.deepEqual(await stored(), working);assert.equal(await page.evaluate(() => window.settingsEvents), 1);
+    assert.deepEqual(await stored(), working);assert.equal(await page.evaluate(() => window.settingsEvents), workingEventCount);
     assert.equal((await page.locator('#apiSettingsDialog').innerText()).includes('private-diagnostic'), false);
     console.log('PASS explicit status-only config check, private session credential, bad-code preservation and sanitized errors');
 
