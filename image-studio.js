@@ -56,7 +56,10 @@ export function setupImageStudio(api) {
   const heading=node('form','dialog-heading');heading.method='dialog';const titleGroup=node('div');titleGroup.append(node('span','eyebrow','FIXED REFERENCES, NEW SCENES'));const title=node('h2','','고정 레퍼런스로 이미지 만들기');title.id='imageStudioTitle';titleGroup.append(title);const close=node('button','icon-button','×');close.setAttribute('aria-label','이미지 제작 닫기');heading.append(titleGroup,close);dialog.append(heading);
   const body=node('div','dialog-body');dialog.append(body);
   body.append(node('p','image-studio-intro','배경 설정과 메인 컨셉 이미지를 프로젝트에 고정해 두세요. 이번 장면에서 바꿀 내용만 적으면 선택한 레퍼런스 이미지 자체를 매번 함께 전달해요.'));
-  const connection=node('div','image-service-state');connection.id='imageServiceState';connection.setAttribute('role','status');const connectionText=node('span','','이미지 서비스 연결을 확인해 주세요.');const refresh=button('refreshImageServiceBtn','연결 다시 확인','ghost small');connection.append(connectionText,refresh);body.append(connection);
+  const connection=node('div','image-service-state');connection.id='imageServiceState';connection.setAttribute('role','status');
+  const connectionText=node('span','','대본과 같은 AI 서버로 이미지도 생성할 수 있어요.'),connectionActions=node('div','image-service-actions');
+  const configure=button('configureImageAiBtn','AI 서버 연결','outline small'),refresh=button('refreshImageServiceBtn','연결 다시 확인','ghost small');
+  connectionActions.append(configure,refresh);connection.append(connectionText,connectionActions);body.append(connection);
   const columns=node('div','image-studio-columns');body.append(columns);const settingsPanel=node('section','image-reference-panel');settingsPanel.setAttribute('aria-label','고정 레퍼런스와 배경 설정');const scenePanel=node('section','image-generation-panel');scenePanel.setAttribute('aria-label','장면 요청과 생성 결과');columns.append(settingsPanel,scenePanel);
   settingsPanel.append(node('h3','','1. 고정 레퍼런스'));
   const uploadTools=node('div','reference-upload-tools');const uploadRole=selectField('referenceUploadRole','추가할 이미지의 역할',ROLES);const input=node('input');input.id='referenceImageFiles';input.type='file';input.accept='image/png,image/jpeg,image/webp';input.multiple=true;input.hidden=true;const upload=button('chooseReferenceImagesBtn','레퍼런스 이미지 추가');const fromScene=button('selectedSceneReferenceBtn','선택 장면을 레퍼런스로','ghost small');uploadTools.append(uploadRole.wrapper,input,upload,fromScene);settingsPanel.append(uploadTools);
@@ -109,7 +112,8 @@ export function setupImageStudio(api) {
     provenance.dataset.changed=String(changed);
   }
   function refreshActions(){
-    generate.disabled=busy||!configured||!enabledReferences().length;
+    generate.disabled=busy||(configured&&!enabledReferences().length);
+    generate.textContent=configured?'고정 레퍼런스로 1장 생성':'AI 연결 설정';
     fromScene.disabled=busy||!api.getProject().scenes.some(scene=>scene.id===api.getSelectedId()&&scene.imageId);
     useCaption.disabled=busy||!api.getProject().scenes.some(scene=>scene.id===api.getSelectedId()&&scene.caption?.trim());
     const selectedOption=target.input.querySelector('[value=selected]');selectedOption.disabled=!api.getProject().scenes.some(scene=>scene.id===api.getSelectedId());
@@ -121,7 +125,7 @@ export function setupImageStudio(api) {
     busy=value;phase=value?nextPhase:'';dialog.setAttribute('aria-busy',String(value));
     for(const control of [...textInputs,uploadRole.input,input,upload,copy,target.input])control.disabled=value;
     for(const item of list.querySelectorAll('input,select,button'))item.disabled=value;
-    refresh.disabled=value;cancel.hidden=!value||phase!=='generation';close.disabled=value&&phase!=='generation';closeFooter.disabled=value&&phase!=='generation';status.textContent=message;refreshActions();
+    refresh.disabled=value;configure.disabled=value;cancel.hidden=!value||phase!=='generation';close.disabled=value&&phase!=='generation';closeFooter.disabled=value&&phase!=='generation';status.textContent=message;refreshActions();
   }
   function mutateReference(id,patch){if(busy)return;flush();api.mutate(project=>{const reference=project.imageStudio.references.find(item=>item.assetId===id);if(reference)Object.assign(reference,patch);});}
   function renderReferences(){
@@ -146,12 +150,16 @@ export function setupImageStudio(api) {
   function releaseResult(){if(lastResult?.url)URL.revokeObjectURL(lastResult.url);lastResult=null;preview.removeAttribute('src');results.hidden=true;empty.hidden=false;refreshActions();}
   function stop(message='이미지 생성을 취소했어요. 고정 레퍼런스와 이전 결과는 유지했어요.'){operation++;controller?.abort();controller=null;if(busy)setBusy(false,message);}
   function cancelConnectionCheck(){connectionSequence++;connectionController?.abort();connectionController=null;if(connection.dataset.state==='loading')connectionChecked=false;}
+  function configureConnection(){
+    if(typeof api.openApiSettings!=='function')throw new Error('AI 서버 연결 설정을 불러오지 못했어요. 페이지를 새로고침한 뒤 다시 연결해 주세요. 고정 레퍼런스와 입력은 유지돼요.');
+    return api.openApiSettings();
+  }
   async function checkConnection(){
     cancelConnectionCheck();
     const seq=++connectionSequence;configured=false;connectionChecked=false;connectionText.textContent='이미지 서비스 연결을 확인하고 있어요.';connection.dataset.state='loading';refreshActions();
     const abort=new AbortController(),timeout=setTimeout(()=>abort.abort(),60000);connectionController=abort;
-    try{const config=await request('/api/image/config',{signal:abort.signal});if(seq!==connectionSequence)return;configured=config.configured===true;connectionChecked=true;connectionText.textContent=configured?'레퍼런스 이미지로 새 장면을 생성할 수 있어요.':'이미지 생성 서비스가 아직 연결되지 않았어요. 고정 레퍼런스 저장과 제작 요청문 복사는 사용할 수 있어요.';connection.dataset.state=configured?'ready':'unavailable';}
-    catch{if(seq!==connectionSequence)return;connectionChecked=true;connectionText.textContent='이미지 서비스에 연결하지 못했어요. 고정 자료는 유지돼요. 연결 상태를 다시 확인해 주세요.';connection.dataset.state='unavailable';}
+    try{const config=await request('/api/image/config',{signal:abort.signal});if(seq!==connectionSequence)return;configured=config.configured===true;connectionChecked=true;connectionText.textContent=configured?'AI 이미지 생성이 연결됐어요. 고정 레퍼런스·배경 설정·장면 요청을 함께 반영해 새 이미지를 만들어요.':'이미지 AI를 사용하려면 ‘AI 서버 연결’을 설정하세요. 대본과 같은 서버의 OpenAI 키를 사용할 수 있어요. 고정 레퍼런스와 입력은 유지돼요.';connection.dataset.state=configured?'ready':'unavailable';}
+    catch{if(seq!==connectionSequence)return;connectionChecked=true;connectionText.textContent='이미지 AI 서버에 연결되지 않았어요. ‘AI 서버 연결’에서 대본과 같은 서버를 연결해 주세요. 고정 레퍼런스와 입력은 유지돼요.';connection.dataset.state='unavailable';}
     finally{clearTimeout(timeout);if(seq===connectionSequence){connectionController=null;refreshActions();}}
   }
   async function addFiles(){
@@ -173,7 +181,7 @@ export function setupImageStudio(api) {
     api.mutate(value=>{value.imageStudio.references.push({assetId:scene.imageId,label:String(asset.name||'선택 장면').slice(0,120),role:uploadRole.input.value,enabled:true});});api.toast('선택한 장면 이미지를 고정 레퍼런스로 등록했어요.');
   }
   async function generateImage(){
-    if(busy)return;if(!configured)throw new Error('이미지 생성 서비스 연결을 먼저 확인해 주세요.');flush();const settings=capture();
+    if(busy)return;if(!configured){await configureConnection();return;}flush();const settings=capture();
     const references=enabledReferences().map(reference=>({...reference})).sort((a,b)=>(a.role==='concept'?0:1)-(b.role==='concept'?0:1));
     if(!references.length)throw new Error('이번 생성에 참조할 고정 이미지를 한 장 이상 선택해 주세요.');if(!settings.prompt.trim())throw new Error('이번에 만들 장면을 입력해 주세요.');
     showError('',false);const startedProject=projectId,seq=++operation;controller=new AbortController();const signal=controller.signal;setBusy(true,'고정 레퍼런스를 준비하고 있어요.');
@@ -203,7 +211,7 @@ export function setupImageStudio(api) {
     finally{setBusy(false);}
   }
   open.addEventListener('click',run(async()=>{api.pause();showError('',false);render();dialog.showModal();refreshActions();if(!connectionChecked)await checkConnection();}));
-  refresh.addEventListener('click',run(checkConnection));upload.addEventListener('click',event=>{event.preventDefault();if(!busy)input.click();});input.addEventListener('change',run(addFiles));fromScene.addEventListener('click',run(addSelected));
+  configure.addEventListener('click',run(configureConnection));refresh.addEventListener('click',run(checkConnection));upload.addEventListener('click',event=>{event.preventDefault();if(!busy)input.click();});input.addEventListener('change',run(addFiles));fromScene.addEventListener('click',run(addSelected));
   useCaption.addEventListener('click',run(()=>{const scene=api.getProject().scenes.find(item=>item.id===api.getSelectedId());if(scene?.caption){prompt.input.value=scene.caption;queueSave();}}));
   generate.addEventListener('click',run(generateImage));cancel.addEventListener('click',()=>stop());copy.addEventListener('click',run(async()=>{flush();await copyText(promptText());api.toast('요청문을 복사했어요. 외부 서비스에는 레퍼런스 이미지 파일도 함께 첨부하세요.');}));
   save.addEventListener('click',run(()=>{if(lastResult)download(lastResult.blob,lastResult.name.endsWith('.png')?lastResult.name:`${lastResult.name}.png`);}));apply.addEventListener('click',run(applyResult));
