@@ -147,10 +147,12 @@ export function setupLibraryTools(api) {
       const open = button('', '열기'); open.dataset.action = 'open';
       open.addEventListener('click', run(async () => {
         if (shelfBusy) return;
+        const originWorkspace = api.getWorkspaceId?.();
         setShelfBusy(true);
         try {
           const loaded = await loadLibraryProject(entry.id);
           if (!loaded) throw new Error('프로젝트를 찾지 못했어요. 보관함을 다시 열어주세요.');
+          if (api.getWorkspaceId?.() !== originWorkspace) throw new Error('분야가 바뀌어 프로젝트 열기를 취소했어요. 현재 분야에서 보관함을 다시 열어 주세요.');
           await api.replaceProject(loaded);
           shelf.dialog.close();
           api.toast('보관한 프로젝트를 열었어요.');

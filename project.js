@@ -5,8 +5,8 @@ export const MAX_BACKUP_BYTES = 250 * 1024 * 1024;
 export const MAX_ASSET_BYTES = 180 * 1024 * 1024;
 const MAX_REFERENCE_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_REFERENCE_BYTES = 20 * 1024 * 1024;
-const DB_NAME = 'bth-blkout-image-studio';
-const DB_VERSION = 2;
+export const DB_NAME = 'bth-blkout-image-studio';
+export const DB_VERSION = 3;
 const MOTIONS = new Set(['zoom-in', 'zoom-out', 'pan-left', 'pan-right', 'none', 'custom']);
 const FITS = new Set(['cover', 'contain']);
 const ID_PATTERN = /^[a-zA-Z0-9_-]{1,180}$/;
@@ -39,7 +39,7 @@ export function createProject(overrides = {}) {
   return {
     schemaVersion: SCHEMA_VERSION,
     id: createId('episode'),
-    title: 'BLKOUT 설정 이야기',
+    title: '새 콘텐츠 프로젝트',
     aspect: '16:9',
     scenes: [],
     captions: [],
@@ -317,7 +317,7 @@ export function validateProject(input) {
   return {
     schemaVersion: SCHEMA_VERSION,
     id: validId(input.id, false, '프로젝트'),
-    title: textValue(input.title, 'BLKOUT 설정 이야기', 200, '제목'),
+    title: textValue(input.title, '새 콘텐츠 프로젝트', 200, '제목'),
     aspect: input.aspect,
     scenes,
     captions: canonicalCaptions,
@@ -640,7 +640,7 @@ export function referencedAssetIds(project) {
   ].filter(Boolean));
 }
 
-function canonicalAssets(project, assets) {
+export function canonicalAssets(project, assets) {
   const result = [];
   let totalSize = 0, referenceSize = 0;
   const referenceIds = new Set((project.imageStudio?.references || []).map(reference => reference.assetId));
@@ -667,24 +667,32 @@ function canonicalAssets(project, assets) {
   return result;
 }
 
-function openDatabase() {
+export function openDatabase() {
   return new Promise((resolve, reject) => {
     if (!globalThis.indexedDB) { reject(new Error('이 브라우저에서는 자동 저장을 사용할 수 없습니다. 프로젝트 파일로 저장해 주세요.')); return; }
     const request = indexedDB.open(DB_NAME, DB_VERSION);
+    let failed = false;
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects');
       if (!db.objectStoreNames.contains('assets')) db.createObjectStore('assets', {keyPath: 'id'});
       if (!db.objectStoreNames.contains('library')) db.createObjectStore('library', {keyPath: 'id'});
       if (!db.objectStoreNames.contains('libraryMeta')) db.createObjectStore('libraryMeta', {keyPath: 'id'});
+      if (!db.objectStoreNames.contains('workspaces')) db.createObjectStore('workspaces', {keyPath: 'id'});
+      if (!db.objectStoreNames.contains('workspaceMeta')) db.createObjectStore('workspaceMeta');
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(new Error('자동 저장 공간을 열지 못했습니다. 프로젝트 파일로 저장해 주세요.'));
-    request.onblocked = () => reject(new Error('다른 탭에서 편집기를 닫은 뒤 다시 저장해 주세요.'));
+    request.onsuccess = () => {
+      const db = request.result;
+      if (failed) {db.close();return;}
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
+    request.onerror = () => {failed = true;reject(new Error('자동 저장 공간을 열지 못했습니다. 프로젝트 파일로 저장해 주세요.'));};
+    request.onblocked = () => {failed = true;reject(new Error('다른 탭에서 편집기를 닫은 뒤 다시 저장해 주세요.'));};
   });
 }
 
-function transactionResult(transaction, db) {
+export function transactionResult(transaction, db) {
   return new Promise((resolve, reject) => {
     transaction.oncomplete = () => { db.close(); resolve(); };
     transaction.onerror = () => { db.close(); reject(new Error('자동 저장에 실패했습니다. 저장 공간을 확인하거나 프로젝트 파일로 저장해 주세요.')); };

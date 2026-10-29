@@ -94,7 +94,7 @@ export function setupScriptStudio(api) {
   const fileHint = node('p', 'script-studio-help', 'TXT · MD · PDF · DOCX, 파일당 10MB까지. 여러 파일은 최대 5개, 합계 20MB까지 읽어요. 스캔한 문서에는 텍스트가 필요해요.');
   sourcePanel.append(files.wrapper, fileHint);
   const source = field('researchSource', '참고 자료 · 주제', 'textarea'); source.input.rows = 10; source.input.maxLength = LIMIT * 2;
-  source.input.placeholder = '자료를 붙여넣거나 위에서 파일을 추가하세요.\n예: 블랙아웃 세계관의 이 기체를 소개하는 영상을 만들고 싶어요. 공식 설정을 우선 확인해 주세요.';
+  source.input.placeholder = '자료를 붙여넣거나 위에서 파일을 추가하세요.\n예: 소개할 주제와 핵심 질문을 적어 주세요. 제공한 원본 자료와 확인 가능한 출처를 우선해 주세요.';
   const sourceStats = node('span', 'script-source-count'); sourceStats.id = 'researchSourceCount';
   source.wrapper.append(sourceStats); sourcePanel.append(source.wrapper);
   const settings = node('div', 'script-length-settings');
