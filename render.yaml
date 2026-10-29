@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+services:
+  - type: web
+    name: image-studio-ai
+    runtime: node
+    plan: free
+    repo: https://github.com/battlebuild001/image-studio
+    branch: image-studio-server
+    autoDeployTrigger: commit
+    buildCommand: npm ci --omit=dev --no-audit --no-fund
+    startCommand: node scripts/serve.mjs --host 0.0.0.0
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "24.19.0"
+      - key: STUDIO_PUBLIC
+        value: "1"
+      - key: STUDIO_ALLOWED_ORIGINS
+        value: https://battlebuild001.github.io
+      - key: STUDIO_ACCESS_TOKEN
+        generateValue: true
+      - key: SCRIPT_AI_API_KEY
+        sync: false
+      - key: SCRIPT_AI_MODEL
+        value: gpt-5-mini

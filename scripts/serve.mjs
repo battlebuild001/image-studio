@@ -3,11 +3,16 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { extname, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
+import { createScriptApi } from './script-api.mjs';
+import { createImageApi } from './image-api.mjs';
+import { createTranscriptApi } from './transcript-api.mjs';
+import { createVoiceApi } from './voice-api.mjs';
+import { createBackendAccess } from './backend-access.mjs';
 
 const { values } = parseArgs({
   options: {
     host: { type: 'string', default: '127.0.0.1' },
-    port: { type: 'string', default: '4173' },
+    port: { type: 'string', default: process.env.PORT || '4173' },
   },
 });
 const port = Number(values.port);
@@ -20,23 +25,35 @@ const types = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.webp': 'image/webp',
 };
+const handleScriptApi = createScriptApi();
+const handleImageApi = createImageApi();
+const handleTranscriptApi = createTranscriptApi();
+const handleVoiceApi = createVoiceApi();
+const handleAccess = createBackendAccess({publicMode: !['127.0.0.1', 'localhost', '::1'].includes(values.host)});
 
 const server = http.createServer(async (req, res) => {
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    res.writeHead(405, { Allow: 'GET, HEAD' }).end();
-    return;
-  }
   let pathname;
   try {
     pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
   } catch {
     res.writeHead(400).end('Bad request');
+    return;
+  }
+  if (handleAccess(req, res, pathname)) return;
+  if (await handleScriptApi(req, res, pathname)) return;
+  if (await handleImageApi(req, res, pathname)) return;
+  if (await handleTranscriptApi(req, res, pathname)) return;
+  if (await handleVoiceApi(req, res, pathname)) return;
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { Allow: 'GET, HEAD' }).end();
     return;
   }
   const path = resolve(rootPath, `.${pathname === '/' ? '/index.html' : pathname}`);

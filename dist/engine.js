@@ -12,6 +12,8 @@ const lerp = (a, b, p) => a + (b - a) * p;
 const ease = p => p * p * (3 - 2 * p);
 const memo = new WeakMap();
 const transitions = new WeakMap();
+const audioEnvelopes = new WeakMap();
+const CAPTION_FONTS = {sans: FONT, serif: '"Noto Serif KR", "Batang", serif', mono: 'ui-monospace, "D2Coding", monospace'};
 const MP4_TYPES = [
   'video/mp4;codecs=avc1.4d002a,mp4a.40.2',
   'video/mp4;codecs=avc1.42002a,mp4a.40.2',
@@ -31,8 +33,10 @@ function checkAbort(signal) {
 
 function snapshot(project) {
   const signature = [project.captionMode, project.aspect,
-    ...(project.scenes || []).map(s => `${s.id}|${s.duration}|${s.caption || ''}|${s.imageId || ''}|${s.motion}|${s.fit}`),
-    ...(project.captionMode === 'srt' ? project.captions || [] : []).map(c => `${c.start}|${c.end}|${c.text}`),
+    ...(project.scenes || []).map(s => `${s.id}|${s.duration}|${s.caption || ''}|${s.imageId || ''}|${s.motion}|${s.fit}|${s.focusX}|${s.focusY}|${s.endX}|${s.endY}|${s.zoomStart}|${s.zoomEnd}`),
+    ...(project.captionMode !== 'auto' ? project.captions || [] : []).map(c => `${c.start}|${c.end}|${c.text}`),
+    ...(project.captionMode === 'speech' ? [project.audio?.narrationId, project.audio?.narrationStart,
+      project.audio?.narrationEnd, project.audio?.narrationOffset, JSON.stringify(project.captionAnalysis)] : []),
   ].join('\u0001');
   let cached = memo.get(project);
   if (!cached || cached.signature !== signature) {
@@ -145,7 +149,16 @@ function drawScene(ctx, scene, assets, progress, width, height, index) {
     case 'zoom-out': zoom = lerp(fit === 'contain' ? 1 : 1.12, fit === 'contain' ? 0.9 : 1, p);break;
     case 'pan-left': zoom = fit === 'contain' ? 0.92 : 1.12;px = fit === 'contain' ? lerp(0.8, 0.2, p) : lerp(0.2, 0.8, p);break;
     case 'pan-right': zoom = fit === 'contain' ? 0.92 : 1.12;px = fit === 'contain' ? lerp(0.2, 0.8, p) : lerp(0.8, 0.2, p);break;
+    case 'custom':
+      zoom = lerp(clamp(scene.zoomStart ?? 1, 1, 3), clamp(scene.zoomEnd ?? 1.12, 1, 3), p);
+      px = lerp(clamp(scene.focusX ?? 0.5), clamp(scene.endX ?? 0.5), p);
+      py = lerp(clamp(scene.focusY ?? 0.5), clamp(scene.endY ?? 0.5), p);
+      break;
     default: break;
+  }
+  if (scene.motion !== 'custom') {
+    px = clamp(px + (scene.focusX ?? 0.5) - 0.5);
+    py = clamp(py + (scene.focusY ?? 0.5) - 0.5);
   }
   const dw = iw * baseScale * zoom, dh = ih * baseScale * zoom;
   ctx.save();ctx.beginPath();ctx.rect(0, 0, width, height);ctx.clip();
@@ -181,10 +194,11 @@ function drawCaption(ctx, text, settings, width, height) {
   const maxWidth = width * (width < height ? 0.82 : 0.84);
   let fontSize = clamp(Number(settings.fontSize) || 48, 20, 100) * scale;
   const minimum = 18 * scale;
+  const font = CAPTION_FONTS[settings.captionFont] || FONT;
   ctx.textAlign = 'center';ctx.textBaseline = 'middle';
   let lines;
   do {
-    ctx.font = `600 ${fontSize}px ${FONT}`;
+    ctx.font = `600 ${fontSize}px ${font}`;
     lines = wrapText(ctx, text, maxWidth);
     if (lines.length <= 2 || fontSize <= minimum) break;
     fontSize = Math.max(minimum, fontSize - 2 * scale);
@@ -194,13 +208,25 @@ function drawCaption(ctx, text, settings, width, height) {
   const panelWidth = Math.min(width * 0.94, Math.max(...lines.map(line => ctx.measureText(line).width), 0) + paddingX * 2);
   const panelHeight = lines.length * lineHeight + paddingY * 2;
   const bottom = height * (width < height ? 0.14 : 0.07);
-  const top = Math.max(height * 0.12, height - bottom - panelHeight);
-  ctx.fillStyle = 'rgba(7,10,13,0.83)';
+  let top = Math.max(height * 0.12, height - bottom - panelHeight);
+  if (settings.captionPosition === 'top') top = height * 0.12;
+  if (settings.captionPosition === 'center') top = (height - panelHeight) / 2;
+  top = clamp(top, height * 0.04, Math.max(height * 0.04, height * 0.96 - panelHeight));
+  ctx.save();
+  ctx.fillStyle = settings.captionBackground || '#070a0d';
+  ctx.globalAlpha = clamp(settings.captionOpacity ?? 0.83);
   roundedRect(ctx, (width - panelWidth) / 2, top, panelWidth, panelHeight, 10 * scale);ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)';ctx.lineWidth = scale;ctx.stroke();
-  ctx.fillStyle = '#ffffff';
+  ctx.restore();
+  ctx.fillStyle = settings.captionColor || '#ffffff';
   ctx.shadowColor = 'rgba(0,0,0,0.65)';ctx.shadowBlur = 4 * scale;ctx.shadowOffsetY = scale;
-  lines.forEach((line, i) => ctx.fillText(line, width / 2, top + paddingY + (i + 0.5) * lineHeight));
+  ctx.strokeStyle = settings.captionStroke || '#000000';
+  ctx.lineWidth = clamp(settings.captionStrokeWidth ?? 0, 0, 8) * scale;
+  ctx.lineJoin = 'round';
+  lines.forEach((line, i) => {
+    const y = top + paddingY + (i + 0.5) * lineHeight;
+    if (ctx.lineWidth > 0 && settings.captionStrokeWidth > 0) ctx.strokeText(line, width / 2, y);
+    ctx.fillText(line, width / 2, y);
+  });
   ctx.shadowBlur = 0;ctx.shadowOffsetY = 0;
 }
 
@@ -271,16 +297,137 @@ export async function getExportCapabilities() {
   };
 }
 
-function connectAudio(context, destination, asset, volume, loop, startAt, duration) {
+/** Source bounds in seconds; trims are nondestructive and BGM loops only this window. */
+export function getAudioWindow(project, assets, kind) {
+  const asset = assets.get(project.audio?.[`${kind}Id`]);
+  if (!asset) return {start: 0, end: 0, duration: 0};
+  const length = Number(asset.audioBuffer?.duration ?? asset.duration) || 0;
+  const start = project.audio?.[`${kind}Start`] ?? 0;
+  const requestedEnd = project.audio?.[`${kind}End`];
+  const end = requestedEnd == null ? length : requestedEnd;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end > length + 0.01 || start >= end) {
+    throw new Error(`${kind === 'narration' ? '내레이션' : '배경음악'} 자르기 범위를 파일 길이 안에서 지정해 주세요.`);
+  }
+  return {start, end: Math.min(length, end), duration: Math.min(length, end) - start};
+}
+
+// RMS is computed once per decoded file, in 50 ms windows. A short look-behind
+// keeps the BGM down through syllable gaps without treating silence as speech.
+function voiceEnvelope(buffer) {
+  let cached = audioEnvelopes.get(buffer);
+  if (cached) return cached;
+  const step = Math.max(1, Math.round(buffer.sampleRate * 0.05));
+  const channels = Array.from({length: Math.min(2, buffer.numberOfChannels)}, (_, i) => buffer.getChannelData(i));
+  const values = new Float32Array(Math.ceil(buffer.length / step));
+  for (let bin = 0; bin < values.length; bin++) {
+    const from = bin * step, to = Math.min(buffer.length, from + step);
+    let squares = 0;
+    for (const channel of channels) for (let index = from; index < to; index++) squares += channel[index] * channel[index];
+    values[bin] = Math.sqrt(squares / Math.max(1, (to - from) * channels.length));
+  }
+  cached = {values, stepSeconds: step / buffer.sampleRate};
+  audioEnvelopes.set(buffer, cached);
+  return cached;
+}
+
+/** The same gain envelope drives preview and exported audio (not a UI estimate). */
+export function getAudioGain(project, assets, kind, time) {
+  const settings = project.settings || {};
+  const total = getDuration(project);
+  if (time < 0 || time >= total) return 0;
+  const window = getAudioWindow(project, assets, kind);
+  if (!window.duration) return 0;
+  const narrationOffset = project.audio?.narrationOffset ?? 0;
+  if (kind === 'narration') return time >= narrationOffset && time < narrationOffset + window.duration ? clamp(settings.narrationVolume ?? 1, 0, 2) : 0;
+  let gain = clamp(settings.bgmVolume ?? 0.12, 0, 1);
+  const fadeIn = clamp(settings.bgmFadeIn ?? 0, 0, 10);
+  const fadeOut = clamp(settings.bgmFadeOut ?? 0, 0, 10);
+  if (fadeIn) gain *= clamp(time / fadeIn);
+  if (fadeOut) gain *= clamp((total - time) / fadeOut);
+  if (settings.ducking) {
+    const voice = assets.get(project.audio?.narrationId)?.audioBuffer;
+    const voiceWindow = getAudioWindow(project, assets, 'narration');
+    if (voice && time >= narrationOffset && time < narrationOffset + voiceWindow.duration && (settings.narrationVolume ?? 1) > 0) {
+      const envelope = voiceEnvelope(voice);
+      const sourceTime = voiceWindow.start + time - narrationOffset;
+      let rms = 0;
+      const first = Math.max(0, Math.floor(Math.max(voiceWindow.start, sourceTime - 0.2) / envelope.stepSeconds));
+      const last = Math.min(envelope.values.length - 1, Math.floor(Math.min(voiceWindow.end, sourceTime + 0.05) / envelope.stepSeconds));
+      for (let i = first; i <= last; i++) rms = Math.max(rms, envelope.values[i]);
+      gain *= 1 - 0.75 * clamp((rms - 0.006) / 0.012);
+    }
+  }
+  return gain;
+}
+
+// Build potentially expensive RMS/gain curves before selecting a live clock
+// start. Long files must not consume the beginning of preview/export while a
+// source scheduled in the past is still being prepared.
+function prepareAudioPlan(project, assets, kind, offset = 0) {
+  const asset = assets.get(project.audio?.[`${kind}Id`]);
   if (!asset?.audioBuffer) return null;
+  const window = getAudioWindow(project, assets, kind);
+  const remaining = Math.max(0, getDuration(project) - offset);
+  const loop = kind === 'bgm';
+  const narrationOffset = project.audio?.narrationOffset ?? 0;
+  const elapsed = Math.max(0, offset - narrationOffset);
+  const delay = loop ? 0 : Math.max(0, narrationOffset - offset);
+  if (remaining <= delay || !window.duration || (!loop && elapsed >= window.duration)) return null;
+  const duration = loop ? remaining : Math.min(remaining - delay, window.duration - elapsed);
+  const sourceOffset = window.start + (loop ? offset % window.duration : elapsed);
+  let values = null;
+  if (loop && duration > 0.001) {
+    values = new Float32Array(Math.max(2, Math.ceil(duration / 0.05) + 1));
+    for (let i = 0; i < values.length; i++) {
+      values[i] = getAudioGain(project, assets, kind, offset + Math.min(duration - 0.000001, duration * i / (values.length - 1)));
+    }
+  }
+  return {asset, window, loop, delay, duration, sourceOffset, values, initialGain: getAudioGain(project, assets, kind, offset + delay)};
+}
+
+function connectAudio(context, destination, plan, startAt) {
+  if (!plan) return null;
+  const {asset, window, loop, delay, duration, sourceOffset, values, initialGain} = plan;
+  const sourceStart = startAt + delay;
   const source = context.createBufferSource();source.buffer = asset.audioBuffer;source.loop = loop;
-  const gain = context.createGain();gain.gain.setValueAtTime(clamp(volume, 0, 2), startAt);
+  if (loop) {source.loopStart = window.start;source.loopEnd = window.end;}
+  const gain = context.createGain();
   source.connect(gain);gain.connect(destination);
-  source.start(startAt);
-  // Stop at the video boundary even if narration is longer. A short narration
-  // naturally ends and the remaining pictures/music continue to the boundary.
-  source.stop(startAt + duration);
+  gain.gain.setValueAtTime(initialGain, sourceStart);
+  if (values) gain.gain.setValueCurveAtTime(values, sourceStart, duration);
+  source.start(sourceStart, sourceOffset);
+  source.stop(sourceStart + duration);
   return {source, gain};
+}
+
+/** Start a fresh audio session at an arbitrary video timestamp, including trims. */
+export async function createPreviewAudio(project, assets, offset = 0) {
+  const audioAssets = new Map([...assets].filter(([id]) => id === project.audio?.narrationId || id === project.audio?.bgmId));
+  if (!audioAssets.size) return {stop() {}};
+  await prepareAssets(audioAssets);
+  const plans = ['narration', 'bgm'].map(kind => prepareAudioPlan(project, assets, kind, offset));
+  const AudioCtx = globalThis.AudioContext || globalThis.webkitAudioContext;
+  if (!AudioCtx) throw new Error('이 브라우저에서는 음성을 재생할 수 없습니다. 최신 Chrome 또는 Edge를 사용해 주세요.');
+  const context = new AudioCtx();
+  const nodes = [];
+  let timer = 0, stopped = false;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;clearTimeout(timer);
+    for (const {source, gain} of nodes) {try {source.stop();} catch {}source.disconnect();gain.disconnect();}
+    if (context.state !== 'closed') context.close().catch(() => {});
+  };
+  try {
+    await context.resume();
+    if (context.state !== 'running') throw new Error('음성을 재생하지 못했어요. 재생 버튼을 다시 눌러주세요.');
+    const startAt = context.currentTime + 0.01;
+    for (const plan of plans) {
+      const node = connectAudio(context, context.destination, plan, startAt);
+      if (node) nodes.push(node);
+    }
+    timer = setTimeout(stop, Math.max(0, getDuration(project) - offset) * 1000 + 100);
+    return {stop, getTime: () => Math.max(offset, offset + context.currentTime - startAt)};
+  } catch (error) {stop();throw error;}
 }
 
 /**
@@ -314,6 +461,7 @@ export async function exportVideo({project, assets, format = 'mp4', width = 1920
   if (project.audio?.narrationId && !narration?.audioBuffer) throw new Error('내레이션 파일을 다시 넣어 주세요.');
   if (project.audio?.bgmId && !bgm?.audioBuffer) throw new Error('배경음악 파일을 다시 넣어 주세요.');
   const frozenProject = structuredClone(project);
+  const audioPlans = ['narration', 'bgm'].map(kind => prepareAudioPlan(frozenProject, assets, kind));
   const canvas = document.createElement('canvas');canvas.width = width;canvas.height = height;
   const ctx = canvas.getContext('2d', {alpha: false});
   renderFrame(ctx, frozenProject, assets, 0, width, height);
@@ -415,11 +563,12 @@ export async function exportVideo({project, assets, format = 'mp4', width = 1920
     checkAbort(signal);
     const lead = audioContext ? 0.03 : 0;
     const clockStart = audioContext ? audioContext.currentTime + lead : performance.now() / 1000;
-    const settings = frozenProject.settings || {};
-    if (narration?.audioBuffer) audioNodes.push(connectAudio(audioContext, destination, narration, settings.narrationVolume ?? 1, false, clockStart, duration));
-    if (bgm?.audioBuffer) audioNodes.push(connectAudio(audioContext, destination, bgm, settings.bgmVolume ?? 0.12, true, clockStart, duration));
+    for (const plan of audioPlans) {
+      const node = audioContext && connectAudio(audioContext, destination, plan, clockStart);
+      if (node) audioNodes.push(node);
+    }
     const now = () => (audioContext ? audioContext.currentTime : performance.now() / 1000) - clockStart;
-    let lastProgress = -Infinity, finishing = false;
+    let lastProgress = -Infinity, lastFrameIndex = -1, finishing = false;
     const finish = () => {
       if (stopped || finishing) return;
       finishing = true;clearTimeout(frameTimer);clearTimeout(endTimer);
@@ -430,23 +579,28 @@ export async function exportVideo({project, assets, format = 'mp4', width = 1920
       endTimer = setTimeout(stop, Math.min(40, 1000 / fps));
     };
     const draw = () => {
-      if (stopped) return;
+      if (stopped || finishing) return;
       const elapsed = clamp(now(), 0, duration);
-      renderFrame(ctx, frozenProject, assets, elapsed, width, height);
-      videoTrack.requestFrame?.();
-      if (elapsed - lastProgress > 0.1 || elapsed === duration) {
-        onProgress({phase: 'render', progress: elapsed / duration,
-          message: `영상을 만들고 있어요 · ${Math.floor(elapsed)} / ${Math.ceil(duration)}초`});lastProgress = elapsed;
-      }
       if (elapsed >= duration) {finish();return;}
+      const frameIndex = Math.floor(elapsed * fps);
+      // Timers can fire just before their requested audio-clock boundary. Only
+      // capture once per logical frame, rather than again on each early wake.
+      if (frameIndex > lastFrameIndex) {
+        renderFrame(ctx, frozenProject, assets, elapsed, width, height);
+        videoTrack.requestFrame?.();
+        lastFrameIndex = frameIndex;
+        if (elapsed - lastProgress > 0.1) {
+          onProgress({phase: 'render', progress: elapsed / duration,
+            message: `영상을 만들고 있어요 · ${Math.floor(elapsed)} / ${Math.ceil(duration)}초`});lastProgress = elapsed;
+        }
+      }
       // Export uses an audio-clock-aligned timer rather than requestAnimationFrame.
       // RAF may be throttled for an off-screen canvas despite an active document.
-      const nextFrame = (Math.floor(elapsed * fps) + 1) / fps;
+      const nextFrame = (lastFrameIndex + 1) / fps;
       frameTimer = setTimeout(draw, Math.max(1, (nextFrame - now()) * 1000));
     };
     onProgress({phase: 'render', progress: 0, message: '영상을 만들고 있어요. 이 탭을 열어 두세요.'});
     draw();
-    videoTrack.requestFrame?.();
     // A separate end timer preserves the audio boundary even when the device
     // drops a render frame. AudioBufferSource.stop is scheduled exactly above.
     endTimer = setTimeout(finish, (duration + lead) * 1000);

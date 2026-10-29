@@ -3,10 +3,29 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "engines": {"node": ">=22"},
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "node scripts/serve.mjs",
     "start": "node scripts/serve.mjs",
-    "test": "node --test tests/project.test.mjs"
+    "deploy": "node scripts/deploy.mjs",
+    "deploy:check": "node scripts/deploy.mjs --dry-run",
+    "test": "node --test tests/*.test.mjs",
+    "test:browser": "node tests/editor.browser.cjs",
+    "test:script-browser": "node tests/script-studio.browser.cjs",
+    "test:image-browser": "node tests/image-studio.browser.cjs",
+    "test:transcript-browser": "node tests/transcript-studio.browser.cjs",
+    "test:voice-browser": "node tests/voice-studio.browser.cjs",
+    "test:workspace-browser": "node tests/workspace-tabs.browser.cjs",
+    "test:preview-browser": "node tests/preview-empty.browser.cjs",
+    "deploy:server": "node scripts/publish-backend-source.mjs",
+    "deploy:server:check": "node scripts/publish-backend-source.mjs --dry-run",
+    "test:api-settings-browser": "node tests/api-settings.browser.cjs",
+    "test:ai-workflow-browser": "node tests/ai-connection-workflow.browser.cjs"
+  },
+  "dependencies": {
+    "mammoth": "1.13.0",
+    "unpdf": "1.9.1"
   }
 }
