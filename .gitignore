@@ -1,0 +1,16 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+*.log
+coverage/
+exports/
+backups/
+*.bth.json
+*.mp4
+*.webm
+
+# dist/ is the application source. Keep it tracked.
+# tests/fixtures contains small synthetic media and stays tracked.

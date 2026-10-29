@@ -1,0 +1,12 @@
+{
+  "name": "bth-blkout-image-studio",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=22"},
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "start": "node scripts/serve.mjs",
+    "test": "node --test tests/project.test.mjs"
+  }
+}
