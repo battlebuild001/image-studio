@@ -1,0 +1,181 @@
+/* Advanced editor controls share the local editor's dark palette. */
+.editor-details {
+  min-width: 0;
+  grid-column: 1 / -1;
+  margin-top: 14px;
+  border: 1px solid var(--line, #2a3338);
+  border-radius: 7px;
+  background: #111c21;
+}
+.editor-details > summary {
+  padding: 11px 10px;
+  cursor: pointer;
+  color: #c4d1d0;
+  font-size: 11px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.editor-details > summary::marker { color: var(--accent, #dfbb84); }
+.editor-details[open] > summary { border-bottom: 1px solid var(--line-soft, #202a2e); }
+.editor-details-body { min-width: 0; padding: 11px 10px; }
+.editor-details-body > select { width: 100%; max-width: 100%; min-width: 0; margin-top: 10px; }
+.audio-card { min-width: 0; }
+.audio-card .editor-help { white-space: normal; overflow: visible; text-overflow: clip; }
+.editor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.editor-control {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #9eb3ba;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.editor-control > span { overflow-wrap: anywhere; }
+.editor-control input:not([type=checkbox]):not([type=range]),
+.editor-control select,
+.editor-control textarea {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 31px;
+  padding: 6px 7px;
+  font-size: 11px;
+}
+.editor-control input[type=number] { font-variant-numeric: tabular-nums; }
+.editor-control input[type=color] { cursor: pointer; }
+.editor-control input[type=range] { margin: 8px 0; }
+.editor-control input[type=checkbox] { align-self: flex-start; width: 18px; height: 18px; margin: 1px 0; }
+.editor-control-wide { grid-column: 1 / -1; }
+.editor-control:has(input[type=checkbox]) { flex-direction: row; align-items: center; }
+.editor-help,
+.editor-crop-note {
+  color: #879da5;
+  font-size: 10px;
+  line-height: 1.7;
+  margin: 9px 0 0;
+  overflow-wrap: anywhere;
+}
+.editor-crop-note { color: #a3b8a7; }
+.editor-button-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 10px; }
+.editor-button-row button { min-height: 31px; padding: 7px 9px; font-size: 10px; }
+.editor-inline { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.editor-inline > input,
+.editor-inline > select { flex: 1 1 80px; min-width: 0; max-width: 100%; }
+.editor-inline > button { flex-shrink: 0; }
+.editor-preset-name { width: 100%; min-width: 0; margin: 8px 0 0; }
+.editor-preset-name input { width: 100%; min-height: 32px; padding: 6px 8px; font-size: 11px; }
+.editor-error { color: var(--danger, #e09e94); font-size: 11px; line-height: 1.7; margin-top: 10px; }
+.editor-error:empty { display: none; }
+.editor-details summary:focus-visible,
+.editor-details input:focus-visible,
+.editor-details select:focus-visible,
+.editor-details button:focus-visible,
+.loop-controls input:focus-visible,
+#audioWaveform:focus-visible {
+  outline: 2px solid var(--accent, #dfbb84);
+  outline-offset: 3px;
+}
+
+/* Pointer cropping remains usable without relying on hover or a mouse. */
+#selectedImage.editor-crop-enabled { position: relative; cursor: grab; touch-action: none; user-select: none; }
+#selectedImage.editor-crop-enabled:active { cursor: grabbing; }
+#selectedImage.editor-crop-enabled img { pointer-events: none; user-select: none; -webkit-user-drag: none; }
+#selectedImage.editor-crop-enabled:focus-visible { outline: 2px solid var(--accent, #dfbb84); outline-offset: 3px; }
+
+/* Audio and repeated preview controls stay beside the timeline. */
+.waveform-section {
+  min-width: 0;
+  padding: 11px 12px;
+  margin: -6px 0 16px;
+  border: 1px solid #2b3e47;
+  border-radius: 7px;
+  background: #111c21;
+}
+.waveform-section h3 { color: #b1c4c8; font-size: 11px; margin-bottom: 8px; }
+#audioWaveform {
+  display: block;
+  width: 100%;
+  height: 80px;
+  border: 1px solid #2c424c;
+  border-radius: 5px;
+  background: #0c161b;
+  cursor: crosshair;
+  touch-action: manipulation;
+}
+.waveform-message { font-size: 10px; color: #8fa8b2; line-height: 1.7; margin-top: 7px; }
+.loop-controls { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.loop-controls label { display: flex; gap: 6px; align-items: center; color: #a2b8bf; font-size: 10px; }
+.loop-controls .editor-control { align-items: stretch; }
+.loop-controls input[type=number] { width: 85px; min-height: 31px; padding: 6px; font-size: 11px; }
+.loop-controls input[type=checkbox] { width: 16px; height: 16px; margin: 0; }
+.loop-controls button { min-height: 31px; padding: 7px 9px; font-size: 10px; }
+
+/* Caption time fields are tabular and stay visible while text is edited. */
+.caption-editor-modal { width: min(900px, calc(100vw - 30px)); }
+.caption-editor-modal .dialog-body { min-width: 0; }
+.cue-toolbar { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin: 12px 0; }
+.cue-toolbar label { display: flex; align-items: center; gap: 7px; color: #a6bbc1; font-size: 11px; }
+.cue-toolbar input[type=number] { width: 95px; min-height: 32px; padding: 6px 8px; font-size: 11px; }
+.cue-toolbar button { min-height: 32px; padding: 7px 10px; font-size: 11px; }
+.cue-table { max-height: 48vh; overflow: auto; border: 1px solid #2b414a; border-radius: 6px; scrollbar-width: thin; scrollbar-color: #4a626c #111b20; }
+.cue-table table { width: 100%; border-collapse: collapse; min-width: 550px; font-size: 11px; }
+.cue-table th { position: sticky; top: 0; z-index: 1; padding: 10px 8px; background: #192930; text-align: left; color: #b3c6cb; font-weight: 600; white-space: nowrap; }
+.cue-table td { padding: 8px; border-top: 1px solid #263a43; vertical-align: top; }
+.cue-table tbody tr:nth-child(even) { background: #142127; }
+.cue-table td:first-child { width: 36px; color: #8ba0aa; font-variant-numeric: tabular-nums; padding-top: 15px; }
+.cue-table td:nth-child(2),
+.cue-table td:nth-child(3) { width: 106px; }
+.cue-table td:last-child { width: 50px; }
+.cue-table input[type=number] { width: 90px; min-height: 34px; padding: 7px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.cue-table textarea { width: 100%; min-height: 65px; padding: 7px 9px; font-size: 12px; line-height: 1.65; resize: vertical; }
+.cue-table button { min-width: 32px; min-height: 34px; font-size: 11px; }
+.caption-editor-modal .dialog-footer { position: sticky; bottom: 0; z-index: 2; }
+
+@media (min-width: 721px) and (max-width: 1000px) {
+  .inspector #inspectorContent > .editor-details { grid-column: 1 / -1; }
+  .inspector .video-settings > .editor-details { width: 100%; }
+  .inspector .editor-details-body .editor-control { grid-column: auto; }
+  .inspector .editor-details-body .editor-control-wide { grid-column: 1 / -1; }
+}
+@media (max-width: 720px) {
+  .audio-grid { grid-template-columns: minmax(0, 1fr); }
+  .cue-table table { display: block; min-width: 0; }
+  .cue-table thead { display: none; }
+  .cue-table tbody { display: block; }
+  .cue-table tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; padding: 12px; border-top: 1px solid #30434a; }
+  .cue-table td,
+  .cue-table td:first-child,
+  .cue-table td:nth-child(2),
+  .cue-table td:nth-child(3),
+  .cue-table td:last-child { display: block; width: auto; padding: 0; border: 0; min-width: 0; }
+  .cue-table td:first-child { grid-column: 1 / -1; color: var(--accent, #dfbb84); }
+  .cue-table td:first-child::before { content: '자막 '; }
+  .cue-table td:nth-child(2)::before,
+  .cue-table td:nth-child(3)::before { display: block; margin-bottom: 5px; color: #8fa8b2; font-size: 10px; }
+  .cue-table td:nth-child(2)::before { content: '시작 (초)'; }
+  .cue-table td:nth-child(3)::before { content: '종료 (초)'; }
+  .cue-table td:nth-child(4) { grid-column: 1 / -1; }
+  .cue-table td:last-child { grid-column: 1 / -1; justify-self: end; }
+  .cue-table input[type=number] { width: 100%; }
+  .editor-details { margin-top: 12px; }
+  .editor-details > summary { padding: 12px; font-size: 12px; }
+  .editor-details-body { padding: 12px; }
+  .editor-control { font-size: 11px; }
+  .editor-control input:not([type=checkbox]):not([type=range]),
+  .editor-control select { min-height: 36px; font-size: 12px; }
+  .editor-button-row button,
+  .loop-controls button { min-height: 36px; font-size: 11px; }
+  .loop-controls { gap: 9px; }
+  .loop-controls input[type=number] { min-height: 36px; }
+  .waveform-section { padding: 10px; }
+  .waveform-message { font-size: 10px; }
+  .cue-toolbar { gap: 8px; }
+  .caption-editor-modal .dialog-body { padding: 14px 12px; }
+  .caption-editor-modal .dialog-footer { padding: 12px; }
+  .cue-table { max-height: 45vh; }
+}
+@media (max-width: 380px) {
+  .editor-grid { grid-template-columns: minmax(0, 1fr); }
+  .loop-controls input[type=number] { width: 75px; }
+}
