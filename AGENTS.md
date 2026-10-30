@@ -46,6 +46,10 @@ own topics beyond the four defaults. Keep branding and new-project titles neutra
 - `dist/script-protocol.js`, `dist/transcript-protocol.js`, `dist/image-prompt.js`: browser-safe shared request/response validation and reference-image prompt construction. Preserve real search/citation and speech timestamp requirements in both transports.
 - `dist/script-planning.js`: fixed-interval timeline construction, script/cue placement, narration signature and stale-plan checks.
 - `dist/scene-timing-ui.js` / `.css`: preview-only image cadence/duration/count review before explicit confirmation.
+- `dist/storyboard-protocol.js`: whole-video storyboard request/response validation,
+  exact slot coverage and canonical context keys; shared by direct and Node routes.
+- `scripts/image-plan-api.mjs`: authenticated optional POST /api/image/plan using
+  the existing text model/key and safe timeout/cancellation/concurrency.
 - `dist/scene-image-batch.js` / `.css`: reviewed, confirmed-plan image generation, sequential application to existing slot IDs, safe cancellation and explicit resumption.
 - `dist/script-studio.js` / `.css`: actual AI rewriting of reference files/text and user production instructions, target duration,
   always-available manual draft editing, researched results, sources and handoff.
@@ -161,6 +165,7 @@ for credential values in chat. Inspect configured presence without exposing valu
 - Keep four primary actions: 대본 → 타이밍 → 이미지 → 편집·저장. Voice remains
   optional in the initially closed 음성·자막 drawer. Group new/open/backup/library/
   help/example actions in the top 프로젝트 menu while keeping API 설정 visible.
+  The primary whole-video image launcher stays outside 제작 도구 after timing confirmation.
   Optional manual/reference-single-image/template/PNG tools belong in 제작 도구;
   multiselect/bulk controls in 선택 장면 편집; motion/framing/actions in
   움직임·장면 도구; global transitions/caption style in 영상·자막 스타일.
@@ -297,6 +302,24 @@ for credential values in chat. Inspect configured presence without exposing valu
   for undo, but block generation until changes to script, scene order/timing or
   narration/trim are reviewed and confirmed again. Image-only application does
   not invalidate timing; never generate extra scenes or change durations in a batch.
+- Whole-video visual planning is a separate explicit paid text-AI action at
+  /api/image/plan. Send complete confirmed sourceScript and every timing slot,
+  common brief/background/style; require exact returned IDs/order before applying
+  all prompts. Never claim a local fallback is AI storyboarding. Preserve timings,
+  captions, images and old prompts on planning/cancel/save failures. Store optional
+  scenePlan.visualBrief and visualPlan(version1,model,createdAt,globalConcept,inputKey)
+  with legacy schema1 compatibility. Context keys exclude images/prompts but cover
+  script/title/slots/brief/settings/enabled reference metadata; changes require new
+  AI composition. Guard active jobs with actual Blob identity/settings/project scope.
+  Every image uses shared full-story-derived visual bible, common brief and cut/
+  nearby context. Do not force a reference soldier/weapon into unrelated eras.
+  References remain optional:0 uses fixed images/generations JSON;>0 uses fixed
+  images/edits multipart with actual ordered pixels, never silent reference loss.
+  Image settings.prompt<=30000 and final composed provider prompt<=32000; validate
+  all pending prompts before charging first image. Keep sequential durable writes,
+  explicit quantity/cost acknowledgement, skip-filled default and replacement opt-in.
+  Full-script storyboarding and image generation each require their own explicit
+  action; opening, typing, saving or confirming timing must never incur a paid call.
 - Batch generation skips filled slots by default; replacing existing images is an
   explicit opt-in. Show each time range and the resulting request count, require
   the review acknowledgement, then issue sequential image requests only after
@@ -416,6 +439,14 @@ For optional research, test duration estimates, validated source links, cancella
 draft restoration and handoff to scene creation. API/unit/browser fixtures must
 not be described as verified live AI generation. Without configured credentials,
 finish independent tests and report live web-search/generation as unverified.
+For whole-video image changes, run npm run test:whole-video-browser, existing
+scene-batch/timed-workflow/direct-image regressions and npm test. Verify complete
+source/all IDs in planner, no images before separate acknowledgement, global and
+local prompt context, all remaining slots despite single selection, exact placement,
+partial error/stop/explicit resume, zero-ref JSON versus actual-ref multipart,
+canonical backup/workspace/stale-response guards, authenticated public route and
+paid-job lock, and mobile controls. Synthetic replies do not verify live image
+quality, model permissions or billing. Never execute paid generation in tests.
 For source-fidelity changes, run npm run test:script-fidelity-browser and npm test.
 Verify strict enum validation, full source/settings in actual direct/Node transport,
 8->12/16 minute presets and 60-minute bounds, non-destructive selection, canonical

@@ -55,8 +55,8 @@ test('image requests validate bounded prompts and actual PNG/JPEG/WebP reference
     const value = validateImageRequest({...input, references: [{label: '합성 픽셀', role: 'style', mimeType, data}]});
     assert.equal(value.references[0].mimeType, mimeType);
   }
-  for (const patch of [{prompt: ''}, {prompt: '가'.repeat(10001)}, {background: '가'.repeat(20001)}, {style: '가'.repeat(4001)},
-    {negativePrompt: '가'.repeat(2001)}, {size: '4096x4096'}, {quality: 'max'}, {references: []},
+  for (const patch of [{prompt: ''}, {prompt: '가'.repeat(30001)}, {background: '가'.repeat(20001)}, {style: '가'.repeat(4001)},
+    {negativePrompt: '가'.repeat(2001)}, {size: '4096x4096'}, {quality: 'max'}, {references: null},
     {references: Array.from({length: 6}, () => reference())}, {apiKey: 'client-side-secret'}]) {
     assert.throws(() => validateImageRequest({...input, ...patch}));
   }
@@ -150,7 +150,7 @@ test('HTTP image API rejects cross-origin, non-JSON, oversized and malformed req
   for (const headers of [{Origin: 'https://unrelated.example'}, {Origin: 'null'}, {'Sec-Fetch-Site': 'cross-site'}]) assert.equal((await post(settings(), {headers})).status, 403);
   assert.equal((await fetch(base + '/api/image/generate', {method: 'POST',body: 'text'})).status, 415);
   assert.equal((await fetch(base + '/api/image/generate', {method: 'POST',headers: {'Content-Type': 'application/json'},body: '{'})).status, 400);
-  assert.equal((await post({...settings(), references: []})).status, 400);
+  assert.equal((await post({...settings(), references: null})).status, 400);
   const method = await fetch(base + '/api/image/generate');assert.equal(method.status, 405);assert.equal(method.headers.get('allow'), 'POST');
   const tooLarge = await fetch(base + '/api/image/generate', {method: 'POST',headers: {'Content-Type': 'application/json'},body: JSON.stringify({prompt: 'x'.repeat(30 * 1024 * 1024)})});
   assert.equal(tooLarge.status, 413);assert.equal(calls, 0);

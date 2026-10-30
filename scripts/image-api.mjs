@@ -1,4 +1,4 @@
-import {buildImagePrompt} from '../dist/image-prompt.js';
+import {buildImagePrompt, ImagePromptError} from '../dist/image-prompt.js';
 export {buildImagePrompt} from '../dist/image-prompt.js';
 import http from 'node:http';
 import https from 'node:https';
@@ -11,6 +11,7 @@ const MAX_OUTPUT_BYTES = 20 * 1024 * 1024;
 const JSON_LIMIT = 30 * 1024 * 1024;
 const RESPONSE_LIMIT = 30 * 1024 * 1024;
 const ENDPOINT = 'https://api.openai.com/v1/images/edits';
+const GENERATION_ENDPOINT = 'https://api.openai.com/v1/images/generations';
 const SIZES = ['1536x864', '864x1536', '1024x1024'];
 const QUALITIES = ['low', 'medium', 'high'];
 const ROLES = ['concept', 'background', 'character', 'style', 'other'];
@@ -117,13 +118,13 @@ export function validateImageRequest(input) {
   if (!plainObject(input)) throw invalid('이미지 생성 요청 형식을 확인해 주세요.');
   const fields = new Set(['prompt', 'background', 'style', 'negativePrompt', 'size', 'quality', 'references']);
   if (Object.keys(input).some(key => !fields.has(key))) throw invalid('지원하지 않는 이미지 생성 설정입니다.');
-  const prompt = textField(input.prompt, undefined, 10000, '장면 요청');
+  const prompt = textField(input.prompt, undefined, 30000, '장면 요청');
   if (!prompt) throw invalid('생성할 장면의 내용을 입력해 주세요.');
   const size = input.size ?? '1536x864', quality = input.quality ?? 'medium';
   if (!SIZES.includes(size)) throw invalid('가로·세로·정사각형 중 출력 크기를 선택해 주세요.');
   if (!QUALITIES.includes(quality)) throw invalid('지원하는 이미지 품질을 선택해 주세요.');
-  if (!Array.isArray(input.references) || input.references.length < 1 || input.references.length > MAX_REFERENCES) {
-    throw invalid('기준으로 사용할 레퍼런스 이미지를 1~5장 선택해 주세요.');
+  if (!Array.isArray(input.references) || input.references.length > MAX_REFERENCES) {
+    throw invalid('고정 레퍼런스 이미지는 0~5장 선택해 주세요.');
   }
   let total = 0;
   const references = input.references.map((reference, index) => {
@@ -163,10 +164,14 @@ export function buildImageMultipart(settings, model = 'gpt-image-2') {
   if (['gpt-image-1.5', 'gpt-image-1-mini'].includes(model) && settings.size !== '1024x1024') {
     throw new ImageApiError(503, 'IMAGE_MODEL_SIZE_UNSUPPORTED', '설정된 이미지 모델은 이 화면 비율을 지원하지 않습니다. 정사각형을 선택하거나 서버 모델 설정을 확인해 주세요.');
   }
+  const promptUsed = buildImagePrompt(settings);
+  if (!settings.references.length) return {
+    body: Buffer.from(JSON.stringify({model, prompt: promptUsed, size: settings.size, quality: settings.quality, n: 1, output_format: 'png'})),
+    contentType: 'application/json', promptUsed, referenceCount: 0,
+  };
   const boundary = `----ImageStudio${randomBytes(16).toString('hex')}`;
   const buffers = [];
   const part = (name, value) => buffers.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
-  const promptUsed = buildImagePrompt(settings);
   part('model', model);part('prompt', promptUsed);part('size', settings.size);part('quality', settings.quality);
   part('n', '1');part('output_format', 'png');
   if (model === 'gpt-image-1.5') part('input_fidelity', 'high');
@@ -206,7 +211,7 @@ export function createImageProviderRequest(env = process.env, requestImpl = http
       proxyConfigured = true;
     }
     return new Promise((resolve, reject) => {
-      const request = requestImpl(ENDPOINT, {method: 'POST', signal, headers: {
+      const request = requestImpl(payload.referenceCount === 0 ? GENERATION_ENDPOINT : ENDPOINT, {method: 'POST', signal, headers: {
         Authorization: `Bearer ${key}`, 'Content-Type': payload.contentType, 'Content-Length': payload.body.length,
       }}, response => {
         if (response.statusCode < 200 || response.statusCode >= 300) {response.resume();reject(providerError(response.statusCode));return;}
@@ -302,7 +307,7 @@ export function createImageApi({env = process.env, requestProvider = createImage
     } catch (error) {
       if (res.destroyed || res.writableEnded) return true;
       if (timedOut || controller?.signal.aborted) send(res, 504, {error: '이미지 생성이 오래 걸리고 있습니다. 크기나 품질을 줄여 다시 시도해 주세요.', code: 'IMAGE_GENERATION_TIMEOUT'});
-      else if (error instanceof ImageApiError) send(res, error.status, {error: error.message, code: error.code});
+      else if (error instanceof ImageApiError || error instanceof ImagePromptError) send(res, error.status, {error: error.message, code: error.code});
       else send(res, 502, {error: '이미지 생성 서비스에 연결하지 못했습니다. 서버의 네트워크와 연결 설정을 확인해 주세요.', code: 'IMAGE_CONNECTION_FAILED'});
     } finally {
       if (ownsSlot) generating = false;

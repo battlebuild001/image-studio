@@ -32,7 +32,8 @@
     "test:operation-browser": "node tests/operation-feedback.browser.cjs",
     "test:local-operations-browser": "node tests/local-operations.browser.cjs",
     "test:script-fidelity-browser": "node tests/script-fidelity.browser.cjs",
-    "test:scene-effects-browser": "node tests/scene-effects.browser.cjs"
+    "test:scene-effects-browser": "node tests/scene-effects.browser.cjs",
+    "test:whole-video-browser": "node tests/whole-video-images.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

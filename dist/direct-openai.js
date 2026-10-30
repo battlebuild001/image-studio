@@ -1,12 +1,13 @@
 import {validateScriptRequest, buildScriptRequest, parseScriptResponse} from './script-protocol.js';
 import {buildImagePrompt} from './image-prompt.js';
+import {validateStoryboardRequest, buildStoryboardRequest, parseStoryboardResponse} from './storyboard-protocol.js';
 import {buildDirectTranscriptRequest, parseTranscriptResponse} from './transcript-protocol.js';
 
 const SESSION_KEY = 'bth-studio-openai-session-v1';
 const SCRIPT_CONFIG = '/api/script/config', SCRIPT_GENERATE = '/api/script/generate';
-const IMAGE_CONFIG = '/api/image/config', IMAGE_GENERATE = '/api/image/generate';
+const IMAGE_CONFIG = '/api/image/config', IMAGE_GENERATE = '/api/image/generate', IMAGE_PLAN = '/api/image/plan';
 const TRANSCRIPT_CONFIG = '/api/transcript/config', TRANSCRIPT_ANALYZE = '/api/transcript/analyze';
-const ROUTES = new Set([SCRIPT_CONFIG, SCRIPT_GENERATE, IMAGE_CONFIG, IMAGE_GENERATE, TRANSCRIPT_CONFIG, TRANSCRIPT_ANALYZE]);
+const ROUTES = new Set([SCRIPT_CONFIG, SCRIPT_GENERATE, IMAGE_CONFIG, IMAGE_GENERATE, IMAGE_PLAN, TRANSCRIPT_CONFIG, TRANSCRIPT_ANALYZE]);
 const DEFAULTS = Object.freeze({enabled: false, apiKey: '', rememberForTab: false,
   scriptModel: 'gpt-5-mini', imageModel: 'gpt-image-2', transcribeModel: 'whisper-1'});
 const MAX_REFERENCE_BYTES = 10 * 1024 * 1024, MAX_REFERENCES_BYTES = 20 * 1024 * 1024;
@@ -137,11 +138,11 @@ function isWebp(bytes) {
 }
 function imageSettings(input) {
   if (!plain(input) || Object.keys(input).some(key => !['prompt', 'background', 'style', 'negativePrompt', 'size', 'quality', 'references'].includes(key))) throw invalid('이미지 요청 설정을 확인해 주세요.');
-  const prompt = textField(input.prompt, undefined, 10000, '장면 요청');
+  const prompt = textField(input.prompt, undefined, 30000, '장면 요청');
   if (!prompt) throw invalid('이번에 만들 장면을 입력해 주세요.');
   const size = input.size ?? '1536x864', quality = input.quality ?? 'medium';
   if (!SIZES.includes(size) || !QUALITIES.includes(quality)) throw invalid('이미지 비율과 출력 품질을 확인해 주세요.');
-  if (!Array.isArray(input.references) || input.references.length < 1 || input.references.length > 5) throw invalid('고정 레퍼런스 이미지를 1~5장 선택해 주세요.');
+  if (!Array.isArray(input.references) || input.references.length > 5) throw invalid('고정 레퍼런스 이미지는 0~5장 선택해 주세요.');
   let total = 0;
   const references = input.references.map((reference, index) => {
     if (!plain(reference) || Object.keys(reference).some(key => !['label', 'role', 'mimeType', 'data'].includes(key))) throw invalid('레퍼런스 이미지 정보를 확인해 주세요.');
@@ -159,12 +160,14 @@ function imageSettings(input) {
 }
 function imageRequest(settings, model) {
   if (['gpt-image-1.5', 'gpt-image-1-mini'].includes(model) && settings.size !== '1024x1024') throw invalid('선택한 이미지 모델은 정사각형 출력만 지원해요. gpt-image-2 또는 정사각형을 선택해 주세요.');
-  const promptUsed = buildImagePrompt(settings), body = new FormData();
+  const promptUsed = buildImagePrompt(settings);
+  if (!settings.references.length) return {body: JSON.stringify({model, prompt: promptUsed, size: settings.size, quality: settings.quality, n: 1, output_format: 'png'}), promptUsed, endpoint: 'images/generations'};
+  const body = new FormData();
   for (const [key, value] of Object.entries({model, prompt: promptUsed, size: settings.size, quality: settings.quality, n: '1', output_format: 'png'})) body.append(key, value);
   if (model === 'gpt-image-1.5') body.append('input_fidelity', 'high');
   if (model === 'gpt-image-1-mini') body.append('input_fidelity', 'low');
   for (const [index, reference] of settings.references.entries()) body.append('image[]', new Blob([reference.bytes], {type: reference.mimeType}), `reference-${String(index + 1).padStart(2, '0')}.${MIME_EXTENSIONS[reference.mimeType]}`);
-  return {body, promptUsed};
+  return {body, promptUsed, endpoint: 'images/edits'};
 }
 function parseImage(response, settings, promptUsed) {
   const value = plain(response) && Array.isArray(response.data) && response.data.length === 1 ? response.data[0] : null;
@@ -295,9 +298,13 @@ export function createDirectOpenAi({fetchImpl = (...args) => globalThis.fetch(..
         const input = validateScriptRequest(appInput(options, 512 * 1024));
         const response = await requestProvider('responses', {key: current.apiKey, body: JSON.stringify(buildScriptRequest(input, current.scriptModel)), signal: controller.signal});
         result = parseScriptResponse(response, input);
+      } else if (path === IMAGE_PLAN) {
+        const input = validateStoryboardRequest(appInput(options, 1024 * 1024));
+        const response = await requestProvider('responses', {key: current.apiKey, body: JSON.stringify(buildStoryboardRequest(input, current.scriptModel)), signal: controller.signal});
+        result = parseStoryboardResponse(response, input, current.scriptModel);
       } else if (path === IMAGE_GENERATE) {
-        const input = imageSettings(appInput(options, 30 * 1024 * 1024)), {body, promptUsed} = imageRequest(input, current.imageModel);
-        const response = await requestProvider('images/edits', {key: current.apiKey, body, signal: controller.signal});
+        const input = imageSettings(appInput(options, 30 * 1024 * 1024)), {body, promptUsed, endpoint} = imageRequest(input, current.imageModel);
+        const response = await requestProvider(endpoint, {key: current.apiKey, body, signal: controller.signal});
         result = parseImage(response, input, promptUsed);
       } else {
         const {settings: input, body} = buildDirectTranscriptRequest(appInput(options, 14 * 1024 * 1024), current.transcribeModel);

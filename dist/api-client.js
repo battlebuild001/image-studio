@@ -5,7 +5,7 @@ const TOKEN_KEY = 'bth-studio-api-token-v1';
 const ROUTES = new Set([
   '/api/script/config', '/api/script/generate', '/api/script/extract',
   '/api/voice/config', '/api/voice/generate',
-  '/api/image/config', '/api/image/generate',
+  '/api/image/config', '/api/image/generate', '/api/image/plan',
   '/api/transcript/config', '/api/transcript/analyze',
 ]);
 const PROVIDER_HOSTS = new Set([

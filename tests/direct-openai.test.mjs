@@ -120,7 +120,7 @@ test('direct image editing uses native multipart with exact concept-first pixels
 
 test('malformed image references reject before billing and invalid or URL-only outputs never become successful images', async () => {
   let calls = 0, output = imageResult();const api = client({fetchImpl: async () => {calls++;return response(output);}});api.setDirectSettings({apiKey: key});
-  for (const value of [{...imageInput(), references: []}, {...imageInput(), references: [{...imageInput().references[0], data: base64(mainImage.subarray(0, -5))}]},
+  for (const value of [{...imageInput(), references: null}, {...imageInput(), references: [{...imageInput().references[0], data: base64(mainImage.subarray(0, -5))}]},
     {...imageInput(), references: [{...imageInput().references[0], mimeType: 'image/jpeg'}]}, {...imageInput(), prompt: ''}, {...imageInput(), size: '4096x4096'}, {...imageInput(), endpoint: 'https://evil.example'}]) {
     const result = await api.directApiFetch('/api/image/generate', post(value));assert.equal(result.status, 400);
   }
