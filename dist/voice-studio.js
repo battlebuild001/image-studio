@@ -1,5 +1,6 @@
 import {combineVoiceChunks, VOICE_SAMPLE_RATE} from './voice-audio.js';
 import {apiFetch} from './api-client.js';
+import {createOperationStatus, nextPaint} from './operation-status.js';
 
 const $ = id => document.getElementById(id);
 const characterCount = value => Array.from(String(value || '')).length;
@@ -56,6 +57,11 @@ export function setupVoiceStudio(api) {
   const fileButton = button('importVoiceFileBtn', '음성 파일 불러오기', 'outline');const file = node('input');file.id = 'voiceFileInput';file.type = 'file';file.accept = 'audio/*';file.hidden = true;local.append(fileButton, file);body.append(local);
   const footer = node('div', 'dialog-footer');const closeFooter = button('closeVoiceStudioBtn', '닫기', 'ghost'), next = button('voiceToEditorBtn', '다음: 영상 편집', 'primary');footer.append(closeFooter, next);dialog.append(footer);document.body.append(dialog);
 
+  const connectionProgressMount=node('div');service.after(connectionProgressMount);
+  const connectionProgress=createOperationStatus({container:connectionProgressMount,region:service,id:'voiceStudioConnectionOperation'});
+  const operationProgressMount=node('div');status.before(operationProgressMount);
+  const operationProgress=createOperationStatus({container:operationProgressMount,region:body,id:'voiceStudioOperation'});
+
   let projectId = api.getProject().id, busy = false, applying = false, configured = false, connectionSequence = 0, operation = 0, controller = null, connectionController = null;
   let lastResult = null, resultUrl = null, active = null, draftTitle = '', targetMinutes = 8;
   const run = task => event => {event?.preventDefault();Promise.resolve().then(task).catch(cause => {error.textContent = cause.message || '음성 작업을 마치지 못했어요.';});};
@@ -76,19 +82,20 @@ export function setupVoiceStudio(api) {
     apply.textContent = lastResult?.applied ? '내레이션으로 적용됨' : '이 음성을 내레이션으로 사용';
     stale.textContent = lastResult && !matches(lastResult.snapshot) ? '현재 대본·설정과 다른 이전 결과예요. 미리듣기와 저장은 가능하며, 현재 내용으로 적용하려면 다시 생성해 주세요.' : '';
     text.input.disabled = busy || applying;for (const input of [speaker.input, speed.input, pitch.input, volume.input]) input.disabled = busy || applying;
-    cancel.hidden = !busy;refresh.disabled = busy || applying;fileButton.disabled = busy || applying;
+    cancel.hidden = !busy;refresh.disabled = busy || applying;fileButton.disabled = busy || applying;close.disabled=applying;closeFooter.disabled=applying;
     metrics.textContent = `${characterCount(text.input.value).toLocaleString()} / 30,000자 · 기본 읽기 속도 기준 예상 ${seconds(spokenCount(text.input.value) / (api.getProject().scriptDraft?.charsPerMinute || 330) * 60)} · 실제 길이는 합성 후 확인해요.`;
   }
   function clearResult() {
     audio.pause();audio.removeAttribute('src');audio.load();if (resultUrl) URL.revokeObjectURL(resultUrl);resultUrl = null;lastResult = null;result.hidden = true;
   }
   function stop(message = '음성 생성을 취소했어요. 대본과 기존 내레이션은 그대로 있어요.') {
-    operation++;controller?.abort();controller = null;active = null;busy = false;dialog.setAttribute('aria-busy', 'false');status.textContent = message;refreshActions();
+    operation++;controller?.abort();controller = null;active = null;if(busy&&message)operationProgress.cancel(message);else if(!message)operationProgress.clear();busy = false;dialog.setAttribute('aria-busy', 'false');status.textContent = message;refreshActions();
   }
-  function cancelConnectionCheck() {connectionSequence++;connectionController?.abort();connectionController = null;}
+  function cancelConnectionCheck() {connectionSequence++;connectionController?.abort();connectionController = null;connectionProgress.clear();}
   async function checkConnection() {
     cancelConnectionCheck();
     const sequence = ++connectionSequence;configured = false;service.dataset.state = 'checking';serviceText.textContent = '음성 생성 연결을 확인하고 있어요.';refreshActions();
+    const task=connectionProgress.start('음성 생성 연결 확인 중');
     const abort = new AbortController(), timeout = setTimeout(() => abort.abort(), 60000);connectionController = abort;
     try {
       const response = await request('/api/voice/config', {signal: abort.signal});if (sequence !== connectionSequence) return;
@@ -96,9 +103,10 @@ export function setupVoiceStudio(api) {
       service.dataset.state = configured ? 'ready' : 'unavailable';
       serviceText.textContent = configured ? 'CLOVA Voice 한국어 음성을 사용할 수 있어요. ‘음성 생성’을 누를 때만 합성해요.'
         : '대본은 준비됐어요. 음성 생성은 서버 연결 후 사용하거나 MP3·WAV 파일을 불러오세요.';
+      task.finish(configured?'음성 생성 연결 확인 완료':'연결 확인 완료 · 파일 불러오기는 사용할 수 있어요.');
     } catch {
       if (sequence !== connectionSequence) return;configured = false;service.dataset.state = 'unavailable';
-      serviceText.textContent = '대본은 준비됐어요. 음성 생성 서버가 연결되지 않아도 파일 불러오기와 영상 편집을 계속할 수 있어요.';
+      serviceText.textContent = '대본은 준비됐어요. 음성 생성 서버가 연결되지 않아도 파일 불러오기와 영상 편집을 계속할 수 있어요.';task.fail(abort.signal.aborted?'연결 확인 시간이 초과됐어요.':'음성 생성 연결을 확인하지 못했어요.');
     } finally {clearTimeout(timeout);if (sequence === connectionSequence) {connectionController = null;refreshActions();}}
   }
   async function generateVoice() {
@@ -109,43 +117,45 @@ export function setupVoiceStudio(api) {
     }
     api.pause();audio.pause();error.textContent = '';const requested = ++operation;controller = new AbortController();const {signal} = controller;
     active = source;busy = true;dialog.setAttribute('aria-busy', 'true');status.textContent = '대본을 음성으로 만들고 있어요. 긴 대본은 여러 구간으로 처리해요.';refreshActions();
+    const task=operationProgress.start('음성 생성 응답 대기 중',{detail:'대본을 합성 서비스로 전송해요.'});
     try {
+      await nextPaint();
       const response = await request('/api/voice/generate', {method: 'POST', headers: {'Content-Type': 'application/json'}, signal,
         body: JSON.stringify({text: source.text, speaker: source.speaker, speed: source.speed, pitch: source.pitch, volume: source.volume})});
-      if (requested !== operation || !matches(source)) return;
-      status.textContent = '생성된 실제 음성 구간을 하나의 WAV 파일로 합치고 있어요.';
+      if (requested !== operation || !matches(source)){task.cancel('대본이나 프로젝트가 바뀌어 음성 생성을 취소했어요.');return;}
+      status.textContent = '생성된 실제 음성 구간을 하나의 WAV 파일로 합치고 있어요.';task.update('생성 음성을 WAV로 합치는 중',{detail:`${response.chunks?.length||0}개 구간 수신`});await nextPaint();
       const blob = await combineVoiceChunks(response.chunks, {signal});
-      if (requested !== operation || !matches(source) || signal.aborted) return;
+      if (requested !== operation || !matches(source) || signal.aborted){task.cancel('음성 생성을 취소했어요. 기존 내레이션은 유지했어요.');return;}
       clearResult();lastResult = {blob, snapshot: source, name: filename(draftTitle || api.getProject().title)};resultUrl = URL.createObjectURL(blob);
       audio.src = resultUrl;download.href = resultUrl;download.download = lastResult.name;
       summary.textContent = `실제 음성 ${seconds((blob.size - 44) / (VOICE_SAMPLE_RATE * 2))} · WAV · ${(blob.size / 1024 / 1024).toFixed(1)} MB`;
-      result.hidden = false;status.textContent = '음성을 만들었어요. 미리 듣고 내레이션으로 사용할지 선택해 주세요. 기존 음성은 아직 바꾸지 않았어요.';
+      result.hidden = false;status.textContent = '음성을 만들었어요. 미리 듣고 내레이션으로 사용할지 선택해 주세요. 기존 음성은 아직 바꾸지 않았어요.';task.finish('음성 생성 완료 · 미리 듣고 적용해 주세요.');
     } catch (cause) {
       if (requested !== operation) return;
-      if (cause.name === 'AbortError') status.textContent = '음성 생성을 취소했어요. 대본과 기존 내레이션은 유지했어요.';
-      else {error.textContent = cause.message || '음성 생성에 실패했어요.';status.textContent = '완성한 음성을 만들지 못했어요. 기존 결과와 내레이션은 유지했어요.';}
+      if (cause.name === 'AbortError'){status.textContent = '음성 생성을 취소했어요. 대본과 기존 내레이션은 유지했어요.';task.cancel('음성 생성을 취소했어요.');}
+      else {error.textContent = cause.message || '음성 생성에 실패했어요.';status.textContent = '완성한 음성을 만들지 못했어요. 기존 결과와 내레이션은 유지했어요.';task.fail(error.textContent);}
     } finally {if (requested === operation) {busy = false;controller = null;active = null;dialog.setAttribute('aria-busy', 'false');refreshActions();}}
   }
   async function applyVoice() {
     if (!lastResult || busy || applying) return;if (!matches(lastResult.snapshot)) throw new Error('대본이나 프로젝트가 바뀌었어요. 음성을 다시 만들어 주세요.');
-    applying = true;refreshActions();error.textContent = '';
+    applying = true;refreshActions();error.textContent = '';const task=operationProgress.start('생성 음성을 내레이션으로 적용 중');
     try {
-      audio.pause();await api.addNarrationFile(new File([lastResult.blob], lastResult.name, {type: 'audio/wav'}));
+      await nextPaint();audio.pause();await api.addNarrationFile(new File([lastResult.blob], lastResult.name, {type: 'audio/wav'}));
       lastResult.snapshot = snapshot();lastResult.applied = true;
       status.textContent = '생성한 음성을 내레이션으로 넣었어요. ‘다음: 영상 편집’으로 장면을 만들 수 있어요.';
-      api.toast('생성한 음성을 내레이션으로 넣었어요. 이제 영상 장면과 자막을 편집할 수 있어요.');
-    }
+      task.finish('내레이션 적용 완료');api.toast('생성한 음성을 내레이션으로 넣었어요. 이제 영상 장면과 자막을 편집할 수 있어요.');
+    }catch(cause){task.fail(cause.message||'내레이션을 적용하지 못했어요.');throw cause;}
     finally {applying = false;refreshActions();}
   }
   async function open(options = {}) {
-    if (busy) stop();api.pause();audio.pause();error.textContent = '';status.textContent = '';
+    if (busy) stop();operationProgress.clear();api.pause();audio.pause();error.textContent = '';status.textContent = '';
     draftTitle = options.title || api.getProject().scriptDraft?.result?.title || api.getProject().title;
     targetMinutes = options.targetMinutes || api.getProject().scriptDraft?.targetMinutes || 8;
     text.input.value = options.text !== undefined ? String(options.text) : projectScript();
     refreshActions();
     if (!dialog.open) dialog.showModal();await checkConnection();
   }
-  function closeDialog() {if (busy) stop();audio.pause();dialog.close();}
+  function closeDialog() {if(applying)return;if (busy) stop();audio.pause();dialog.close();}
   function render() {
     const p = api.getProject();
     if (p.id !== projectId) {stop('');projectId = p.id;cancelConnectionCheck();clearResult();text.input.value = '';error.textContent = '';if (dialog.open) dialog.close();}
@@ -168,8 +178,9 @@ export function setupVoiceStudio(api) {
   });
   fileButton.addEventListener('click', () => file.click());
   file.addEventListener('change', run(async () => {
-    const selected = file.files[0];if (!selected) return;applying = true;refreshActions();
-    try {await api.addNarrationFile(selected);clearResult();status.textContent = '음성 파일을 내레이션으로 넣었어요. ‘다음: 영상 편집’으로 이어갈 수 있어요.';}
+    const selected = file.files[0];if (!selected) return;applying = true;refreshActions();const task=operationProgress.start('음성 파일 읽는 중');
+    try {await nextPaint();await api.addNarrationFile(selected);clearResult();status.textContent = '음성 파일을 내레이션으로 넣었어요. ‘다음: 영상 편집’으로 이어갈 수 있어요.';task.finish('음성 파일 불러오기 완료');}
+    catch(cause){task.fail(cause.message||'음성 파일을 불러오지 못했어요.');throw cause;}
     finally {file.value = '';applying = false;refreshActions();}
   }));
   next.addEventListener('click', run(() => {

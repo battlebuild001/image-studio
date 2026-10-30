@@ -2,6 +2,7 @@ import {getAudioWindow, prepareAssets} from './engine.js';
 import {getTimeline, validateProject} from './project.js';
 import {planAudioChunks, encodeAudioChunk, toBase64, groupTimedTranscript, isSilentAudioChunk} from './speech-timing.js';
 import {apiFetch} from './api-client.js';
+import {createOperationStatus, nextPaint} from './operation-status.js';
 
 const $ = id => document.getElementById(id);
 const clone = value => structuredClone(value);
@@ -85,6 +86,11 @@ export function setupTranscriptStudio(api) {
   const apply = button('applyTranscriptBtn', '이 자막으로 적용', 'primary');apply.disabled = true;
   footer.append(closeFooter, apply);dialog.append(footer);document.body.append(dialog);
 
+  const connectionProgressMount=node('div');service.after(connectionProgressMount);
+  const connectionProgress=createOperationStatus({container:connectionProgressMount,region:service,id:'transcriptStudioConnectionOperation'});
+  const operationProgressMount=node('div');status.before(operationProgressMount);
+  const operationProgress=createOperationStatus({container:operationProgressMount,region:body,id:'transcriptStudioOperation'});
+
   let projectId = api.getProject().id;
   let busy = false, configured = false, config = null, connectionSequence = 0, operation = 0, controller = null, connectionController = null;
   let lastResult = null, activeSignature = null;
@@ -123,9 +129,10 @@ export function setupTranscriptStudio(api) {
   }
   function stop(message = '음성 분석을 취소했어요. 기존 자막은 유지했어요.') {
     operation++;controller?.abort();controller = null;activeSignature = null;
+    if(busy&&message)operationProgress.cancel(message);else if(!message)operationProgress.clear();
     setBusy(false);if (message) status.textContent = message;
   }
-  function cancelConnectionCheck() {connectionSequence++;connectionController?.abort();connectionController = null;}
+  function cancelConnectionCheck() {connectionSequence++;connectionController?.abort();connectionController = null;connectionProgress.clear();}
   function renderSource() {
     try {
       const snapshot = captureSource();
@@ -157,6 +164,7 @@ export function setupTranscriptStudio(api) {
   async function checkConnection() {
     cancelConnectionCheck();
     const sequence = ++connectionSequence;
+    const task=connectionProgress.start('음성 분석 연결 확인 중');
     const abort = new AbortController(), timeout = setTimeout(() => abort.abort(), 60000);connectionController = abort;
     configured = false;refreshActions();service.dataset.state = 'checking';serviceText.textContent = '음성 분석 연결을 확인하고 있어요.';
     try {
@@ -167,10 +175,11 @@ export function setupTranscriptStudio(api) {
       serviceText.textContent = configured
         ? '음성 분석을 사용할 수 있어요. 분석 시작을 누를 때만 선택한 내레이션을 전송해요.'
         : `${response.reason || '음성 분석 서버 설정이 필요해요.'} 환경 설정의 비밀키 SCRIPT_AI_API_KEY 또는 TRANSCRIBE_API_KEY와 api.openai.com 접근을 확인해 주세요. 정적 사이트만 배포한 경우 API 서버도 연결해야 해요.`;
+      task.finish(configured?'음성 분석 연결 확인 완료':'연결 확인 완료 · API 설정이 필요해요.');
     } catch (cause) {
       if (sequence !== connectionSequence) return;
       configured = false;service.dataset.state = 'unavailable';
-      serviceText.textContent = `${cause.message} 음성 분석은 API 서버와 환경 설정의 비밀키가 필요해요.`;
+      serviceText.textContent = `${cause.message} 음성 분석은 API 서버와 환경 설정의 비밀키가 필요해요.`;task.fail(abort.signal.aborted?'연결 확인 시간이 초과됐어요.':'음성 분석 연결을 확인하지 못했어요.');
     } finally {clearTimeout(timeout);if (sequence === connectionSequence) {connectionController = null;refreshActions();}}
   }
   async function analyzeNarration() {
@@ -182,7 +191,9 @@ export function setupTranscriptStudio(api) {
     const requested = ++operation;
     const aborter = new AbortController();controller = aborter;const {signal} = aborter;
     activeSignature = snapshot.signature;progress.value = 0;setBusy(true, '선택한 내레이션을 분석용으로 준비하고 있어요.');
+    const task=operationProgress.start('내레이션 분석 준비 중');
     try {
+      await nextPaint();
       await prepareAssets(new Map([[snapshot.narrationId, snapshot.asset]]), {signal});
       abortCheck(signal);
       if (!matches(snapshot)) throw new Error('내레이션이나 자르기 설정이 바뀌었어요. 다시 분석해 주세요.');
@@ -199,14 +210,16 @@ export function setupTranscriptStudio(api) {
         if (!matches(snapshot)) throw new Error('내레이션이나 자르기 설정이 바뀌었어요. 다시 분석해 주세요.');
         if (isSilentAudioChunk(snapshot.asset.audioBuffer, chunks[index])) {
           status.textContent = `${index + 1}/${chunks.length} 구간 · 디지털 무음 구간을 건너뛰었어요.`;
-          progress.value = (index + 1) / chunks.length;continue;
+          progress.value = (index + 1) / chunks.length;task.update(`음성 ${index+1}/${chunks.length}구간 확인 완료`,{detail:'디지털 무음 구간을 건너뛰었어요.'});await nextPaint();continue;
         }
         status.textContent = `${index + 1}/${chunks.length} 구간 준비 · ${time(chunks[index].start - snapshot.sourceStart)}–${time(chunks[index].end - snapshot.sourceStart)}`;
+        task.update(`음성 ${index+1}/${chunks.length}구간 준비 중`,{detail:`완료 ${index}/${chunks.length}구간`});await nextPaint();
         const wav = await encodeAudioChunk(snapshot.asset.audioBuffer, chunks[index], {signal});
         abortCheck(signal);
         const audio = await toBase64(wav, {signal});
         abortCheck(signal);
         status.textContent = `${index + 1}/${chunks.length} 구간 음성 분석 중 · 모든 구간이 끝나면 미리보기가 표시돼요.`;
+        task.update(`음성 ${index+1}/${chunks.length}구간 분석 응답 대기 중`,{detail:`완료 ${index}/${chunks.length}구간`});
         const response = await request('/api/transcript/analyze', {
           method: 'POST', headers: {'Content-Type': 'application/json'}, signal,
           body: JSON.stringify({audio, language: language.value, prompt: prompt.value.trim()}),
@@ -223,10 +236,12 @@ export function setupTranscriptStudio(api) {
         if (response.granularity === 'segment') granularity = 'segment';
         if (typeof response.model === 'string') model = response.model;
         if (typeof response.language === 'string' && response.language.trim() && response.language.length <= 40) detectedLanguage = response.language;
-        progress.value = (index + 1) / chunks.length;
+        progress.value = (index + 1) / chunks.length;task.update(`음성 ${index+1}/${chunks.length}구간 분석 완료`,{detail:`자막 ${allCues.length}개 수신`});
       }
       abortCheck(signal);
-      if (requested !== operation || !matches(snapshot)) return;
+      if (requested !== operation || !matches(snapshot)){task.cancel('내레이션이나 프로젝트가 바뀌어 분석을 취소했어요.');return;}
+      task.update('분석 자막 미리보기 준비 중');await nextPaint();abortCheck(signal);
+      if(requested!==operation||!matches(snapshot)){task.cancel('내레이션이나 프로젝트가 바뀌어 분석을 취소했어요.');return;}
       const metadata = {
         narrationId: snapshot.narrationId, sourceStart: snapshot.sourceStart, sourceEnd: snapshot.sourceEnd,
         language: detectedLanguage, model, granularity, createdAt: new Date().toISOString(),
@@ -238,24 +253,30 @@ export function setupTranscriptStudio(api) {
       lastResult = {source: snapshot, cues: allCues, metadata, granularity, model};
       renderResult();status.textContent = allCues.length
         ? `${allCues.length}개 자막을 만들었어요. 시간을 확인하고 ‘이 자막으로 적용’을 눌러 주세요. 기존 자막은 아직 바꾸지 않았어요.`
-        : '음성 분석을 마쳤지만 발화가 인식되지 않았어요. 기존 자막은 유지했어요.';
+        : '음성 분석을 마쳤지만 발화가 인식되지 않았어요. 기존 자막은 유지했어요.';task.finish(allCues.length?`음성 분석 완료 · 자막 ${allCues.length}개`:'분석 완료 · 인식된 발화가 없어요.');
     } catch (cause) {
       if (requested !== operation) return;
-      if (cause.name === 'AbortError') status.textContent = '음성 분석을 취소했어요. 기존 자막은 유지했어요.';
-      else {showError(cause.message || '음성 분석에 실패했어요. 기존 자막은 유지했어요.');status.textContent = '분석을 완료하지 못했어요. 기존 자막은 유지했어요.';}
+      if (cause.name === 'AbortError'){status.textContent = '음성 분석을 취소했어요. 기존 자막은 유지했어요.';task.cancel('음성 분석을 취소했어요.');}
+      else {showError(cause.message || '음성 분석에 실패했어요. 기존 자막은 유지했어요.');status.textContent = '분석을 완료하지 못했어요. 기존 자막은 유지했어요.';task.fail(error.textContent);}
     } finally {
       if (requested === operation) {controller = null;activeSignature = null;setBusy(false);}
     }
   }
-  function applyResult() {
+  async function applyResult() {
     if (busy || !lastResult?.cues?.length) return;
     if (!matches(lastResult.source)) throw new Error('내레이션이나 자르기 설정이 바뀌었어요. 다시 분석해 주세요.');
-    const staged = lastResult;
-    api.mutate(project => {
-      project.captionMode = 'speech';project.captions = clone(staged.cues);
-      project.captionAnalysis = clone(staged.metadata);project.settings.subtitles = true;
-    });
-    dialog.close();api.toast('실제 발화 시간에 맞춘 자막을 적용했어요. 자막 편집에서 문구와 시간을 수정할 수 있어요.');
+    const staged=lastResult,requested=++operation,task=operationProgress.start('분석 자막을 영상에 적용 중');
+    activeSignature=staged.source.signature;setBusy(true);
+    try{
+      await nextPaint();if(requested!==operation)return;
+      if(!matches(staged.source))throw new Error('내레이션이나 자르기 설정이 바뀌었어요. 다시 분석해 주세요.');
+      api.mutate(project => {
+        project.captionMode = 'speech';project.captions = clone(staged.cues);
+        project.captionAnalysis = clone(staged.metadata);project.settings.subtitles = true;
+      });
+      task.finish('자동 자막 적용 완료');setBusy(false);dialog.close();api.toast('실제 발화 시간에 맞춘 자막을 적용했어요. 자막 편집에서 문구와 시간을 수정할 수 있어요.');
+    }catch(cause){task.fail(cause.message||'자막을 적용하지 못했어요.');throw cause;}
+    finally{if(requested===operation){activeSignature=null;setBusy(false);}}
   }
   function closeDialog() {if (busy) stop();dialog.close();}
   open.addEventListener('click', run(async () => {

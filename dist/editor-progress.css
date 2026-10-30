@@ -1,0 +1,6 @@
+.editor-operation-host {margin:0 26px 16px;min-width:0;}
+.editor-operation-host:has(> .operation-status[hidden]) {display:none;}
+.save-state[aria-busy="true"] i {background:transparent;border:2px solid currentColor;border-right-color:transparent;box-sizing:border-box;width:10px;height:10px;animation:editor-saving-spin 1s linear infinite;}
+@keyframes editor-saving-spin {to {transform:rotate(360deg);}}
+@media(max-width:720px){.editor-operation-host {margin:0 14px 14px;}}
+@media(prefers-reduced-motion:reduce){.save-state[aria-busy="true"] i {animation:none;border-style:dotted;}}

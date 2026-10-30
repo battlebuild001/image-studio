@@ -24,6 +24,10 @@ own topics beyond the four defaults. Keep branding and new-project titles neutra
 - `dist/studio-layout.js` / `.css`: presentation-only grouping of existing controls
   into native details drawers and the project menu, with keyboard/focus handling.
   Initialize after all tool and workspace setup; refresh its derived status on render.
+- `dist/operation-status.js` / `.css`: shared operation-scoped loading, elapsed time,
+  delayed-response and terminal feedback; stale handles cannot complete newer jobs.
+- `dist/narration-text.js`: browser-safe spoken-text helper exports; the shared
+  script protocol implements styles, conservative cleanup and numeric reading.
 - `dist/workspace-store.js`: category records, per-workspace project/media saves,
   legacy autosave migration and safe active-workspace transitions.
 - `dist/workspace-tabs.js` / `.css`: category tabs, add/rename/reorder and reversible
@@ -95,6 +99,9 @@ extraction need no API key. Image generation and transcription add no package de
 - Layout/navigation browser regression: `npm run test:layout-browser`. Existing
   browser suites use `tests/ui-navigation.browser.cjs` to open real details summaries
   before interacting with their controls; never force clicks on hidden controls.
+- Operation feedback browser regression: `npm run test:operation-browser`.
+- Local operation feedback regression: `npm run test:local-operations-browser`;
+  delayed real IndexedDB calls verify loading, success/error and retained content.
 - Reference-image browser regression: `npm run test:image-browser`. Fixture-based
   AI responses verify UI behavior, never live model/search/image quality.
 - Narration-caption browser regression: `npm run test:transcript-browser`. Real
@@ -164,6 +171,27 @@ for credential values in chat. Inspect configured presence without exposing valu
   global editor shortcuts. Restore focus only when a closed dialog's native opener
   is hidden; never steal focus from a newer visible user target. Retain accessible
   labels, mobile layouts and normal modal focus handling.
+- All asynchronous user actions need immediate, visible activity feedback in the
+  relevant screen/modal. Use operation-status.js for a spinner, truthful phase,
+  elapsed time and delayed-response notice; never invent provider substeps, a
+  percentage or remaining time. Keep real export/batch progress when known.
+  Finish as success, error or cancellation, stop timers and clear aria-busy.
+  Reset/cancel obsolete jobs on workspace/settings changes and use scoped handles
+  so late responses cannot overwrite a newer status. Keep live announcements to
+  phase changes, not every elapsed second, and respect reduced motion. Feedback
+  must not start, retry or resume paid requests, clear drafts or bypass confirmation.
+- Narration styles are standard, korean, korean-digits and korean-native-digits.
+  New UI drafts default to korean-digits; missing legacy saved/API styles mean
+  standard. Persist the chosen style with schema-version-1 scriptDraft/results.
+  Selection alone never rewrites an existing draft. Explicit local numeric/markup
+  cleanup may map digits to 영일이삼사오육칠팔구 or 공하나둘셋넷다섯여섯일곱여덟아홉;
+  lexical English-name/acronym phonetics require actual AI generation. The korean
+  mode requests contextual Korean number readings. Preserve meaning and evidence.
+  Copy/TXT and voice/timing handoffs use narration-only cleaned text; source URLs,
+  citation marks and research-method explanations belong outside the spoken script.
+  Keep genuine story events about finding/verifying facts. Keep summary, notes and
+  real source evidence in the initially closed 조사 메모·출처 section and preserve
+  them in dedicated research export, autosave, library and portable backups.
 - Default category tabs are 블랙아웃, 사만, 에오지 and 데이터 분석. Add arbitrary
   names of 1..40 characters, at most 50 records including archived categories.
   Rename/reorder/archive/reopen are supported; archiving retains content and the
@@ -354,6 +382,16 @@ For optional research, test duration estimates, validated source links, cancella
 draft restoration and handoff to scene creation. API/unit/browser fixtures must
 not be described as verified live AI generation. Without configured credentials,
 finish independent tests and report live web-search/generation as unverified.
+For operation feedback, run npm run test:operation-browser and
+npm run test:local-operations-browser. Exercise delayed success, provider/storage
+failure, cancel/restart, terminal elapsed-time freeze, aria-busy cleanup and stale
+response guards. New-page status panels remain hidden until their relevant action.
+For narration styles, test all four request modes, legacy defaults and backup
+roundtrips, numeric examples, URL/citation/research-meta cleanup without removing
+story facts, preserved evidence and narration-only copy/TXT/voice/timing handoffs.
+Changing the selector must preserve current text; local cleanup must not claim
+English phonetic AI rewriting or web verification. Mocked output cannot establish
+actual pronunciation, search quality or provider model access.
 For timing/batch changes, verify 157-sentence text becomes48slots at8minutes/10s,
 partial final intervals, all-text preservation, <=200 bounds and stable preview IDs.
 Verify no mutation/provider call before confirmation and no image call on timing

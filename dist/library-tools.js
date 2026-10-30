@@ -1,3 +1,4 @@
+import {createOperationStatus, nextPaint} from './operation-status.js';
 import {
   createId, createScene, getTimeline, saveLibraryProject, listLibraryProjects,
   loadLibraryProject, deleteLibraryProject,
@@ -91,6 +92,18 @@ export function setupLibraryTools(api) {
     event?.preventDefault();
     Promise.resolve().then(task).catch(api.report);
   };
+  async function tracked(progress, label, task, completed) {
+    const operation = progress.start(label);
+    try {
+      await nextPaint();
+      const result = await task(operation);
+      operation.finish(completed);
+      return result;
+    } catch (error) {
+      operation.fail(error?.message || '작업을 마치지 못했어요. 기존 내용은 유지됩니다.');
+      throw error;
+    }
+  }
   const libraryBtn = button('libraryBtn', '프로젝트 보관함', 'ghost small');
   document.querySelector('.project-tools').prepend(libraryBtn);
   const templatesBtn = button('templatesBtn', '인트로 · 아웃트로 추가', 'outline full');
@@ -98,14 +111,18 @@ export function setupLibraryTools(api) {
   const snapshotBtn = button('snapshotBtn', 'PNG 저장', 'ghost small');
   snapshotBtn.title = '현재 미리보기 화면을 PNG 이미지로 저장';
   document.querySelector('.player').after(snapshotBtn);
+  const snapshotStatus = node('div'); snapshotStatus.id = 'snapshotOperationHost'; snapshotBtn.after(snapshotStatus);
+  const snapshotProgress = createOperationStatus({container: snapshotStatus, region: snapshotBtn, id: 'snapshotOperation'});
   snapshotBtn.addEventListener('click', run(async () => {
     api.pause();
     const project = api.getProject();
     if (!project.scenes.length) throw new Error('이미지 장면을 먼저 추가해 주세요.');
-    const blob = await toBlob(api.getCanvas());
-    const seconds = Number(api.getCurrent()).toFixed(2).replace('.', '-');
-    download(blob, `${safeName(project.title)}_${seconds}s.png`);
-    api.toast('현재 화면을 PNG 이미지로 저장했어요.');
+    await tracked(snapshotProgress, '현재 화면을 PNG 이미지로 만들고 있어요', async () => {
+      const blob = await toBlob(api.getCanvas());
+      const seconds = Number(api.getCurrent()).toFixed(2).replace('.', '-');
+      download(blob, `${safeName(project.title)}_${seconds}s.png`);
+      api.toast('현재 화면을 PNG 이미지로 저장했어요.');
+    }, 'PNG 이미지의 다운로드를 시작했어요.');
   }));
 
   const shelf = dialog('libraryDialog', '프로젝트 보관함', 'YOUR LOCAL PROJECTS');
@@ -115,6 +132,9 @@ export function setupLibraryTools(api) {
   const count = node('span', 'library-count', ''); count.setAttribute('aria-live', 'polite');
   shelfControls.append(saveLibraryBtn, count); shelf.body.append(shelfControls);
   const libraryList = node('div', 'library-list'); libraryList.id = 'libraryList'; libraryList.setAttribute('aria-live', 'polite'); shelf.body.append(libraryList);
+
+  const shelfProgressHost = node('div'); shelf.body.insertBefore(shelfProgressHost, libraryList);
+  const shelfProgress = createOperationStatus({container: shelfProgressHost, region: libraryList, id: 'libraryOperation'});
 
   function setShelfBusy(value) {
     shelfBusy = value;
@@ -149,34 +169,38 @@ export function setupLibraryTools(api) {
         if (shelfBusy) return;
         const originWorkspace = api.getWorkspaceId?.();
         setShelfBusy(true);
-        try {
+        try { await tracked(shelfProgress, '보관한 프로젝트와 미디어를 불러오고 있어요', async operation => {
           const loaded = await loadLibraryProject(entry.id);
           if (!loaded) throw new Error('프로젝트를 찾지 못했어요. 보관함을 다시 열어주세요.');
           if (api.getWorkspaceId?.() !== originWorkspace) throw new Error('분야가 바뀌어 프로젝트 열기를 취소했어요. 현재 분야에서 보관함을 다시 열어 주세요.');
+          operation.update('현재 작업을 보관하고 선택한 프로젝트를 준비하고 있어요');
           await api.replaceProject(loaded);
           shelf.dialog.close();
           api.toast('보관한 프로젝트를 열었어요.');
-        } finally { setShelfBusy(false); }
+        }, '보관한 프로젝트를 열었어요.'); } finally { setShelfBusy(false); }
       }));
       const duplicate = button('', '복제'); duplicate.dataset.action = 'duplicate';
       duplicate.addEventListener('click', run(async () => {
         if (shelfBusy) return;
         setShelfBusy(true);
-        try {
+        try { await tracked(shelfProgress, '프로젝트 사본을 만들고 있어요', async operation => {
           const loaded = await loadLibraryProject(entry.id);
           if (!loaded) throw new Error('복제할 프로젝트를 찾지 못했어요.');
           loaded.project.id = createId('episode');
           loaded.project.title = `${loaded.project.title} 사본`.slice(0, 200);
           for (const scene of loaded.project.scenes) scene.id = createId('scene');
           await saveLibraryProject(loaded.project, loaded.assets, {thumbnail: entry.thumbnail || ''});
+          operation.update('사본을 저장하고 보관함 목록을 갱신하고 있어요');
           await refreshShelf(); api.toast('프로젝트 사본을 보관함에 만들었어요.');
-        } finally { setShelfBusy(false); }
+        }, '프로젝트 사본을 보관했어요.'); } finally { setShelfBusy(false); }
       }));
       const remove = button('', '삭제', 'danger-ghost'); remove.dataset.action = 'delete';
       remove.addEventListener('click', run(async () => {
         if (shelfBusy || !confirm(`“${entry.title || '이 프로젝트'}”를 보관함에서 삭제할까요? 현재 편집 화면과 내려받은 백업 파일은 유지돼요.`)) return;
         setShelfBusy(true);
-        try { await deleteLibraryProject(entry.id); await refreshShelf(); api.toast('보관함에서 삭제했어요.'); }
+        try { await tracked(shelfProgress, '선택한 보관함 항목을 삭제하고 있어요', async () => {
+          await deleteLibraryProject(entry.id); await refreshShelf(); api.toast('보관함에서 삭제했어요.');
+        }, '보관함에서 삭제했어요.'); }
         finally { setShelfBusy(false); }
       }));
       actions.append(open, duplicate, remove); card.append(image, summary, actions); libraryList.append(card);
@@ -184,22 +208,27 @@ export function setupLibraryTools(api) {
     setShelfBusy(shelfBusy);
   }
   libraryBtn.addEventListener('click', run(async () => {
-    api.pause(); shelf.dialog.showModal();
+    if (shelfBusy) return;
+    api.pause(); shelf.dialog.showModal(); setShelfBusy(true);
     libraryList.replaceChildren(node('p', 'library-empty', '보관함을 불러오는 중이에요.'));
-    await refreshShelf();
+    try { await tracked(shelfProgress, '보관함 목록을 불러오고 있어요', () => refreshShelf(), '보관함 목록을 불러왔어요.'); }
+    finally { setShelfBusy(false); }
   }));
   saveLibraryBtn.addEventListener('click', run(async () => {
     if (shelfBusy) return;
     api.pause(); setShelfBusy(true);
-    try {
+    try { await tracked(shelfProgress, '현재 프로젝트와 미디어를 보관하고 있어요', async operation => {
       await api.persist();
       await saveLibraryProject(api.getProject(), api.getAssets(), {thumbnail: await thumbnail()});
+      operation.update('보관함 목록을 갱신하고 있어요');
       await refreshShelf(); api.toast('이미지와 음성을 포함해 프로젝트를 보관했어요.');
-    } finally { setShelfBusy(false); }
+    }, '이미지와 음성을 포함해 프로젝트를 보관했어요.'); } finally { setShelfBusy(false); }
   }));
 
   const templates = dialog('templatesDialog', '인트로 · 아웃트로', 'REUSABLE TITLE CARDS');
   templates.body.append(node('p', 'library-description', '제목과 로고로 시작·마무리 화면을 만들어요. 추가한 화면은 일반 이미지 장면처럼 편집할 수 있어요.'));
+  const templateProgressHost = node('div'); templates.body.append(templateProgressHost);
+  const templateProgress = createOperationStatus({container: templateProgressHost, region: templates.body, id: 'templateOperation'});
   const grid = node('div', 'template-fields');
   const style = selectField('templateStyle', '화면 디자인', [['intro', '인트로 · 큰 제목'], ['chapter', '챕터 · 간결한 제목'], ['outro', '아웃트로 · 마무리']]);
   const position = selectField('templatePosition', '추가 위치', [['start', '영상 맨 앞'], ['end', '영상 맨 뒤']]);
@@ -283,12 +312,14 @@ export function setupLibraryTools(api) {
   logoField.input.addEventListener('change', run(async () => {
     const file = logoField.input.files[0]; if (!file) return;
     if (file.size > 25 * 1024 * 1024) { logoField.input.value = ''; throw new Error('로고 이미지는 25MB 이하로 넣어주세요.'); }
-    const url = URL.createObjectURL(file), image = new Image();
-    try {
-      image.src = url; await image.decode();
-      if (!image.naturalWidth || !image.naturalHeight) throw new Error('빈 이미지');
-      releaseLogo(); logo = image; logoURL = url; logoClear.disabled = false; paintTemplate();
-    } catch { URL.revokeObjectURL(url); throw new Error('로고 이미지를 읽지 못했어요. PNG·JPG·WebP 파일로 다시 넣어주세요.'); }
+    await tracked(templateProgress, '로고 이미지를 읽고 있어요', async () => {
+      const url = URL.createObjectURL(file), image = new Image();
+      try {
+        image.src = url; await image.decode();
+        if (!image.naturalWidth || !image.naturalHeight) throw new Error('빈 이미지');
+        releaseLogo(); logo = image; logoURL = url; logoClear.disabled = false; paintTemplate();
+      } catch { URL.revokeObjectURL(url); throw new Error('로고 이미지를 읽지 못했어요. PNG·JPG·WebP 파일로 다시 넣어주세요.'); }
+    }, '로고 이미지를 불러왔어요.');
   }));
   for (const input of [title.input, subtitle.input, style.input, color.input]) input.addEventListener('input', () => {
     if (input === style.input) position.input.value = style.input.value === 'outro' ? 'end' : 'start';
@@ -321,7 +352,11 @@ export function setupLibraryTools(api) {
     api.pause();
     if (!title.input.value) title.input.value = api.getProject().title.slice(0, 120);
     if (!subtitle.input.value) subtitle.input.value = '이미지로 전하는 이야기';
-    await document.fonts?.ready; renderPresets(); paintTemplate(); templates.dialog.showModal();
+    if (templateBusy) return;
+    templateBusy = true; insert.disabled = true; templates.dialog.showModal();
+    try { await tracked(templateProgress, '제목 화면의 글꼴과 미리보기를 준비하고 있어요', async () => {
+      await document.fonts?.ready; renderPresets(); paintTemplate();
+    }, '제목 화면을 편집할 수 있어요.'); } finally { templateBusy = false; insert.disabled = false; }
   }));
   insert.addEventListener('click', run(async () => {
     if (templateBusy) return;
@@ -329,13 +364,14 @@ export function setupLibraryTools(api) {
     const seconds = Number(duration.input.value);
     if (!Number.isFinite(seconds) || seconds < .25 || seconds > 600) throw new Error('표시 시간은 0.25~600초로 입력해 주세요.');
     templateBusy = true; insert.disabled = true;
-    try {
+    try { await tracked(templateProgress, '제목 화면을 이미지 장면으로 만들고 있어요', async operation => {
       paintTemplate();
       const blob = await toBlob(preview);
       const asset = {blob, type: 'image/png', name: `${safeName(title.input.value)}-${style.input.value}.png`};
+      operation.update('만든 이미지를 영상 장면에 적용하고 있어요');
       await api.addTemplateScene({scene: createScene({duration: seconds, motion: 'none', fit: 'contain', caption: ''}), asset, position: position.input.value});
       templates.dialog.close(); api.toast('제목 화면을 이미지 장면으로 추가했어요.');
-    } finally { templateBusy = false; insert.disabled = false; }
+    }, '제목 화면을 장면으로 추가했어요.'); } finally { templateBusy = false; insert.disabled = false; }
   }));
 
   return {

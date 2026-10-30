@@ -160,7 +160,7 @@ async function aiWorkflowChecks(browser,base) {
   await source.fill(rawSource);await page.locator('#scriptManualTools summary').click();await page.locator('#useSourceAsDraftBtn').click();assert.equal(await page.locator('#generatedScript').inputValue(),rawSource);
   assert.match(await page.locator('#scriptGenerationStatus').textContent(),/AI 대본 작성·요약·번역·웹 검색은 실행하지 않았/);
   await page.locator('#applyGeneratedScriptBtn').click();await page.locator('#scriptDialog').waitFor({state:'visible'});
-  assert.equal(await page.locator('#scriptText').inputValue(),rawSource);await page.locator('#applyScriptBtn').click();project=await saved();
+  assert.equal(await page.locator('#scriptText').inputValue(),rawSource);await page.locator('#applyScriptBtn').click();await page.locator('#scriptDialog').waitFor({state:'hidden'});project=await saved();
   assert.equal(project.audio.narrationId,null);assert.equal(project.scriptDraft.result,null);assert.equal(project.scenes.reduce((sum,scene)=>sum+scene.duration,0),120);
   assert.equal(earlyVoiceRequests,0);
   await reveal(page, '#scriptStudioBtn');await page.locator('#scriptStudioBtn').click();await page.locator('#scriptMinutes').fill('8');
@@ -191,7 +191,7 @@ async function aiWorkflowChecks(browser,base) {
   await page.locator('#generatedScript').fill((await page.locator('#generatedScript').inputValue())+'\n직접 수정한 마무리입니다.');
   await page.locator('#generatedScript').blur();
   const script=await page.locator('#generatedScript').inputValue();
-  let downloadEvent=page.waitForEvent('download');await page.locator('#downloadScriptMarkdownBtn').click();let download=await downloadEvent;await download.saveAs('/tmp/image-studio-research-script.md');
+  await reveal(page, '#downloadScriptMarkdownBtn');let downloadEvent=page.waitForEvent('download');await page.locator('#downloadScriptMarkdownBtn').click();let download=await downloadEvent;await download.saveAs('/tmp/image-studio-research-script.md');
   const markdown=await fs.readFile('/tmp/image-studio-research-script.md','utf8');assert.match(markdown,/참고 출처/);assert.match(markdown,/https:\/\/example.org\/research-fixture/);assert.match(markdown,/직접 수정/);
   console.log('PASS mocked generation uses selected minutes, exposes sources and permits editing/download');
 
@@ -212,7 +212,7 @@ async function aiWorkflowChecks(browser,base) {
   await page.locator('#applyGeneratedScriptBtn').click();await page.locator('#scriptDialog').waitFor({state:'visible'});
   assert.equal(await page.locator('#scriptGoalMinutes').inputValue(),'4');assert.ok(await page.locator('#scriptUseDuration').isChecked());
   assert.equal(await page.locator('#scriptText').inputValue(),script);
-  await page.locator('#applyScriptBtn').click();project=await saved();
+  await page.locator('#applyScriptBtn').click();await page.locator('#scriptDialog').waitFor({state:'hidden'});project=await saved();
   assert.equal(project.scenes.reduce((sum,scene)=>sum+scene.duration,0),240);assert.equal(project.scriptDraft.result.script,script);assert.equal(project.captionMode,'auto');
   assert.equal(project.scenes.map(scene=>scene.caption).join('').replace(/\s/g,''),script.replace(/\s/g,''));
   console.log('PASS generated draft applies to storyboard at exactly four minutes with all text retained');

@@ -72,3 +72,18 @@
   #scriptToVoiceBtn { flex: 1 1 100%; }
   .script-studio-intro { font-size: 11px; }
 }
+.script-studio-field select { width: 100%; min-width: 0; max-width: 100%; padding: 9px 10px; font-size: 12px; line-height: 1.5; }
+#applyScriptPronunciationBtn { justify-self: start; min-height: 32px; margin-top: 3px; font-size: 11px; white-space: normal; }
+.script-operation-host { position: sticky; top: -1px; z-index: 4; background: #142026; border-radius: 7px; }
+.script-operation-host:has(.operation-status[hidden]), .script-connection-progress:has(.operation-status[hidden]) { display: none; }
+.script-operation-host .operation-status { margin: 0 0 18px; }
+.script-connection-progress .operation-status { margin: -10px 0 18px; }
+.script-research-evidence { margin-top: 18px; padding: 12px; border: 1px solid #344c53; border-radius: 6px; background: #122026; }
+.script-research-evidence > summary { cursor: pointer; color: #afc0c3; font-size: 11px; line-height: 1.7; }
+.script-research-evidence:not([open]) > :not(summary) { display: none !important; }
+.script-research-evidence > button { margin-top: 14px; font-size: 11px; }
+#generateScriptBtn.is-working::before { content: ''; display: inline-block; width: 11px; height: 11px; margin-right: 7px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: -2px; animation: script-working-spin .9s linear infinite; }
+@keyframes script-working-spin { to { transform: rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { #generateScriptBtn.is-working::before { animation: none; } }
+@media(max-width:500px) { .script-studio-field select { font-size: 11px; } .script-operation-host .operation-status { margin-bottom: 12px; } }
+.script-operation-host > #cancelScriptGenerationBtn { margin: 0 12px 10px; min-height: 33px; border: 1px solid #756048; border-radius: 5px; color: #e7c89a; font-size: 11px; }

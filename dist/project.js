@@ -180,6 +180,9 @@ function validateScriptDraft(input) {
   }
   const targetMinutes = scriptInteger(input.targetMinutes, 8, 1, 60, '목표 분량');
   const charsPerMinute = scriptInteger(input.charsPerMinute, 330, 200, 500, '분당 글자 수');
+  const narrationStyles = ['standard', 'korean', 'korean-digits', 'korean-native-digits'];
+  const narrationStyle = input.narrationStyle ?? 'standard';
+  if (!narrationStyles.includes(narrationStyle)) fail('대본 발음 표기 옵션을 확인해 주세요.');
   let result = null;
   if (input.result !== undefined && input.result !== null) {
     const data = input.result;
@@ -193,6 +196,8 @@ function validateScriptDraft(input) {
     const script = scriptText(data.script, '', 100000, '생성 대본');
     const resultPace = scriptInteger(data.charsPerMinute, charsPerMinute, 200, 500, '대본 분당 글자 수');
     const characters = Array.from(script.replace(/\s/g, '')).length;
+    const resultStyle = data.narrationStyle ?? 'standard';
+    if (!narrationStyles.includes(resultStyle)) fail('생성 대본 발음 표기 옵션을 확인해 주세요.');
     result = {
       title: scriptText(data.title, '', 200, '생성 대본 제목'),
       summary: scriptText(data.summary, '', 20000, '자료 요약'),
@@ -208,6 +213,7 @@ function validateScriptDraft(input) {
       estimatedMinutes: characters / resultPace,
       searchedAt: scriptTimestamp(data.searchedAt),
       webSearchUsed: true,
+      narrationStyle: resultStyle,
     };
   }
   if (input.draftScript !== undefined && typeof input.draftScript !== 'string') {
@@ -223,6 +229,7 @@ function validateScriptDraft(input) {
     instructions: scriptText(input.instructions, '', 2000, '대본 작성 지시'),
     targetMinutes,
     charsPerMinute,
+    narrationStyle,
     draftScript,
     result,
   };
