@@ -19,7 +19,7 @@ function storage() {
   const values = new Map();return {values, getItem: key => values.get(key) ?? null,
     setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key)};
 }
-function client(options = {}) {return createDirectOpenAi({sessionStorage: storage(), dispatchChange() {}, ...options});}
+function client(options = {}) {return createDirectOpenAi({sessionStorage: storage(), localStorage: storage(), storageEvents: null, dispatchChange() {}, ...options});}
 const mainImage = new Uint8Array(await readFile(new URL('./fixtures/image-test-2.png', import.meta.url)));
 const backgroundImage = new Uint8Array(await readFile(new URL('./fixtures/image-test-1.png', import.meta.url)));
 const base64 = bytes => Buffer.from(bytes).toString('base64');
@@ -55,6 +55,85 @@ test('only explicit tab retention survives a reload; blank key preserves, disabl
   second.setDirectEnabled(true);assert.equal(second.getDirectSettings().enabled, true);
   second.setDirectSettings({rememberForTab: false});assert.equal(session.values.size, 0);assert.equal(second.getDirectSettings().hasKey, true);
   second.clearDirectSettings();assert.equal(second.getDirectSettings().hasKey, false);assert.equal(session.values.size, 0);
+});
+
+test('browser retention is explicit, survives fresh tab storage and keeps keys out of returned settings', async () => {
+  const local = storage(), session = storage();let calls = 0;
+  const first = client({sessionStorage: session, localStorage: local, fetchImpl() {calls++;throw new Error('unexpected');}});
+  first.setDirectSettings({apiKey: key});assert.equal(local.values.size, 0);assert.equal(session.values.size, 0);
+  assert.equal(client({localStorage: local}).getDirectSettings().hasKey, false);
+  const saved = first.setDirectSettings({rememberInBrowser: true, rememberForTab: true, scriptModel: 'gpt-5.1'});
+  assert.equal(saved.rememberInBrowser, true);assert.equal(saved.rememberForTab, false);assert.equal(session.values.size, 0);
+  assert.equal(local.values.size, 1);assert.ok(local.values.get('bth-studio-openai-browser-v1').includes(key));
+  const reopened = client({localStorage: local}), metadata = reopened.getDirectSettings();
+  assert.equal(metadata.hasKey, true);assert.equal(metadata.enabled, true);assert.equal(metadata.rememberInBrowser, true);
+  assert.equal(metadata.scriptModel, 'gpt-5.1');assert.equal(JSON.stringify(metadata).includes(key), false);
+  assert.equal((await reopened.directApiFetch('/api/script/config')).status, 200);
+  reopened.setDirectSettings({apiKey: '', imageModel: 'gpt-image-2'});assert.equal(reopened.getDirectSettings().hasKey, true);
+  reopened.setDirectEnabled(false);assert.equal(client({localStorage: local}).getDirectSettings().enabled, false);
+  assert.equal(client({localStorage: local}).getDirectSettings().hasKey, true);
+  assert.equal(calls, 0);
+});
+
+test('scope transitions and key removal eliminate old copies instead of restoring stale browser credentials', () => {
+  const local = storage(), session = storage(), api = client({sessionStorage: session, localStorage: local});
+  api.setDirectSettings({apiKey: key, rememberForTab: true});
+  api.setDirectSettings({rememberInBrowser: true});assert.equal(session.values.size, 0);assert.equal(local.values.size, 1);
+  api.setDirectSettings({rememberForTab: true});assert.equal(local.values.size, 0);assert.equal(session.values.size, 1);
+  assert.equal(api.getDirectSettings().rememberInBrowser, false);assert.equal(client({localStorage: local}).getDirectSettings().hasKey, false);
+  api.setDirectSettings({rememberForTab: false});assert.equal(session.values.size, 0);assert.equal(local.values.size, 0);
+  assert.equal(api.getDirectSettings().hasKey, true);assert.equal(client({sessionStorage: session, localStorage: local}).getDirectSettings().hasKey, false);
+  api.setDirectSettings({rememberInBrowser: true});
+  session.setItem('bth-studio-openai-session-v1', JSON.stringify({apiKey: secondKey, enabled: true, rememberForTab: true}));
+  api.clearDirectSettings();assert.equal(local.values.size, 0);assert.equal(session.values.size, 0);
+  assert.equal(client({sessionStorage: session, localStorage: local}).getDirectSettings().hasKey, false);
+});
+
+test('legacy tab records restore, malformed or non-consenting persisted records are discarded and tabs take precedence', () => {
+  const local = storage(), session = storage();
+  session.setItem('bth-studio-openai-session-v1', JSON.stringify({apiKey: key, enabled: true, rememberForTab: true}));
+  const legacy = client({sessionStorage: session, localStorage: local});assert.equal(legacy.getDirectSettings().hasKey, true);assert.equal(legacy.getDirectSettings().rememberInBrowser, false);
+  client({localStorage: local}).setDirectSettings({apiKey: secondKey, rememberInBrowser: true});
+  assert.equal(client({sessionStorage: session, localStorage: local}).getDirectSettings().rememberForTab, true);
+  for (const value of ['not-json', JSON.stringify({apiKey: key, enabled: true}), JSON.stringify({apiKey: key, enabled: true, rememberInBrowser: true, rememberForTab: true}), JSON.stringify({apiKey: 'invalid', enabled: true, rememberInBrowser: true})]) {
+    local.setItem('bth-studio-openai-browser-v1', value);
+    const isolated = client({localStorage: local});assert.equal(isolated.getDirectSettings().hasKey, false);assert.equal(local.values.size, 0);
+  }
+});
+
+test('browser storage failures preserve the live connection and roll back an incomplete scope migration', () => {
+  const local = storage(), session = storage(), api = client({sessionStorage: session, localStorage: local});
+  api.setDirectSettings({apiKey: key, rememberInBrowser: true});const before = api.getDirectSettings();
+  const remove = local.removeItem;local.removeItem = () => {throw new Error(`private storage detail ${key}`);};
+  assert.throws(() => api.setDirectSettings({apiKey: secondKey, rememberForTab: true}), cause => cause.code === 'OPENAI_SETTINGS_STORAGE' && !cause.message.includes(key) && !cause.message.includes(secondKey));
+  assert.deepEqual(api.getDirectSettings(), before);assert.equal(session.values.size, 0);assert.ok(local.values.get('bth-studio-openai-browser-v1').includes(key));
+  local.removeItem = remove;
+  const write = local.setItem;local.setItem = () => {throw new Error('quota');};
+  assert.throws(() => api.setDirectSettings({apiKey: secondKey}), cause => cause.code === 'OPENAI_SETTINGS_STORAGE');assert.deepEqual(api.getDirectSettings(), before);
+  assert.ok(local.values.get('bth-studio-openai-browser-v1').includes(key));
+  local.setItem = write;api.setDirectSettings({rememberInBrowser: false});assert.equal(local.values.size, 0);assert.equal(api.getDirectSettings().hasKey, true);
+  const unavailable = client({localStorage: null});unavailable.setDirectSettings({apiKey: key});
+  assert.throws(() => unavailable.setDirectSettings({rememberInBrowser: true}), cause => cause.code === 'OPENAI_SETTINGS_STORAGE');assert.equal(unavailable.getDirectSettings().hasKey, true);
+  assert.equal(unavailable.getDirectSettings().rememberInBrowser, false);
+});
+
+test('browser storage events update or revoke opted-in tabs, abort old jobs and never opt memory-only tabs in', async () => {
+  const local = storage(), events = new EventTarget();let changes = 0, started;
+  const running = new Promise(resolve => {started = resolve;});
+  const retained = client({localStorage: local, storageEvents: events, dispatchChange() {changes++;}, fetchImpl() {started();return new Promise(() => {});}});
+  const memory = client({localStorage: local, storageEvents: events});memory.setDirectSettings({apiKey: secondKey});
+  retained.setDirectSettings({apiKey: key, rememberInBrowser: true});
+  const notify = (key = 'bth-studio-openai-browser-v1', storageArea = local) => {
+    const event = new Event('storage');Object.defineProperties(event, {key: {value: key}, storageArea: {value: storageArea}});events.dispatchEvent(event);
+  };
+  client({localStorage: local}).setDirectSettings({apiKey: secondKey, scriptModel: 'gpt-5.1'});notify();
+  assert.equal(retained.getDirectSettings().scriptModel, 'gpt-5.1');assert.equal(memory.getDirectSettings().rememberInBrowser, false);
+  const pending = retained.directApiFetch('/api/script/generate', post(input));await running;
+  local.removeItem('bth-studio-openai-browser-v1');notify('unrelated-key');assert.equal(retained.getDirectSettings().hasKey, true);
+  notify();await assert.rejects(pending, cause => cause.name === 'AbortError');
+  assert.equal(retained.getDirectSettings().hasKey, false);assert.equal(memory.getDirectSettings().hasKey, true);
+  assert.throws(() => retained.setDirectSettings({enabled: true}), DirectOpenAiError);assert.equal(local.values.size, 0);
+  assert.ok(changes >= 3);
 });
 
 test('invalid keys, models, storage and request credentials do not replace a valid connection or call a provider', async () => {

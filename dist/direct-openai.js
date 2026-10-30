@@ -4,11 +4,12 @@ import {validateStoryboardRequest, buildStoryboardRequest, parseStoryboardRespon
 import {buildDirectTranscriptRequest, parseTranscriptResponse} from './transcript-protocol.js';
 
 const SESSION_KEY = 'bth-studio-openai-session-v1';
+const BROWSER_KEY = 'bth-studio-openai-browser-v1';
 const SCRIPT_CONFIG = '/api/script/config', SCRIPT_GENERATE = '/api/script/generate';
 const IMAGE_CONFIG = '/api/image/config', IMAGE_GENERATE = '/api/image/generate', IMAGE_PLAN = '/api/image/plan';
 const TRANSCRIPT_CONFIG = '/api/transcript/config', TRANSCRIPT_ANALYZE = '/api/transcript/analyze';
 const ROUTES = new Set([SCRIPT_CONFIG, SCRIPT_GENERATE, IMAGE_CONFIG, IMAGE_GENERATE, IMAGE_PLAN, TRANSCRIPT_CONFIG, TRANSCRIPT_ANALYZE]);
-const DEFAULTS = Object.freeze({enabled: false, apiKey: '', rememberForTab: false,
+const DEFAULTS = Object.freeze({enabled: false, apiKey: '', rememberForTab: false, rememberInBrowser: false,
   scriptModel: 'gpt-5-mini', imageModel: 'gpt-image-2', transcribeModel: 'whisper-1'});
 const MAX_REFERENCE_BYTES = 10 * 1024 * 1024, MAX_REFERENCES_BYTES = 20 * 1024 * 1024;
 const MAX_OUTPUT_BYTES = 20 * 1024 * 1024, MAX_RESPONSE_BYTES = 30 * 1024 * 1024;
@@ -44,6 +45,9 @@ function normalizeSettings(input, previous = DEFAULTS) {
   if (Object.hasOwn(input, 'enabled')) {if (typeof input.enabled !== 'boolean') throw invalid('OpenAI 연결 사용 여부를 확인해 주세요.');value.enabled = input.enabled;}
   else if (input.apiKey) value.enabled = true;
   if (Object.hasOwn(input, 'rememberForTab')) {if (typeof input.rememberForTab !== 'boolean') throw invalid('탭에서 키 기억 설정을 확인해 주세요.');value.rememberForTab = input.rememberForTab;}
+  if (Object.hasOwn(input, 'rememberInBrowser')) {if (typeof input.rememberInBrowser !== 'boolean') throw invalid('브라우저에서 키 기억 설정을 확인해 주세요.');value.rememberInBrowser = input.rememberInBrowser;}
+  if (input.rememberInBrowser === true) value.rememberForTab = false;
+  else if (input.rememberForTab === true) value.rememberInBrowser = false;
   for (const [key, label] of [['scriptModel', '대본'], ['imageModel', '이미지'], ['transcribeModel', '음성 분석']]) {
     if (Object.hasOwn(input, key)) value[key] = validateModel(input[key], label);
   }
@@ -53,9 +57,9 @@ function normalizeSettings(input, previous = DEFAULTS) {
   return value;
 }
 const metadata = settings => ({enabled: Boolean(settings.enabled && settings.apiKey), hasKey: Boolean(settings.apiKey),
-  rememberForTab: settings.rememberForTab, scriptModel: settings.scriptModel,
+  rememberForTab: settings.rememberForTab, rememberInBrowser: settings.rememberInBrowser, scriptModel: settings.scriptModel,
   imageModel: settings.imageModel, transcribeModel: settings.transcribeModel});
-function browserStorage() {try {return globalThis.sessionStorage || null;} catch {return null;}}
+function browserStorage(name) {try {return globalThis[name] || null;} catch {return null;}}
 function emitSettingsChange() {if (typeof window !== 'undefined') window.dispatchEvent(new Event('studio-api-settings-change'));}
 function jsonResponse(status, body, head = false) {
   return new Response(head ? null : JSON.stringify(body), {status, headers: {'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store'}});
@@ -193,27 +197,46 @@ function appInput(options, limit) {
 
 export function handlesDirectPath(path) {return ROUTES.has(path);}
 
-/** A personal API key stays in this module's memory unless the user opts in to tab-session retention. */
-export function createDirectOpenAi({fetchImpl = (...args) => globalThis.fetch(...args), sessionStorage = browserStorage(),
+/** Retention beyond module memory always requires the user's explicit tab or browser choice. */
+export function createDirectOpenAi({fetchImpl = (...args) => globalThis.fetch(...args), sessionStorage = browserStorage('sessionStorage'),
+  localStorage = browserStorage('localStorage'), storageEvents = typeof window === 'undefined' ? null : window,
   dispatchChange = emitSettingsChange, timeoutMs = 180000, checkTimeoutMs = 15000} = {}) {
   let settings = {...DEFAULTS}, activeController = null, generation = 0;
-  try {
-    const saved = sessionStorage?.getItem(SESSION_KEY);
-    if (saved) {
-      const value = JSON.parse(saved);
-      if (!plain(value) || value.rememberForTab !== true) throw new Error('invalid');
-      settings = normalizeSettings(value);
-    }
-  } catch {try {sessionStorage?.removeItem(SESSION_KEY);} catch {}}
-  function getDirectSettings() {return metadata(settings);}
-  function save(next) {
+  function restore(store, key, scope) {
     try {
-      if (next.rememberForTab) {
-        if (!sessionStorage) throw new Error('unavailable');
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
-      } else {sessionStorage?.removeItem(SESSION_KEY);}
-    } catch {throw safeError(400, 'OPENAI_SETTINGS_STORAGE', '이 탭에 API 설정을 저장하지 못했어요. ‘이 탭에서 키 기억’을 끄거나 브라우저 저장 공간을 확인해 주세요.');}
-    activeController?.abort();settings = next;dispatchChange();return metadata(settings);
+      const saved = store?.getItem(key);if (!saved) return null;
+      if (saved.length > 4096) throw new Error('invalid');
+      const value = JSON.parse(saved);
+      if (!plain(value) || value[scope] !== true || (scope === 'rememberForTab' ? value.rememberInBrowser === true : value.rememberForTab === true)) throw new Error('invalid');
+      return normalizeSettings(value);
+    } catch {try {store?.removeItem(key);} catch {}return null;}
+  }
+  const tabSettings = restore(sessionStorage, SESSION_KEY, 'rememberForTab');
+  const browserSettings = restore(localStorage, BROWSER_KEY, 'rememberInBrowser');
+  settings = tabSettings || browserSettings || settings;
+  function getDirectSettings() {return metadata(settings);}
+  function replaceSettings(next) {activeController?.abort();settings = next;dispatchChange();return metadata(settings);}
+  function save(next) {
+    const changes = [], applied = [];
+    try {
+      for (const [store, key, retain] of [[sessionStorage, SESSION_KEY, next.rememberForTab], [localStorage, BROWSER_KEY, next.rememberInBrowser]]) {
+        const after = retain ? JSON.stringify(next) : null;
+        if (!store) {if (retain) throw new Error('unavailable');continue;}
+        const before = store.getItem(key);
+        if (before !== after) changes.push({store, key, before, after});
+      }
+      // Write the chosen destination before removing an older copy. Roll back a
+      // completed write if the other storage rejects the scope transition.
+      changes.sort((a, b) => Number(a.after === null) - Number(b.after === null));
+      for (const change of changes) {
+        if (change.after === null) change.store.removeItem(change.key);else change.store.setItem(change.key, change.after);
+        applied.push(change);
+      }
+    } catch {
+      for (const change of applied.reverse()) {try {if (change.before === null) change.store.removeItem(change.key);else change.store.setItem(change.key, change.before);} catch {}}
+      throw safeError(400, 'OPENAI_SETTINGS_STORAGE', '선택한 보관 방식으로 API 설정을 저장하지 못했어요. 브라우저의 사이트 데이터 저장 권한을 확인해 주세요. 기존 설정은 유지했어요.');
+    }
+    return replaceSettings(next);
   }
   function setDirectSettings(value) {return save(normalizeSettings(value, settings));}
   function setDirectEnabled(enabled) {
@@ -221,6 +244,12 @@ export function createDirectOpenAi({fetchImpl = (...args) => globalThis.fetch(..
     return setDirectSettings({enabled});
   }
   function clearDirectSettings() {return save({...DEFAULTS});}
+  storageEvents?.addEventListener('storage', event => {
+    if (!settings.rememberInBrowser || (event.key !== BROWSER_KEY && event.key !== null) || (event.storageArea && event.storageArea !== localStorage)) return;
+    // Other tabs may replace or remove the remembered key. Never re-save a stale
+    // copy, and never silently opt memory/tab-only clients into browser storage.
+    replaceSettings(restore(localStorage, BROWSER_KEY, 'rememberInBrowser') || {...DEFAULTS});
+  });
   async function requestProvider(endpoint, {key, body, signal, timeout = timeoutMs}) {
     const controller = new AbortController();let timedOut = false;
     const forward = () => controller.abort();

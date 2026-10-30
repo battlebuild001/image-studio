@@ -41,7 +41,7 @@ own topics beyond the four defaults. Keep branding and new-project titles neutra
   source audio trims, waveform and A–B repeat.
 - `dist/library-tools.js` / `.css`: local project shelf/copy, reusable title cards
   with optional local logos, current-frame PNG downloads.
-- `dist/api-client.js` and `dist/api-settings.js` / `.css`: global app Settings for personal OpenAI API keys/models and optional authenticated server connection. Keys are memory-only by default; explicit remember-for-tab consent permits sessionStorage, never localStorage or project/backups. Backend endpoint may remain in localStorage and app access code only in sessionStorage.
+- `dist/api-client.js` and `dist/api-settings.js` / `.css`: global app Settings for personal OpenAI API keys/models and optional authenticated server connection. Keys are memory-only by default; explicit remember-for-tab consent permits sessionStorage, explicit remember-in-browser consent permits a dedicated localStorage entry. Never include keys in project/backups. Backend endpoint may remain in localStorage and app access code only in sessionStorage.
 - `dist/direct-openai.js`: browser requests to fixed HTTPS api.openai.com endpoints, without custom destinations, redirects or automatic paid retries.
 - `dist/script-protocol.js`, `dist/transcript-protocol.js`, `dist/image-prompt.js`: browser-safe shared request/response validation and reference-image prompt construction. Preserve real search/citation and speech timestamp requirements in both transports.
 - `dist/script-planning.js`: fixed-interval timeline construction, script/cue placement, narration signature and stale-plan checks.
@@ -119,11 +119,20 @@ The user explicitly requested API configuration inside the app. This authorizes
 personal key input through Settings and supersedes the earlier blanket ban on
 browser key input. Direct OpenAI mode calls Responses web_search, Images edits
 and timestamped transcription through standard CORS; it does not use a cloud
-server key or require Render. Keep the key in module memory by default and only
-remember it in sessionStorage when the user explicitly opts in. Never embed keys
-in shipped code, localStorage, project/library data, backups, tests or logs; getters
+server key or require Render. The user requested persistent API settings; this
+authorizes an explicit browser-retention choice alongside tab-only retention.
+Keep the key in module memory by default; only remember it in sessionStorage or a
+dedicated localStorage entry when the user explicitly selects that scope and saves.
+Explain device-local retention, shared-device risk and site-data clearing. Never embed keys
+in shipped code, project/library data, backups, tests or logs; getters
 and status text expose only presence, never values. Clear/mask fields after use,
 clear remembered values on removal and abort obsolete requests on settings changes.
+For retention changes run `npm run test:api-retention-browser`, existing direct/API
+settings and operation-feedback browser suites, and `npm test`. Verify actual
+browser-process restart with a persistent test profile, memory/tab/browser scope
+transitions, masked restore and blank saves, no keys in project/library/backups,
+mobile controls and cross-tab deletion including delayed verification that must
+never re-save a removed key. Use synthetic credentials and mock provider replies.
 Connection checking uses non-paid GET /v1/models without reference/media uploads.
 Allow explicit save without model-list verification for restricted keys; a models
 403 does not prove the key lacks generation permissions. Actual content generation
