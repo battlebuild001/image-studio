@@ -87,3 +87,13 @@
 @media(prefers-reduced-motion:reduce) { #generateScriptBtn.is-working::before { animation: none; } }
 @media(max-width:500px) { .script-studio-field select { font-size: 11px; } .script-operation-host .operation-status { margin-bottom: 12px; } }
 .script-operation-host > #cancelScriptGenerationBtn { margin: 0 12px 10px; min-height: 33px; border: 1px solid #756048; border-radius: 5px; color: #e7c89a; font-size: 11px; }
+.script-length-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+.script-length-actions > button { min-height: 32px; padding: 7px 10px; font-size: 11px; }
+.script-composition-settings { margin-top: 14px; padding: 11px 12px; border: 1px solid #40534b; border-radius: 6px; background: #172522; min-width: 0; }
+.script-composition-settings > summary { color: #cfceaf; font-size: 11px; line-height: 1.8; cursor: pointer; overflow-wrap: anywhere; }
+.script-composition-settings:not([open]) > :not(summary) { display: none !important; }
+.script-composition-fields { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; min-width: 0; }
+.script-composition-fields .script-studio-field { margin-top: 12px; }
+.script-composition-fields .script-studio-help { margin: 0; }
+.script-source-budget-warning,.script-length-mismatch { margin: 10px 0 0; padding: 10px 12px; border: 1px solid #6c6241; border-radius: 5px; color: #d5c294; background: #2a281d; font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
+@media(max-width:600px) { .script-composition-fields { grid-template-columns: minmax(0,1fr); gap: 0; } .script-length-actions > button { flex: 1 1 120px; } }
