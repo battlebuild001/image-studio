@@ -54,7 +54,9 @@ export function setupStudioLayout(api = {}) {
   const creation = disclosure('creationToolsDrawer', '제작 도구', '대본 · 레퍼런스 · 템플릿');
   creation.details.classList.add('studio-creation-tools');
   const dropzone = $('imageDropzone');dropzone?.after(creation.details);
-  move(['scriptStudioBtn', 'scriptBtn', 'sceneImageBatchBtn', 'imageStudioBtn', 'templatesBtn', 'snapshotBtn', 'snapshotOperationHost', 'voiceStudioBtn'], creation.body);
+  move(['scriptStudioBtn', 'scriptBtn', 'imageStudioBtn', 'templatesBtn', 'snapshotBtn', 'snapshotOperationHost', 'voiceStudioBtn'], creation.body);
+  const wholeVideo = $('sceneImageBatchBtn');
+  if (wholeVideo) {creation.details.before(wholeVideo);wholeVideo.classList.add('studio-whole-video-action');}
 
   const sceneTools = disclosure('sceneToolsDrawer', '선택 장면 편집', '복제 · 분할 · 일괄 편집');
   const toolbar = document.querySelector('.scene-toolbar');
@@ -158,6 +160,17 @@ export function setupStudioLayout(api = {}) {
 
   function render() {
     const project = api.getProject?.();if (!project) return;
+    // Empty projects keep the entry in optional tools; existing/timed projects
+    // expose the whole-video action directly beside the image list.
+    if (wholeVideo) {
+      if (project.scenes?.length || project.scenePlan) {
+        if (wholeVideo.nextElementSibling !== creation.details) creation.details.before(wholeVideo);
+      } else if (wholeVideo.parentElement !== creation.body) {
+        const singleImage = $('imageStudioBtn');
+        if (singleImage?.parentElement === creation.body) creation.body.insertBefore(wholeVideo, singleImage);
+        else creation.body.append(wholeVideo);
+      }
+    }
     const audioParts = [];
     if (project.audio?.narrationId) audioParts.push('내레이션');
     if (project.audio?.bgmId) audioParts.push('배경음악');

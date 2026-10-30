@@ -301,9 +301,23 @@ function validateScenePlan(input) {
       prompt: requiredText(item.prompt, 6000, '장면 이미지 생성 요청')};
   });
   if (Math.abs(previousEnd - durationSeconds) > 0.001) fail('마지막 장면의 종료 시각이 계획한 전체 길이와 다릅니다.');
+  const visualBrief = scriptText(input.visualBrief, '', 6000, '영상 전체 콘셉트');
+  let visualPlan;
+  if (input.visualPlan !== undefined && input.visualPlan !== null) {
+    const value = input.visualPlan;
+    if (!plainObject(value) || value.version !== 1) fail('영상 전체 이미지 구성 형식을 확인해 주세요.');
+    const model = requiredText(value.model, 100, '영상 구성 모델');
+    if (!/^[a-zA-Z0-9_.:-]{1,100}$/u.test(model) || /^sk-/iu.test(model)) fail('영상 구성 모델을 확인해 주세요.');
+    const globalConcept = requiredText(value.globalConcept, 12000, '전체 영상 시각적 콘셉트');
+    const inputKey = requiredText(value.inputKey, 600000, '영상 구성 입력 정보');
+    if (!globalConcept.trim() || !inputKey.trim()) fail('영상 전체 구성의 콘셉트와 입력 정보가 필요해요.');
+    visualPlan = {version: 1, createdAt: scriptTimestamp(value.createdAt), model, globalConcept, inputKey};
+  }
   return {version: 1, intervalSeconds, durationSeconds, basis: input.basis,
     confirmedAt: confirmed.toISOString(), sourceScript: requiredText(input.sourceScript, 100000, '장면 계획 원본 대본'),
-    narrationKey: requiredText(input.narrationKey, 1000, '장면 계획 내레이션 정보'), items};
+    narrationKey: requiredText(input.narrationKey, 1000, '장면 계획 내레이션 정보'), items,
+    // Keep older schema-one timing plans byte-shape compatible until configured.
+    ...(input.visualBrief === undefined ? {} : {visualBrief}), ...(visualPlan ? {visualPlan} : {})};
 }
 
 /** Reference metadata points to the same local Blob store as scene images. */
