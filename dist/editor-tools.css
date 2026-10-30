@@ -179,3 +179,18 @@
   .editor-grid { grid-template-columns: minmax(0, 1fr); }
   .loop-controls input[type=number] { width: 75px; }
 }
+
+/* Frequently used gentle image controls remain beside the current scene. */
+.scene-effects-controls { min-width: 0; grid-column: 1 / -1; margin: 16px 0 4px; padding: 12px 10px; border: 1px solid #3b514c; border-radius: 7px; background: #142321; }
+.scene-effects-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.scene-effects-heading h3 { margin: 0; color: #c4d4c9; font-size: 11px; font-weight: 600; }
+.scene-effects-selection { flex: none; color: #96aaa0; font-size: 9px; }
+.scene-effects-controls > .editor-control { margin-top: 11px; }
+.scene-effects-controls > button { width: 100%; max-width: 100%; min-height: 33px; padding: 7px 8px; white-space: normal; font-size: 10px; }
+.scene-effects-controls > #applySceneEffectsToSelectionBtn { margin-top: 4px; }
+.scene-effects-controls .editor-control > span { display: flex; justify-content: space-between; gap: 8px; }
+.scene-effects-controls output { flex: none; color: #dac199; font-variant-numeric: tabular-nums; }
+.scene-effects-controls input[type=range] { width: 100%; min-width: 0; max-width: 100%; margin: 6px 0 3px; }
+.scene-effects-controls select { width: 100%; min-width: 0; max-width: 100%; }
+.scene-effects-controls button:focus-visible,.scene-effects-controls select:focus-visible,.scene-effects-controls input:focus-visible { outline: 2px solid var(--accent, #dfbb84); outline-offset: 3px; }
+@media(max-width:720px) { .scene-effects-controls { padding: 13px 12px; } .scene-effects-heading h3 { font-size: 12px; } .scene-effects-controls > button { font-size: 11px; min-height: 36px; } .scene-effects-selection { font-size: 10px; } }

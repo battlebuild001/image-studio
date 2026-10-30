@@ -35,6 +35,8 @@ own topics beyond the four defaults. Keep branding and new-project titles neutra
 - `dist/project.js`: validation, pure scene operations, timeline, captions, SRT,
   IndexedDB autosave/library, portable backup.
 - `dist/engine.js`: Canvas rendering, Web Audio mixing, MediaRecorder export.
+- `dist/scene-effects.js`: bounded deterministic scene-local dust/fog/light overlays;
+  camera presets and final compositing remain in engine.js.
 - `dist/editor-tools.js` / `.css`: framing/motion controls, caption editor/styles,
   source audio trims, waveform and A–B repeat.
 - `dist/library-tools.js` / `.css`: local project shelf/copy, reusable title cards
@@ -214,6 +216,18 @@ for credential values in chat. Inspect configured presence without exposing valu
   BTH CONTENT STUDIO and new project titles neutral. Prompt-copy context follows
   the active category and generic facts/data; do not force BLKOUT, military or
   science-fiction concepts into unrelated categories.
+- Gentle camera motions are subtle-zoom and subtle-drift; existing presets/defaults
+  remain unchanged. Optional scene.effect is none/dust/fog/light (legacy none),
+  scene.effectIntensity is finite 0..1 (legacy .25). Newscene effects are passive
+  until an explicit edit. Preserve schema1 backups, referencedmedia and timings.
+  Render bounded deterministic overlays from scene.id and scene-local time with no
+  timers, per-frame randomness, network calls or paid providers. Intensity0/none
+  must match legacy pixels; respect cover/contain and small viewport displacement.
+  Composite image+effect together during transitions, then captions/branding above.
+  Include effect fields in renderer cache invalidation and copied/bulk settings.
+  A split creates a newscene-local effect clock/pattern; retain effect parameters.
+  Use currentselection for one-undo gentle preset/batch effect edits, preserve
+  image bytes/captions/timingplans, and disable controls during media/export work.
 - Process normal image/audio editing locally in the browser. Extract script
   reference documents locally with pinned browser libraries; do not send original
   TXT/MD/PDF/DOCX files to the server or external providers in the normal UI flow.
@@ -385,6 +399,14 @@ delayed saves from an inactive workspace, same-project-ID transitions, strict-fl
 and hydrate failures, module resets and undo boundaries. Keep existing library and
 style/template preset sharing explicit. Do not claim a public deployment or completed
 browser checks until their actual results have been verified.
+For scene effects, run npm run test:scene-effects-browser and npm test. The browser
+suite requires local ffprobe in addition to Playwright/Chromium for stream inspection. Verify
+actual Canvas pixels, deterministic seek/reload/backup frames, none/intensity0
+legacy behavior, bounded tiny motion/no blackedges, readable captions aboveFX,
+selection/undo/copy/workspace/media roundtrips, mobile access, and one actual short
+video with image, narration, BGM and subtitles. Inspect exported metadata/playback
+and frame differences; keep real exports sequential. Local camera/overlay effects
+are not a claim of generative subject or character animation.
 For script creation, test local extraction with actual synthetic TXT/MD/PDF/DOCX
 bytes and no original-file upload, including static Pages with absent API routes.
 Verify manual draft editing, explicit source copy and independent persistence with
