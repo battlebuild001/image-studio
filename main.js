@@ -13,6 +13,7 @@ import {getScenePlanStatus} from './script-planning.js';
 import {setupSceneTimingUi} from './scene-timing-ui.js';
 import {setupSceneImageBatch} from './scene-image-batch.js';
 import {setupStudioLayout} from './studio-layout.js';
+import {createOperationStatus,nextPaint} from './operation-status.js';
 
 const $=id=>document.getElementById(id);
 let project=createProject(),assets=new Map(),selectedId=null,history=[],current=0,playing=false,frameId=0,playStart=0,playOffset=0;
@@ -21,6 +22,16 @@ let redoHistory=[],selectedIds=new Set(),copiedSettings=null,previewAudio=null,e
 let narration=new Audio(),bgm=new Audio(),saveTimer=0,saveChain=Promise.resolve(),revision=0,savedRevision=0,exportController=null,exportURL=null,importing=false;
 let workspaceCatalog=null,workspaceTabs=null,workspaceReady=false,changingWorkspace=false,workspaceError='';
 const canvas=$('previewCanvas'),ctx=canvas.getContext('2d',{alpha:false});
+const editorStatusHost=el('div','editor-operation-host');editorStatusHost.id='editorOperationHost';document.querySelector('main.workspace').before(editorStatusHost);
+const editorProgress=createOperationStatus({container:editorStatusHost,region:document.querySelector('main.workspace'),id:'editorOperation'});
+const timingProgress=createOperationStatus({container:$('scriptDialog').querySelector('.dialog-body'),region:$('scriptDialog'),id:'timingOperation'});
+const exportProgressStatus=createOperationStatus({container:$('exportDialog').querySelector('.dialog-body'),region:$('exportDialog'),id:'exportOperation'});
+async function trackEditorTask(label,task,success='작업을 마쳤어요.'){
+ const operation=editorProgress.start(label);
+ try{const result=await task(operation);operation.finish(success);return result;}
+ catch(error){if(error?.name==='AbortError')operation.cancel('작업을 취소했어요.');else operation.fail(error?.message||'작업을 마치지 못했어요.');throw error;}
+}
+
 const motionNames={'zoom-in':'확대','zoom-out':'축소','pan-left':'왼쪽 이동','pan-right':'오른쪽 이동',none:'고정',custom:'직접 설정'};
 const clone=value=>structuredClone(value);
 const time=value=>{const s=Math.max(0,Number(value)||0);return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(Math.floor(s%60)).padStart(2,'0')}`;};
@@ -36,7 +47,7 @@ function pruneAssets(){
  for(const[id,asset]of assets)if(!keep.has(id)){if(asset.url)URL.revokeObjectURL(asset.url);if(typeof ImageBitmap!=='undefined'&&asset.image instanceof ImageBitmap)asset.image.close();assets.delete(id);}
 }
 function checkpoint(){history.push(clone(project));if(history.length>30)history.shift();redoHistory=[];$('undoBtn').disabled=false;$('redoBtn').disabled=true;}
-function markSaved(label){$('saveState').replaceChildren(el('i'),document.createTextNode(label));}
+function markSaved(label){const element=$('saveState');element.replaceChildren(el('i'),document.createTextNode(label));element.setAttribute('role','status');element.setAttribute('aria-busy',String(label==='저장 중'));}
 function scheduleSave(){revision++;markSaved('저장 대기');clearTimeout(saveTimer);saveTimer=setTimeout(()=>persist().catch(()=>{}),650);}
 function persist(){
  scriptStudio?.flush({strict:false});imageStudio?.flush({strict:false});clearTimeout(saveTimer);const rev=revision,snapshot=clone(project),media=new Map(assets),owner=workspaceReady?workspaceCatalog.activeId:null;markSaved('저장 중');
@@ -220,7 +231,7 @@ async function play(){
 function seek(value){const resume=playing||playPending;pause();current=Math.max(0,Math.min(total(),Number(value)||0));renderPreview();if(resume)play().catch(report);}
 function ensureSpace(files){const used=[...assets.values()].reduce((n,a)=>n+(a.blob?.size||0),0),incoming=files.reduce((n,f)=>n+f.size,0);if(used+incoming>MAX_ASSET_BYTES)throw new Error('이미지·음성 합계는 180MB까지 사용할 수 있어요. 백업 후 새 프로젝트를 만들거나 파일 크기를 줄여주세요.');}
 async function decodeImage(blob,name='이미지'){if(blob.size>25*1024*1024)throw new Error(`${name}: 이미지 한 장은 25MB 이하로 넣어주세요.`);const url=URL.createObjectURL(blob),image=new Image();try{image.src=url;await image.decode();if(!image.naturalWidth||!image.naturalHeight)throw new Error('empty');return{blob,url,image,name,type:blob.type||'image/png'};}catch{URL.revokeObjectURL(url);throw new Error(`${name}: 이미지를 읽지 못했어요. PNG·JPG·WebP 파일로 다시 넣어주세요.`);}}
-async function addImages(fileList,{replace=false}={}){
+async function addImagesWork(fileList,{replace=false}={}){
  if(importing||exportController)return;
  const files=[...fileList].filter(f=>f.type.startsWith('image/'));
  if(!files.length)throw new Error('PNG·JPG·WebP 이미지 파일을 선택해 주세요.');
@@ -229,6 +240,7 @@ async function addImages(fileList,{replace=false}={}){
  ensureSpace(files);const targetProjectId=project.id,decoded=[];let inserted=false;
  setMediaBusy(true);
  try{
+  await nextPaint();
   for(const file of(replace?files.slice(0,1):files))decoded.push(await decodeImage(file,file.name||'붙여넣은 이미지'));
   if(project.id!==targetProjectId){for(const asset of decoded)URL.revokeObjectURL(asset.url);toast('프로젝트가 바뀌어 이미지 추가를 취소했어요.');return;}
   const ids=decoded.map(asset=>{const id=createId('image');assets.set(id,asset);return id;});inserted=true;
@@ -249,12 +261,12 @@ async function addImages(fileList,{replace=false}={}){
  }finally{setMediaBusy(false);}
 }
 async function decodeAudio(blob,name){const url=URL.createObjectURL(blob),element=new Audio();element.preload='metadata';try{const duration=await new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(new Error('음성을 읽는 시간이 초과됐어요.')),15000);element.onloadedmetadata=()=>{clearTimeout(timeout);Number.isFinite(element.duration)&&element.duration>0?resolve(element.duration):reject(new Error('음성 길이를 읽지 못했어요.'));};element.onerror=()=>{clearTimeout(timeout);reject(new Error('지원하지 않는 음성 형식이에요. MP3·WAV로 다시 넣어주세요.'));};element.src=url;});if(duration>3600)throw new Error('한 프로젝트의 음성은 60분 이하로 넣어주세요.');return{blob,url,duration,name,type:blob.type||'audio/mpeg'};}catch(error){URL.revokeObjectURL(url);throw error;}finally{element.removeAttribute('src');element.load();}}
-async function addAudio(file,kind){
+async function addAudioWork(file,kind){
  if(!file||exportController||importing)return;
  ensureSpace([file]);const targetProjectId=project.id;let asset=null,inserted=false;
  pause();setMediaBusy(true);
  try{
-  asset=await decodeAudio(file,file.name||'음성 파일');
+  await nextPaint();asset=await decodeAudio(file,file.name||'음성 파일');
   if(project.id!==targetProjectId){URL.revokeObjectURL(asset.url);toast('프로젝트가 바뀌어 음성 추가를 취소했어요.');return;}
   const id=createId('audio');assets.set(id,asset);inserted=true;
   mutate(()=>{
@@ -305,17 +317,18 @@ async function applyScript(){
  const timedCaptions=getCaptions(project);
  const preserveTimedCaptions=project.captionMode!=='auto'&&timedCaptions.length>0&&(normalized(timedCaptions.map(cue=>cue.text).join(''))===normalized(raw)||normalized(previousScript)===normalized(raw));
  const controls=[...$('scriptDialog').querySelectorAll('input,textarea,button:not(#cancelScriptBtn):not(.icon-button)')],disabled=controls.map(control=>control.disabled);
- timingApplying=true;$('scriptDialog').setAttribute('aria-busy','true');controls.forEach(control=>control.disabled=true);
+ timingApplying=true;const operation=timingProgress.start('장면 타이밍을 저장하고 있어요.');controls.forEach(control=>control.disabled=true);
  try{
-  if(project.scenes.length)await archiveCurrent();
+  await nextPaint();
+  if(project.scenes.length){operation.update('기존 프로젝트를 보관하고 있어요.');await archiveCurrent();}
   if(!($('scriptDialog').open&&request===timingGeneration&&project.id===id&&workspaceCatalog?.activeId===owner))return;
   mutate(p=>{p.scenes=prepared.scenes;p.scenePlan={...prepared.scenePlan,confirmedAt:new Date().toISOString()};if(!preserveTimedCaptions){p.captionMode='auto';p.captions=[];p.captionAnalysis=null;}p.scriptDraft={...(p.scriptDraft||{sourceText:'',instructions:'',charsPerMinute:330,result:null}),draftScript:raw,targetMinutes:Number.isInteger(targetMinutes)&&targetMinutes>=1&&targetMinutes<=60?targetMinutes:(p.scriptDraft?.targetMinutes||8)};if(p.scriptDraft.result)p.scriptDraft.result.script=raw;if(pendingScriptTitle)p.title=pendingScriptTitle.slice(0,120);selectedId=p.scenes[0]?.id;selectedIds=new Set(selectedId?[selectedId]:[]);current=0;});
-  await persist();if(!($('scriptDialog').open&&request===timingGeneration&&project.id===id&&workspaceCatalog?.activeId===owner))return;pendingScriptTitle=null;$('scriptDialog').close();toast(`${project.scenes.length}개 장면의 전환 타이밍을 확정했어요. ‘확정한 장면 이미지 생성’에서 요청을 확인한 뒤 생성하세요.`);
- }catch(error){$('sceneTimingError').textContent=error.message;throw error;}
- finally{timingApplying=false;$('scriptDialog').setAttribute('aria-busy','false');controls.forEach((control,index)=>control.disabled=disabled[index]);sceneImageBatch?.render();renderWorkflow();if($('scriptDialog').open)sceneTimingUi.refresh();}
+  operation.update('확정한 장면과 타이밍을 저장하고 있어요.');await persist();if(!($('scriptDialog').open&&request===timingGeneration&&project.id===id&&workspaceCatalog?.activeId===owner))return;pendingScriptTitle=null;operation.finish('장면 타이밍을 저장했어요.');$('scriptDialog').close();toast(`${project.scenes.length}개 장면의 전환 타이밍을 확정했어요. ‘확정한 장면 이미지 생성’에서 요청을 확인한 뒤 생성하세요.`);
+ }catch(error){operation.fail(error.message);$('sceneTimingError').textContent=error.message;throw error;}
+ finally{if(operation.isRunning)operation.cancel('현재 계획의 저장을 중단했어요.');timingApplying=false;controls.forEach((control,index)=>control.disabled=disabled[index]);sceneImageBatch?.render();renderWorkflow();if($('scriptDialog').open)sceneTimingUi.refresh();}
 }
 
-async function importSrtFile(file){
+async function importSrtFileWork(file){
  if(!file||importing||exportController)return;setMediaBusy(true);
  try{
   const cues=parseSrt(await file.text());const lastEnd=Math.max(...cues.map(c=>c.end));if(lastEnd>3600)throw new Error('자막은 60분 이내로 넣어주세요.');
@@ -325,21 +338,21 @@ async function importSrtFile(file){
  }finally{setMediaBusy(false);}
 }
 function downloadBlob(blob,name){const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}
-async function backup(){pause();try{await persist();}catch{toast('자동 저장 없이 현재 작업을 파일로 백업해요.');}const blob=await exportProjectBackup(project,assets);downloadBlob(blob,`${fileName()}.bth.json`);toast('이미지와 음성을 포함한 프로젝트 백업을 저장해요.');}
-async function openProject(file){
+async function backupWork(){pause();try{await persist();}catch{toast('자동 저장 없이 현재 작업을 파일로 백업해요.');}const blob=await exportProjectBackup(project,assets);downloadBlob(blob,`${fileName()}.bth.json`);toast('이미지와 음성을 포함한 프로젝트 백업을 저장해요.');}
+async function openProjectWork(file){
  if(!file||exportController||importing)return;let loaded;setMediaBusy(true);
- try{loaded=await importProjectBackup(file);}finally{setMediaBusy(false);}
+ try{await nextPaint();loaded=await importProjectBackup(file);}finally{setMediaBusy(false);}
  await replaceProject(loaded);toast('프로젝트의 이미지·음성·편집 설정을 불러왔어요.');
 }
-async function newProject(){
+async function newProjectWork(){
  if(importing||exportController)return;pause();setMediaBusy(true);
  try{await archiveCurrent();clearTimeout(saveTimer);await saveChain;releaseAssets();project=createProject({title:`${currentWorkspace()?.name||'콘텐츠'} 새 프로젝트`});selectedId=null;selectedIds.clear();history=[];redoHistory=[];current=0;editorTools?.reset();renderAll();scheduleSave();toast('이전 작업을 보관함에 저장하고 새 프로젝트를 만들었어요.');}
  finally{setMediaBusy(false);}
 }
-async function copyPrompt(){const topic=$('promptTopic').value.trim()||project.title;const minutes=Number($('scriptGoalMinutes').value)||project.scriptDraft?.targetMinutes||8;const prompt=`${currentWorkspace()?.name||'콘텐츠'} 분야의 소개·설명 영상을 만들려고 해.\n주제: ${topic}\n형식: 한국어 내레이션, ${minutes}분, 이미지에 확대·이동 효과를 주는 영상.\n\n1. 내가 제공한 원본 데이터·자료 또는 확인 가능한 신뢰할 수 있는 자료를 근거로 대본을 작성해 줘. 확인되지 않은 정보는 만들지 말고 따로 표시해 줘.\n2. 먼저 음성용 대본만 출력해 줘. 장면 하나당 2~3문장(약 40~90자), 장면 사이에는 빈 줄을 넣고 제목·장면 번호·연출 지시를 대본 안에 섞지 마. 고유명사는 내가 사용하는 한국어 표기를 유지해.\n3. 이어서 각 장면의 이미지 제작 지시와 필요한 시각 자료의 구성·색상·형태을 별도 목록으로 정리해 줘.\n4. 이미지는 내가 제공한 레퍼런스와 주제에 어울리는 분위기, 가로 16:9, 장면 사이에 화풍과 주요 대상의 외형이 일관되게. 이미지 안에 자막이나 로고를 넣지 마. 내가 지정한 장면부터 이미지를 생성해 줘.\n5. 내용의 근거와 출처는 대본 뒤에 따로 정리해 줘.`;try{await navigator.clipboard.writeText(prompt);toast('GPT에 붙여넣을 제작 요청문을 복사했어요.');}catch{const area=el('textarea');area.value=prompt;area.style.position='fixed';area.style.opacity='0';document.body.append(area);area.select();const ok=document.execCommand('copy');area.remove();if(!ok)throw new Error('복사가 허용되지 않았어요. 브라우저의 클립보드 권한을 확인해 주세요.');toast('GPT 제작 요청문을 복사했어요.');}}
-async function openExport(){pause();if(!project.scenes.length)throw new Error('이미지가 있는 장면을 먼저 만들어 주세요.');$('exportSceneSummary').textContent=`${project.scenes.length} SCENES`;$('exportDurationSummary').textContent=time(total());$('exportAspectSummary').textContent=project.aspect;$('exportSetup').hidden=false;$('exportProgress').hidden=true;$('exportComplete').hidden=true;$('startExportBtn').hidden=false;$('startExportBtn').disabled=true;$('cancelExportBtn').textContent='닫기';$('exportDialog').showModal();const caps=await getExportCapabilities();const format=$('exportFormat');format.querySelector('[value=mp4]').disabled=!caps.mp4;format.querySelector('[value=webm]').disabled=!caps.webm;format.value=caps.mp4?'mp4':'webm';$('formatHelp').textContent=caps.mp4?'이 브라우저에서 MP4와 지원되는 영상 형식으로 저장할 수 있어요.':'이 브라우저에서는 WebM으로 저장할 수 있어요. MP4 지원 브라우저에서는 MP4 선택이 열려요.';$('startExportBtn').disabled=!caps.mp4&&!caps.webm;if(!caps.mp4&&!caps.webm)$('formatHelp').textContent=caps.reason||'이 브라우저에서는 영상 내보내기를 지원하지 않아요. 최신 데스크톱 Chrome을 사용해 주세요.';const warnings=[];const missing=project.scenes.filter(s=>!s.imageId||!assets.has(s.imageId)).length;if(missing){warnings.push(`이미지 없는 장면 ${missing}개에 먼저 이미지를 넣어주세요.`);$('startExportBtn').disabled=true;}if(!project.audio.narrationId)warnings.push('내레이션이 없는 영상이에요.');const voice=assets.get(project.audio.narrationId);if(voice&&total()<(project.audio.narrationOffset||0)+getAudioWindow(project,assets,'narration').duration-.1)warnings.push('영상이 음성보다 짧아 내레이션 끝이 잘려요. 먼저 음성 길이에 맞추는 것을 권장해요.');const cueEnd=Math.max(0,...getCaptions(project).map(c=>c.end));if(cueEnd>total()+.1)warnings.push('일부 자막이 영상 종료 이후에 있어요.');if(project.captionMode==='speech'&&captionStatus(getCaptions(project)).includes('다시 분석'))warnings.push(captionStatus(getCaptions(project)));$('exportWarning').textContent=warnings.join(' ');}
-async function startExport(){if(exportController)return;exportController=new AbortController();workspaceTabs?.render();apiSettings?.render();sceneImageBatch?.render();renderWorkflow();const signal=exportController.signal;pause();$('exportSetup').hidden=true;$('exportProgress').hidden=false;$('exportComplete').hidden=true;$('startExportBtn').hidden=true;$('cancelExportBtn').textContent='출력 취소';$('renderProgress').value=0;$('renderPercent').textContent='0%';$('exportProgressText').textContent='이미지와 음성을 준비하고 있어요.';const size=Number($('exportResolution').value),portrait=project.aspect==='9:16';try{const ids=new Set([...project.scenes.map(scene=>scene.imageId),project.audio.narrationId,project.audio.bgmId].filter(Boolean));const activeAssets=new Map([...assets].filter(([id])=>ids.has(id)));await prepareAssets(activeAssets,{signal});if(signal.aborted)throw new DOMException('출력을 취소했어요.','AbortError');const result=await exportVideo({project:clone(project),assets:activeAssets,format:$('exportFormat').value,width:portrait?size:Math.round(size*16/9),height:portrait?Math.round(size*16/9):size,fps:30,signal,onProgress:({phase,progress,message})=>{$('renderProgress').value=Number(progress)||0;$('renderPercent').textContent=`${Math.round((progress||0)*100)}%`;$('exportPhase').textContent=phase==='encoding'?'RENDERING':String(phase||'RENDERING').toUpperCase();$('exportProgressText').textContent=message||'장면과 음성을 영상으로 만들고 있어요.';}});if(exportURL)URL.revokeObjectURL(exportURL);exportURL=URL.createObjectURL(result.blob);$('downloadVideoLink').href=exportURL;$('downloadVideoLink').download=`${fileName()}.${result.extension}`;$('exportFileInfo').textContent=`${result.extension.toUpperCase()} · ${(result.blob.size/1024/1024).toFixed(1)} MB · ${time(total())}`;$('exportProgress').hidden=true;$('exportComplete').hidden=false;$('cancelExportBtn').textContent='닫기';toast('영상이 완성됐어요. ‘영상 파일 저장’을 눌러 다운로드하세요.');}catch(error){$('exportProgress').hidden=true;$('exportSetup').hidden=false;$('startExportBtn').hidden=false;$('cancelExportBtn').textContent='닫기';if(error.name==='AbortError')toast('영상 출력을 취소했어요. 작업 내용은 그대로 있어요.');else{report(error);$('exportWarning').textContent=error.message;}}finally{exportController=null;workspaceTabs?.render();apiSettings?.render();sceneImageBatch?.render();renderWorkflow();}}
-async function loadDemo(){if(project.scenes.length||importing||exportController)return;pause();setMediaBusy(true);const targetProjectId=project.id,newAssets=new Map();let inserted=false;try{const titles=['YOUR FIRST FRAME','TELL THE STORY','MAKE IT MOVE'],colors=['#768a7a','#a68a62','#698995'];const captions=['GPT로 만든 이미지를 장면마다 넣어주세요.','클로바 음성과 대본을 더하면 영상의 흐름을 만들 수 있어요.','움직임과 자막을 확인하고, 나만의 설정 영상을 완성하세요.'];for(let i=0;i<3;i++){const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900"><defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="#0d1b22"/><stop offset="1" stop-color="${colors[i]}"/></linearGradient><pattern id="p" width="80" height="80" patternUnits="userSpaceOnUse"><path d="M80 0H0V80" fill="none" stroke="#c4d8ca" stroke-opacity=".08"/></pattern></defs><rect width="1600" height="900" fill="url(#g)"/><rect width="1600" height="900" fill="url(#p)"/><circle cx="1220" cy="340" r="260" fill="none" stroke="#d9cba6" stroke-width="2" opacity=".35"/><circle cx="1220" cy="340" r="220" fill="none" stroke="#d9cba6" stroke-width="1" opacity=".2"/><path d="M920 620l160-270 160 270zM1100 620l170-310 180 310z" fill="none" stroke="#c5ceac" stroke-width="4" opacity=".6"/><path d="M950 720h550M1220 55v570M1000 340h440" stroke="#e0d8ba" stroke-width="1" opacity=".2"/><rect x="90" y="90" width="1420" height="720" fill="none" stroke="#b8ccbe" stroke-opacity=".2"/><text x="140" y="270" fill="#dbc093" font-size="23" font-family="sans-serif" letter-spacing="8">BTH / IMAGE STUDIO</text><text x="133" y="430" fill="#e5ece4" font-size="${i===0?82:92}" font-family="sans-serif" font-weight="bold" letter-spacing="-2">${titles[i]}</text><text x="140" y="505" fill="#a8beb8" font-size="21" font-family="sans-serif" letter-spacing="5">STORYBOARD ${String(i+1).padStart(2,'0')} / SAMPLE IMAGE</text><text x="140" y="730" fill="#b6c6bc" font-size="18" font-family="sans-serif" letter-spacing="4">REPLACE THIS FRAME WITH YOUR OWN IMAGE</text></svg>`;const id=createId('image');newAssets.set(id,await decodeImage(new Blob([svg],{type:'image/svg+xml'}),`샘플 이미지 ${i+1}.svg`));}if(project.id!==targetProjectId)throw new Error('프로젝트가 바뀌어 예시 추가를 취소했어요.');for(const[id,asset]of newAssets)assets.set(id,asset);inserted=true;mutate(()=>{project.title='첫 번째 이미지 이야기';project.scenes=[...newAssets.keys()].map((imageId,index)=>createScene({imageId,caption:captions[index],duration:4,motion:['zoom-in','pan-left','zoom-out'][index]}));selectedId=project.scenes[0].id;current=0;});toast('기능을 둘러볼 수 있는 12초 예시예요. 이미지를 교체해 보세요.');}catch(error){if(inserted)pruneAssets();else for(const asset of newAssets.values())URL.revokeObjectURL(asset.url);throw error;}finally{setMediaBusy(false);}}
+async function copyPromptWork(){const topic=$('promptTopic').value.trim()||project.title;const minutes=Number($('scriptGoalMinutes').value)||project.scriptDraft?.targetMinutes||8;const prompt=`${currentWorkspace()?.name||'콘텐츠'} 분야의 소개·설명 영상을 만들려고 해.\n주제: ${topic}\n형식: 한국어 내레이션, ${minutes}분, 이미지에 확대·이동 효과를 주는 영상.\n\n1. 내가 제공한 원본 데이터·자료 또는 확인 가능한 신뢰할 수 있는 자료를 근거로 대본을 작성해 줘. 확인되지 않은 정보는 만들지 말고 따로 표시해 줘.\n2. 먼저 음성용 대본만 출력해 줘. 장면 하나당 2~3문장(약 40~90자), 장면 사이에는 빈 줄을 넣고 제목·장면 번호·연출 지시를 대본 안에 섞지 마. 고유명사는 내가 사용하는 한국어 표기를 유지해.\n3. 이어서 각 장면의 이미지 제작 지시와 필요한 시각 자료의 구성·색상·형태을 별도 목록으로 정리해 줘.\n4. 이미지는 내가 제공한 레퍼런스와 주제에 어울리는 분위기, 가로 16:9, 장면 사이에 화풍과 주요 대상의 외형이 일관되게. 이미지 안에 자막이나 로고를 넣지 마. 내가 지정한 장면부터 이미지를 생성해 줘.\n5. 내용의 근거와 출처는 대본 뒤에 따로 정리해 줘.`;try{await navigator.clipboard.writeText(prompt);toast('GPT에 붙여넣을 제작 요청문을 복사했어요.');}catch{const area=el('textarea');area.value=prompt;area.style.position='fixed';area.style.opacity='0';document.body.append(area);area.select();const ok=document.execCommand('copy');area.remove();if(!ok)throw new Error('복사가 허용되지 않았어요. 브라우저의 클립보드 권한을 확인해 주세요.');toast('GPT 제작 요청문을 복사했어요.');}}
+async function openExport(){pause();if(!project.scenes.length)throw new Error('이미지가 있는 장면을 먼저 만들어 주세요.');$('exportSceneSummary').textContent=`${project.scenes.length} SCENES`;$('exportDurationSummary').textContent=time(total());$('exportAspectSummary').textContent=project.aspect;$('exportSetup').hidden=false;$('exportProgress').hidden=true;$('exportComplete').hidden=true;$('startExportBtn').hidden=false;$('startExportBtn').disabled=true;$('cancelExportBtn').textContent='닫기';$('exportDialog').showModal();const operation=exportProgressStatus.start('브라우저의 영상 출력 지원을 확인하고 있어요.');try{await nextPaint();const caps=await getExportCapabilities();const format=$('exportFormat');format.querySelector('[value=mp4]').disabled=!caps.mp4;format.querySelector('[value=webm]').disabled=!caps.webm;format.value=caps.mp4?'mp4':'webm';$('formatHelp').textContent=caps.mp4?'이 브라우저에서 MP4와 지원되는 영상 형식으로 저장할 수 있어요.':'이 브라우저에서는 WebM으로 저장할 수 있어요. MP4 지원 브라우저에서는 MP4 선택이 열려요.';$('startExportBtn').disabled=!caps.mp4&&!caps.webm;if(!caps.mp4&&!caps.webm)$('formatHelp').textContent=caps.reason||'이 브라우저에서는 영상 내보내기를 지원하지 않아요. 최신 데스크톱 Chrome을 사용해 주세요.';const warnings=[];const missing=project.scenes.filter(s=>!s.imageId||!assets.has(s.imageId)).length;if(missing){warnings.push(`이미지 없는 장면 ${missing}개에 먼저 이미지를 넣어주세요.`);$('startExportBtn').disabled=true;}if(!project.audio.narrationId)warnings.push('내레이션이 없는 영상이에요.');const voice=assets.get(project.audio.narrationId);if(voice&&total()<(project.audio.narrationOffset||0)+getAudioWindow(project,assets,'narration').duration-.1)warnings.push('영상이 음성보다 짧아 내레이션 끝이 잘려요. 먼저 음성 길이에 맞추는 것을 권장해요.');const cueEnd=Math.max(0,...getCaptions(project).map(c=>c.end));if(cueEnd>total()+.1)warnings.push('일부 자막이 영상 종료 이후에 있어요.');if(project.captionMode==='speech'&&captionStatus(getCaptions(project)).includes('다시 분석'))warnings.push(captionStatus(getCaptions(project)));$('exportWarning').textContent=warnings.join(' ');operation.finish('영상 출력 준비를 확인했어요.');}catch(error){operation.fail(error.message);throw error;}}
+async function startExport(){if(exportController)return;exportController=new AbortController();workspaceTabs?.render();apiSettings?.render();sceneImageBatch?.render();renderWorkflow();const signal=exportController.signal;const operation=exportProgressStatus.start('영상에 사용할 이미지와 음성을 준비하고 있어요.',{slowAfterMs:120000});pause();$('exportSetup').hidden=true;$('exportProgress').hidden=false;$('exportComplete').hidden=true;$('startExportBtn').hidden=true;$('cancelExportBtn').textContent='출력 취소';$('renderProgress').value=0;$('renderPercent').textContent='0%';$('exportProgressText').textContent='이미지와 음성을 준비하고 있어요.';const size=Number($('exportResolution').value),portrait=project.aspect==='9:16';try{const ids=new Set([...project.scenes.map(scene=>scene.imageId),project.audio.narrationId,project.audio.bgmId].filter(Boolean));const activeAssets=new Map([...assets].filter(([id])=>ids.has(id)));await nextPaint();await prepareAssets(activeAssets,{signal});if(signal.aborted)throw new DOMException('출력을 취소했어요.','AbortError');const result=await exportVideo({project:clone(project),assets:activeAssets,format:$('exportFormat').value,width:portrait?size:Math.round(size*16/9),height:portrait?Math.round(size*16/9):size,fps:30,signal,onProgress:({phase,progress,message})=>{operation.update(message||'장면과 음성을 영상으로 만들고 있어요.');$('renderProgress').value=Number(progress)||0;$('renderPercent').textContent=`${Math.round((progress||0)*100)}%`;$('exportPhase').textContent=phase==='encoding'?'RENDERING':String(phase||'RENDERING').toUpperCase();$('exportProgressText').textContent=message||'장면과 음성을 영상으로 만들고 있어요.';}});if(exportURL)URL.revokeObjectURL(exportURL);exportURL=URL.createObjectURL(result.blob);$('downloadVideoLink').href=exportURL;$('downloadVideoLink').download=`${fileName()}.${result.extension}`;$('exportFileInfo').textContent=`${result.extension.toUpperCase()} · ${(result.blob.size/1024/1024).toFixed(1)} MB · ${time(total())}`;$('exportProgress').hidden=true;$('exportComplete').hidden=false;$('cancelExportBtn').textContent='닫기';operation.finish('영상이 완성됐어요. 파일을 저장할 수 있어요.');toast('영상이 완성됐어요. ‘영상 파일 저장’을 눌러 다운로드하세요.');}catch(error){$('exportProgress').hidden=true;$('exportSetup').hidden=false;$('startExportBtn').hidden=false;$('cancelExportBtn').textContent='닫기';if(error.name==='AbortError'){operation.cancel('영상 출력을 취소했어요.');toast('영상 출력을 취소했어요. 작업 내용은 그대로 있어요.');}else{operation.fail(error.message);report(error);$('exportWarning').textContent=error.message;}}finally{exportController=null;workspaceTabs?.render();apiSettings?.render();sceneImageBatch?.render();renderWorkflow();}}
+async function loadDemoWork(){if(project.scenes.length||importing||exportController)return;pause();setMediaBusy(true);const targetProjectId=project.id,newAssets=new Map();let inserted=false;try{const titles=['YOUR FIRST FRAME','TELL THE STORY','MAKE IT MOVE'],colors=['#768a7a','#a68a62','#698995'];const captions=['GPT로 만든 이미지를 장면마다 넣어주세요.','클로바 음성과 대본을 더하면 영상의 흐름을 만들 수 있어요.','움직임과 자막을 확인하고, 나만의 설정 영상을 완성하세요.'];for(let i=0;i<3;i++){const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900"><defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="#0d1b22"/><stop offset="1" stop-color="${colors[i]}"/></linearGradient><pattern id="p" width="80" height="80" patternUnits="userSpaceOnUse"><path d="M80 0H0V80" fill="none" stroke="#c4d8ca" stroke-opacity=".08"/></pattern></defs><rect width="1600" height="900" fill="url(#g)"/><rect width="1600" height="900" fill="url(#p)"/><circle cx="1220" cy="340" r="260" fill="none" stroke="#d9cba6" stroke-width="2" opacity=".35"/><circle cx="1220" cy="340" r="220" fill="none" stroke="#d9cba6" stroke-width="1" opacity=".2"/><path d="M920 620l160-270 160 270zM1100 620l170-310 180 310z" fill="none" stroke="#c5ceac" stroke-width="4" opacity=".6"/><path d="M950 720h550M1220 55v570M1000 340h440" stroke="#e0d8ba" stroke-width="1" opacity=".2"/><rect x="90" y="90" width="1420" height="720" fill="none" stroke="#b8ccbe" stroke-opacity=".2"/><text x="140" y="270" fill="#dbc093" font-size="23" font-family="sans-serif" letter-spacing="8">BTH / IMAGE STUDIO</text><text x="133" y="430" fill="#e5ece4" font-size="${i===0?82:92}" font-family="sans-serif" font-weight="bold" letter-spacing="-2">${titles[i]}</text><text x="140" y="505" fill="#a8beb8" font-size="21" font-family="sans-serif" letter-spacing="5">STORYBOARD ${String(i+1).padStart(2,'0')} / SAMPLE IMAGE</text><text x="140" y="730" fill="#b6c6bc" font-size="18" font-family="sans-serif" letter-spacing="4">REPLACE THIS FRAME WITH YOUR OWN IMAGE</text></svg>`;const id=createId('image');newAssets.set(id,await decodeImage(new Blob([svg],{type:'image/svg+xml'}),`샘플 이미지 ${i+1}.svg`));}if(project.id!==targetProjectId)throw new Error('프로젝트가 바뀌어 예시 추가를 취소했어요.');for(const[id,asset]of newAssets)assets.set(id,asset);inserted=true;mutate(()=>{project.title='첫 번째 이미지 이야기';project.scenes=[...newAssets.keys()].map((imageId,index)=>createScene({imageId,caption:captions[index],duration:4,motion:['zoom-in','pan-left','zoom-out'][index]}));selectedId=project.scenes[0].id;current=0;});toast('기능을 둘러볼 수 있는 12초 예시예요. 이미지를 교체해 보세요.');}catch(error){if(inserted)pruneAssets();else for(const asset of newAssets.values())URL.revokeObjectURL(asset.url);throw error;}finally{setMediaBusy(false);}}
 
 function hasImageReferenceContent(){
  const studio=project.imageStudio;
@@ -471,13 +484,13 @@ document.addEventListener('keydown',e=>{
 });document.addEventListener('visibilitychange',()=>{if(document.hidden&&playing){pause();renderPreview();}});window.addEventListener('beforeunload',e=>{if(exportController||importing||revision>savedRevision){e.preventDefault();e.returnValue='';}});window.addEventListener('resize',()=>renderTimeline());
 
 async function boot(){
- setMediaBusy(true);let legacy;
+ const operation=editorProgress.start('저장된 분야와 프로젝트를 불러오고 있어요.');setMediaBusy(true);let legacy;
  try{
-  legacy=await loadProject();const initial=legacy||{project:createProject({title:'블랙아웃 새 프로젝트'}),assets:new Map()};
+  await nextPaint();legacy=await loadProject();const initial=legacy||{project:createProject({title:'블랙아웃 새 프로젝트'}),assets:new Map()};
   const session=await initializeWorkspaces(initial.project,initial.assets);const decoded=await hydrate(session.active.assets);
-  project=session.active.project;assets=decoded;workspaceCatalog=session.catalog;workspaceReady=true;workspaceError='';selectedId=project.scenes[0]?.id||null;selectedIds=new Set(selectedId?[selectedId]:[]);rebuildAudio();markSaved(legacy?'작업 복원됨':'자동 저장 준비');
+  project=session.active.project;assets=decoded;workspaceCatalog=session.catalog;workspaceReady=true;workspaceError='';selectedId=project.scenes[0]?.id||null;selectedIds=new Set(selectedId?[selectedId]:[]);rebuildAudio();markSaved(legacy?'작업 복원됨':'자동 저장 준비');operation.finish('저장된 작업을 불러왔어요.');editorProgress.clear();
  }catch(error){
-  workspaceError=error.message;workspaceReady=false;
+  operation.fail(`작업 복원 실패: ${error.message}`);workspaceError=error.message;workspaceReady=false;
   if(legacy){try{project=legacy.project;assets=await hydrate(legacy.assets);selectedId=project.scenes[0]?.id||null;selectedIds=new Set(selectedId?[selectedId]:[]);}catch{}}
   markSaved('파일 백업을 저장해 주세요');toast(`분야별 작업 복원 실패: ${error.message}`,true);
  }finally{setMediaBusy(false);renderAll();}
@@ -505,3 +518,19 @@ apiSettings=setupApiSettings(toolsApi);editorTools=setupEditorTools(toolsApi);li
 const shortcuts=el('p','keyboard-help','단축키: Space 재생 · Ctrl/Cmd+Z 되돌리기 · Ctrl/Cmd+Shift+Z 다시 실행 · Ctrl/Cmd+D 장면 복제 · Ctrl/Cmd+A 전체 선택 · Ctrl/Cmd+C/V 장면 설정 복사/붙이기 · Delete 선택 장면 삭제 · ←/→ 0.1초 이동 (Shift: 1초) · PageUp/Down 이전/다음 장면. 입력칸에서는 일반 글 편집이 우선이에요.');
 $('helpDialog').querySelector('.dialog-body').append(shortcuts);
 boot().catch(report);
+
+async function addImages(fileList,options={}){if(importing||exportController)return;return trackEditorTask('이미지를 불러오고 있어요.',()=>addImagesWork(fileList,options),'이미지를 불러왔어요.');}
+
+async function addAudio(file,kind){if(!file||importing||exportController)return;return trackEditorTask('음성 파일을 읽고 있어요.',()=>addAudioWork(file,kind),'음성 파일을 불러왔어요.');}
+
+async function importSrtFile(file){if(!file||importing||exportController)return;return trackEditorTask('자막 파일을 읽고 있어요.',()=>importSrtFileWork(file),'자막 파일을 불러왔어요.');}
+
+async function backup(){return trackEditorTask('백업 파일을 만들고 있어요.',()=>backupWork(),'백업 파일 다운로드를 요청했어요.');}
+
+async function openProject(file){if(!file||importing||exportController)return;return trackEditorTask('프로젝트와 미디어를 복원하고 있어요.',()=>openProjectWork(file),'프로젝트를 불러왔어요.');}
+
+async function newProject(){if(importing||exportController)return;return trackEditorTask('현재 작업을 보관하고 새 프로젝트를 열고 있어요.',()=>newProjectWork(),'이전 작업을 보관하고 새 프로젝트를 열었어요.');}
+
+async function copyPrompt(){return trackEditorTask('제작 요청문을 복사하고 있어요.',()=>copyPromptWork(),'제작 요청문을 복사했어요.');}
+
+async function loadDemo(){if(project.scenes.length||importing||exportController)return;return trackEditorTask('예시 이미지를 준비하고 있어요.',()=>loadDemoWork(),'예시 프로젝트를 불러왔어요.');}

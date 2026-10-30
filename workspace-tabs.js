@@ -1,3 +1,5 @@
+import {createOperationStatus, nextPaint} from './operation-status.js';
+
 const $ = id => document.getElementById(id);
 const PRESETS = ['블랙아웃', '사만', '에오지', '데이터 분석'];
 const count = value => Array.from(value).length;
@@ -57,6 +59,9 @@ export function setupWorkspaceTabs(api) {
   const manageList = node('div', 'workspace-manage-list');manageList.id = 'workspaceManageList';manageModal.body.append(manageError, manageList);
   const manageFooter = node('div', 'workspace-dialog-actions');const manageDone = button('closeWorkspaceManageBtn', '완료', 'primary');manageFooter.append(manageDone);manageModal.body.append(manageFooter);
 
+  const tabProgress = createOperationStatus({container: bar, region: bar, id: 'workspaceOperation'});
+  const addProgress = createOperationStatus({container: addModal.body, region: form, id: 'workspaceAddOperation'});
+  const manageProgress = createOperationStatus({container: manageModal.body, region: manageList, id: 'workspaceManageOperation'});
   let pending = false, tabFingerprint = '', manageFingerprint = '', lastStatus = '';
   const catalog = () => api.getWorkspaceCatalog();
   const available = () => !!catalog() && !pending && api.canChangeWorkspace();
@@ -64,14 +69,19 @@ export function setupWorkspaceTabs(api) {
   function focusTab(id) {
     list.querySelector(`[data-workspace-id="${CSS.escape(id)}"]`)?.focus();
   }
-  async function perform(task, errorNode, {message = '', focusId = null} = {}) {
+  async function perform(task, errorNode, {message = '', focusId = null, label = '분야 설정을 반영하고 있어요'} = {}) {
     if (!available()) return;
+    const progress = errorNode === addError ? addProgress : errorNode === manageError ? manageProgress : tabProgress;
+    const operation = progress.start(label, {detail: '현재 작업을 저장하고 분야별 내용을 안전하게 반영합니다.'});
     pending = true;errorNode.textContent = '';render();
     try {
+      await nextPaint();
       await task();if (message) announce(message);
+      operation.finish(message || '분야 설정을 반영했어요.');
       if (focusId) focusTab(focusId);
     } catch (error) {
       errorNode.textContent = error?.message || '분야 설정을 바꾸지 못했어요. 기존 작업은 유지됩니다.';
+      operation.fail(errorNode.textContent);
       if (errorNode === status) api.report?.(error);
     } finally {
       pending = false;render();
@@ -80,7 +90,7 @@ export function setupWorkspaceTabs(api) {
   }
   function select(id, fromKeyboard = false) {
     const current = catalog();if (!current || id === current.activeId) {if (fromKeyboard) focusTab(id);return;}
-    return perform(() => api.switchWorkspace(id), status, {focusId: id});
+    return perform(() => api.switchWorkspace(id), status, {focusId: id, label: '분야의 작업 내용을 불러오고 있어요'});
   }
   function renderTabs(value) {
     const fingerprint = JSON.stringify(value && {activeId: value.activeId, tabs: value.tabs.map(tab => [tab.id, tab.name, tab.closed])});
@@ -113,7 +123,7 @@ export function setupWorkspaceTabs(api) {
       item.disabled = !available() || !!existing && !existing.closed;
       if (existing && !existing.closed) item.title = '이미 추가된 분야입니다.';
       item.addEventListener('click', () => {
-        if (existing?.closed) perform(async () => {await api.reopenWorkspace(existing.id);await api.switchWorkspace(existing.id);addModal.dialog.close();}, addError, {message: `${existing.name} 분야를 다시 열었어요.`});
+        if (existing?.closed) perform(async () => {await api.reopenWorkspace(existing.id);await api.switchWorkspace(existing.id);addModal.dialog.close();}, addError, {message: `${existing.name} 분야를 다시 열었어요.`, label: '보관한 분야를 다시 열고 있어요'});
         else {name.value = preset;name.focus();addError.textContent = '';}
       });
       presets.append(item);
@@ -131,19 +141,19 @@ export function setupWorkspaceTabs(api) {
       const state = node('span', 'workspace-manage-state', tab.closed ? '보관됨' : value.activeId === tab.id ? '현재 분야' : '열린 탭');details.append(input, state);
       const actions = node('div', 'workspace-manage-actions');
       const rename = button('', '이름 저장', 'ghost small');rename.dataset.action = 'rename';
-      rename.addEventListener('click', () => perform(() => api.renameWorkspace(tab.id, checkedName(input.value)), manageError, {message: '분야 이름을 저장했어요.'}));
+      rename.addEventListener('click', () => perform(() => api.renameWorkspace(tab.id, checkedName(input.value)), manageError, {message: '분야 이름을 저장했어요.', label: '분야 이름을 저장하고 있어요'}));
       input.addEventListener('keydown', event => {if (event.key === 'Enter') {event.preventDefault();rename.click();}});
       const left = button('', '←', 'ghost small'), right = button('', '→', 'ghost small');
       left.dataset.action = 'move-left';right.dataset.action = 'move-right';left.title = '분야를 앞으로 이동';right.title = '분야를 뒤로 이동';
       left.setAttribute('aria-label', `${tab.name} 분야 앞으로 이동`);right.setAttribute('aria-label', `${tab.name} 분야 뒤로 이동`);
       left.dataset.boundary = String(index === 0);right.dataset.boundary = String(index === value.tabs.length - 1);
-      left.addEventListener('click', () => perform(() => api.moveWorkspace(tab.id, -1), manageError));right.addEventListener('click', () => perform(() => api.moveWorkspace(tab.id, 1), manageError));
+      left.addEventListener('click', () => perform(() => api.moveWorkspace(tab.id, -1), manageError, {label: '분야 순서를 저장하고 있어요'}));right.addEventListener('click', () => perform(() => api.moveWorkspace(tab.id, 1), manageError, {label: '분야 순서를 저장하고 있어요'}));
       const archive = button('', tab.closed ? '다시 열기' : '탭 보관', 'outline small');archive.dataset.action = tab.closed ? 'reopen' : 'close';
       archive.dataset.lastOpen = String(!tab.closed && openCount === 1);
       if (!tab.closed && openCount === 1) archive.title = '적어도 한 분야는 열어 두어야 합니다.';
       archive.addEventListener('click', () => perform(async () => {
         if (tab.closed) await api.reopenWorkspace(tab.id);else await api.closeWorkspace(tab.id);
-      }, manageError, {message: tab.closed ? `${tab.name} 탭을 다시 표시했어요.` : `${tab.name} 탭을 보관했어요. 작업 내용은 유지돼요.`}));
+      }, manageError, {message: tab.closed ? `${tab.name} 탭을 다시 표시했어요.` : `${tab.name} 탭을 보관했어요. 작업 내용은 유지돼요.`, label: tab.closed ? '보관한 분야를 다시 열고 있어요' : '분야 작업을 보관하고 있어요'}));
       actions.append(rename, left, right, archive);row.append(details, actions);manageList.append(row);
     });
   }
@@ -163,7 +173,7 @@ export function setupWorkspaceTabs(api) {
   }
   add.addEventListener('click', () => {if (!available()) return;name.value = '';addError.textContent = '';renderPresets();addModal.dialog.showModal();name.focus();});
   manage.addEventListener('click', () => {if (!available()) return;manageError.textContent = '';render();manageModal.dialog.showModal();});
-  form.addEventListener('submit', event => {event.preventDefault();perform(async () => {await api.createWorkspace(checkedName(name.value));addModal.dialog.close();}, addError, {message: '새 분야를 추가하고 열었어요.'});});
+  form.addEventListener('submit', event => {event.preventDefault();perform(async () => {await api.createWorkspace(checkedName(name.value));addModal.dialog.close();}, addError, {message: '새 분야를 추가하고 열었어요.', label: '새 분야를 만들고 있어요'});});
   for (const [dialog, close] of [[addModal.dialog, addModal.close], [addModal.dialog, addCancel], [manageModal.dialog, manageModal.close], [manageModal.dialog, manageDone]]) {
     close.addEventListener('click', () => {if (!pending) dialog.close();});
     dialog.addEventListener('cancel', event => {if (pending) event.preventDefault();});

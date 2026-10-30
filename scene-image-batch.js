@@ -1,6 +1,7 @@
 import {apiFetch} from './api-client.js';
 import {getScenePlanStatus} from './script-planning.js';
 import {prepareReferenceImageRequest, decodeReferenceImageResult} from './image-studio.js';
+import {createOperationStatus, nextPaint} from './operation-status.js';
 
 const clone = value => structuredClone(value);
 const $ = id => document.getElementById(id);
@@ -48,6 +49,8 @@ export function setupSceneImageBatch(api) {
   const progress = node('progress');progress.id = 'sceneImageBatchProgress';progress.max = 1;progress.value = 0;progress.hidden = true;body.append(progress);
   const status = node('p', 'scene-batch-status');status.id = 'sceneImageBatchStatus';status.setAttribute('role', 'status');status.setAttribute('aria-live', 'polite');
   const error = node('p', 'scene-batch-error');error.id = 'sceneImageBatchError';error.setAttribute('role', 'alert');body.append(status, error);
+  const activity = createOperationStatus({container: body, region: rows, id: 'sceneImageBatchOperation'});tools.before(activity.element);
+  const connectionActivity = createOperationStatus({container: body, region: state, id: 'sceneImageBatchConnectionOperation'});state.after(connectionActivity.element);
   const footer = node('div', 'dialog-footer'), closeFooter = button('closeSceneImageBatchBtn', '닫기', 'ghost');footer.append(closeFooter);dialog.append(footer);document.body.append(dialog);
 
   let activeRun = null, configured = false, connectionController = null, connectionSequence = 0;
@@ -114,14 +117,15 @@ export function setupSceneImageBatch(api) {
     return !includeImages || project.scenes.every(scene => scene.id === applyingSceneId || run.expectedImages.get(scene.id) === scene.imageId);
   }
   function cancelRun(message = '생성을 중지하고 있어요. 완료한 이미지는 유지됩니다.') {
-    if (!activeRun) return;activeRun.cancelled = true;activeRun.controller.abort();status.textContent = message;refreshControls();
+    if (!activeRun) return;activeRun.cancelled = true;activeRun.controller.abort();activeRun.feedback?.cancel(message);status.textContent = message;refreshControls();
   }
   async function checkConnection() {
     const sequence = ++connectionSequence;connectionController?.abort();const controller = new AbortController();connectionController = controller;
+    const feedback = connectionActivity.start('이미지 API 연결을 확인하고 있어요.');
     configured = false;refreshControls();
     const timeout = setTimeout(() => controller.abort(), 60000);
-    try {const value = await request('/api/image/config', {signal: controller.signal});if (sequence === connectionSequence) configured = value.configured === true;}
-    catch {if (sequence === connectionSequence) configured = false;}
+    try {const value = await request('/api/image/config', {signal: controller.signal});if (sequence === connectionSequence) {configured = value.configured === true;feedback.finish(configured ? '이미지 API 연결을 확인했어요.' : '연결 확인을 마쳤어요. 이미지 API 설정이 필요해요.');}}
+    catch {if (sequence === connectionSequence) {configured = false;feedback.fail('이미지 API 연결을 확인하지 못했어요. API 설정과 네트워크를 확인해 주세요.');}}
     finally {clearTimeout(timeout);if (sequence === connectionSequence) {connectionController = null;refreshControls();}}
   }
   async function startBatch() {
@@ -135,25 +139,31 @@ export function setupSceneImageBatch(api) {
       if (!configured) throw new Error('API 설정에서 이미지 생성 연결을 먼저 확인해 주세요.');
       if (!enabledReferences(imageSettings(api.getProject())).length) throw new Error('레퍼런스·배경 설정에서 참조할 이미지를 선택해 주세요.');
       const run = captureRun();if (!run.items.length) throw new Error('생성할 빈 장면이 없어요. 새로 교체하려면 교체 옵션을 선택해 주세요.');
+      run.feedback = activity.start(`${run.items.length}장 생성 준비 · 타이밍과 요청을 저장하고 있어요.`);
       activeRun = run;progress.hidden = false;progress.max = run.items.length;progress.value = 0;refreshControls();
       try {
+        await nextPaint();
         // Confirmed timing and prompt edits must be saved successfully before
         // the first paid request, as well as after every completed image.
         await api.persist();if (!stillCurrent(run)) throw abortError();
         // References are normalized once for this frozen batch, then the same
         // actual pixels and settings are supplied to each explicitly approved job.
+        run.feedback.update('고정 레퍼런스 이미지를 전송용으로 준비하고 있어요.');
         const prepared = await prepareReferenceImageRequest({settings: run.imageSettings, assets: api.getAssets(), prompt: timedPrompt(run.items[0]), signal: run.controller.signal});
         for (const [index, item] of run.items.entries()) {
           if (!stillCurrent(run)) throw abortError();
           run.currentSceneId = item.sceneId;run.currentImageApplied = false;
           status.textContent = `${index + 1}/${run.items.length}장 생성 중 · ${timestamp(item.start)}–${timestamp(item.end)}`;setRowState(item.sceneId, '생성 중');
+          run.feedback.update(`${index + 1}/${run.items.length}장 · 이미지 생성 응답을 기다리고 있어요.`, {detail: `실제 생성·저장 완료 ${run.completed}장 · 현재 구간 ${timestamp(item.start)}–${timestamp(item.end)}`});
           const value = await request('/api/image/generate', {method: 'POST', headers: {'Content-Type': 'application/json'}, signal: run.controller.signal,
             body: JSON.stringify({...prepared, prompt: timedPrompt(item)})});
           if (!stillCurrent(run)) throw abortError();
           if (value.referenceCount !== prepared.references.length) throw new Error('선택한 레퍼런스가 모두 반영됐는지 확인하지 못했어요. 이전 결과는 유지돼요.');
+          run.feedback.update(`${index + 1}/${run.items.length}장 · 받은 이미지를 읽고 있어요.`);
           const decoded = await decodeReferenceImageResult(value, {signal: run.controller.signal});
           if (!stillCurrent(run)) throw abortError();
           applyingSceneId = item.sceneId;
+          run.feedback.update(`${index + 1}/${run.items.length}장 · 해당 장면에 적용하고 저장하고 있어요.`);
           await api.applyGeneratedImage({blob: decoded.blob, name: `장면-${String(item.ordinal).padStart(3, '0')}-${decoded.name}`, sceneId: item.sceneId, guard: () => stillCurrent(run)});
           run.currentImageApplied = true;
           run.expectedImages.set(item.sceneId, api.getProject().scenes.find(scene => scene.id === item.sceneId)?.imageId);applyingSceneId = null;
@@ -162,10 +172,11 @@ export function setupSceneImageBatch(api) {
           if (!stillCurrent(run)) throw abortError();
         }
         status.textContent = `${run.completed}장 생성·저장을 마쳤어요. 각 이미지가 확정한 시간 구간에 배치됐어요.`;api.toast(`${run.completed}장의 장면 이미지를 생성했어요.`);
+        run.feedback.finish(`${run.completed}장 이미지의 생성·저장을 마쳤어요.`);
       } catch (cause) {
         if (run.currentSceneId) setRowState(run.currentSceneId, run.currentImageApplied ? '이미지 적용됨 · 저장 확인 필요' : (cause?.name === 'AbortError' || run.cancelled || run.controller.signal.aborted ? '생성 중지' : '오류 · 다시 시작 가능'));
-        if (cause?.name === 'AbortError' || run.cancelled || run.controller.signal.aborted) status.textContent = `${run.completed}/${run.items.length}장 완료 후 중지했어요. 완료한 이미지는 유지돼요. ${run.replaceExisting ? '교체 옵션을 유지하면 다음 시작에도 기존 이미지가 생성 대상에 포함돼요.' : '다시 시작하면 빈 장면부터 생성해요.'}`;
-        else {showError(cause.message || '이미지 생성이 중단됐어요.');status.textContent = `${run.completed}/${run.items.length}장 완료 · 오류가 나서 다음 요청을 멈췄어요. 완료한 이미지는 유지돼요. 자동 재시도하지 않았어요.`;}
+        if (cause?.name === 'AbortError' || run.cancelled || run.controller.signal.aborted) {status.textContent = `${run.completed}/${run.items.length}장 완료 후 중지했어요. 완료한 이미지는 유지돼요. ${run.replaceExisting ? '교체 옵션을 유지하면 다음 시작에도 기존 이미지가 생성 대상에 포함돼요.' : '다시 시작하면 빈 장면부터 생성해요.'}`;run.feedback.cancel(`${run.completed}/${run.items.length}장 저장 후 중지했어요. 완료한 이미지는 유지돼요.`);}
+        else {showError(cause.message || '이미지 생성이 중단됐어요.');status.textContent = `${run.completed}/${run.items.length}장 완료 · 오류가 나서 다음 요청을 멈췄어요. 완료한 이미지는 유지돼요. 자동 재시도하지 않았어요.`;run.feedback.fail(`${run.completed}/${run.items.length}장 완료 · 오류로 다음 요청을 중단했어요.`);}
       } finally {
         applyingSceneId = null;if (activeRun === run) activeRun = null;confirm.checked = false;refreshControls();
       }
@@ -179,22 +190,22 @@ export function setupSceneImageBatch(api) {
     displayedSettings = nextSettings;displayedReferences = selected;
     if (nextScope !== displayedScope || nextPlan !== displayedPlan) {
       const scopeChanged = nextScope !== displayedScope;displayedScope = nextScope;displayedPlan = nextPlan;confirm.checked = false;
-      if (scopeChanged) {rowStatus.clear();promptDirty = false;replace.checked = false;if (dialog.open) dialog.close();}
+      if (scopeChanged) {rowStatus.clear();promptDirty = false;replace.checked = false;activity.clear();connectionActivity.clear();if (dialog.open) dialog.close();}
       drawRows(project);
     }
     refreshControls();
   }
   async function open() {
     if (activeRun) {if (!dialog.open) dialog.showModal();return;}
-    api.pause?.();render();showError('');status.textContent = '';confirm.checked = false;
+    api.pause?.();render();showError('');status.textContent = '';confirm.checked = false;activity.clear();
     if (!dialog.open) dialog.showModal();await checkConnection();
   }
   function dismiss() {if (activeRun) cancelRun();else {try {flushPrompts();} catch (cause) {showError(cause.message);return;}}dialog.close();}
-  function reset() {cancelRun();connectionSequence++;connectionController?.abort();connectionController = null;configured = false;displayedScope = '';displayedPlan = '';promptDirty = false;draftPrompts.clear();rowStatus.clear();if (dialog.open) dialog.close();render();}
+  function reset() {cancelRun();activity.clear();connectionActivity.clear();connectionSequence++;connectionController?.abort();connectionController = null;configured = false;displayedScope = '';displayedPlan = '';promptDirty = false;draftPrompts.clear();rowStatus.clear();if (dialog.open) dialog.close();render();}
   const run = callback => () => Promise.resolve().then(callback).catch(cause => showError(cause.message || '작업을 마치지 못했어요.'));
   launcher.addEventListener('click', run(open));start.addEventListener('click', run(startBatch));cancel.addEventListener('click', () => cancelRun());
   for (const close of [closeHeader, closeFooter]) close.addEventListener('click', dismiss);
-  dialog.addEventListener('cancel', event => {event.preventDefault();dismiss();});dialog.addEventListener('close', () => {if (dialog.open) return;cancelRun();connectionSequence++;connectionController?.abort();connectionController = null;});
+  dialog.addEventListener('cancel', event => {event.preventDefault();dismiss();});dialog.addEventListener('close', () => {if (dialog.open) return;cancelRun();connectionSequence++;connectionController?.abort();connectionController = null;connectionActivity.cancel('연결 확인을 취소했어요.');});
   timing.addEventListener('click', run(() => {if (activeRun) return;flushPrompts();dialog.close();api.openTimingPlan?.();}));
   references.addEventListener('click', run(() => {if (activeRun) return;flushPrompts();dialog.close();api.openImageStudio?.();}));
   configure.addEventListener('click', run(() => api.openApiSettings?.()));

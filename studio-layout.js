@@ -54,7 +54,7 @@ export function setupStudioLayout(api = {}) {
   const creation = disclosure('creationToolsDrawer', '제작 도구', '대본 · 레퍼런스 · 템플릿');
   creation.details.classList.add('studio-creation-tools');
   const dropzone = $('imageDropzone');dropzone?.after(creation.details);
-  move(['scriptStudioBtn', 'scriptBtn', 'sceneImageBatchBtn', 'imageStudioBtn', 'templatesBtn', 'snapshotBtn', 'voiceStudioBtn'], creation.body);
+  move(['scriptStudioBtn', 'scriptBtn', 'sceneImageBatchBtn', 'imageStudioBtn', 'templatesBtn', 'snapshotBtn', 'snapshotOperationHost', 'voiceStudioBtn'], creation.body);
 
   const sceneTools = disclosure('sceneToolsDrawer', '선택 장면 편집', '복제 · 분할 · 일괄 편집');
   const toolbar = document.querySelector('.scene-toolbar');

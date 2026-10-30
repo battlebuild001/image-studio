@@ -1,5 +1,6 @@
 import {candidateApiFetch, getApiSettings, setApiSettings, clearApiSettings, normalizeApiBaseUrl, ApiConnectionError} from './api-client.js';
 import {getDirectSettings, setDirectSettings, clearDirectSettings, setDirectEnabled, checkDirectKey} from './direct-openai.js';
+import {createOperationStatus, nextPaint} from './operation-status.js';
 
 function node(tag, className = '', text) {
   const element = document.createElement(tag);if (className) element.className = className;
@@ -69,6 +70,8 @@ export function setupApiSettings(api = {}) {
   serverPanel.append(node('p', 'api-settings-privacy', '이 탭에는 서버 주소와 앱 접속코드만 입력해요. OpenAI API 키를 서버 접속코드 칸에 입력하지 마세요. 서버 연결을 저장하면 대본·이미지·음성 분석은 서버 방식을 사용해요.'));
   const actions = node('div', 'api-settings-actions'), connect = button('connectApiBtn', '연결 확인·저장', 'primary'), clear = button('clearApiSettingsBtn', '서버 연결 해제', 'outline');actions.append(connect, clear);serverPanel.append(actions);
   const status = announcement('apiSettingsStatus', 'api-settings-status', 'status'), error = announcement('apiSettingsError', 'api-settings-error', 'alert');serverPanel.append(status, error);
+  const directActivity = createOperationStatus({container: directPanel, region: directPanel, id: 'openAiSettingsOperation'});directActions.before(directActivity.element);
+  const serverActivity = createOperationStatus({container: serverPanel, region: serverPanel, id: 'serverSettingsOperation'});actions.before(serverActivity.element);
   const footer = node('div', 'dialog-footer'), done = button('closeApiSettingsBtn', '닫기', 'ghost');footer.append(done);dialog.append(footer);document.body.append(dialog);
 
   let controller = null, operation = 0, busy = false, timeout = null, selectedTab = 'openai';
@@ -88,12 +91,12 @@ export function setupApiSettings(api = {}) {
   }
   function hydrate() {const direct = getDirectSettings();key.input.value = '';code.input.value = '';url.input.value = getApiSettings().baseUrl;scriptModel.input.value = direct.scriptModel || 'gpt-5-mini';imageModel.input.value = direct.imageModel || 'gpt-image-2';rememberInput.checked = direct.rememberForTab === true;}
   function setBusy(value) {busy = value;dialog.setAttribute('aria-busy', String(value));for (const control of allControls) control.disabled = value;verify.textContent = value && selectedTab === 'openai' ? '연결 확인 중…' : '연결 확인·저장';connect.textContent = value && selectedTab === 'server' ? '연결 확인 중…' : '연결 확인·저장';}
-  function stop() {operation++;controller?.abort();controller = null;if (timeout) clearTimeout(timeout);timeout = null;setBusy(false);}
+  function stop() {operation++;controller?.abort();controller = null;if (timeout) clearTimeout(timeout);timeout = null;directActivity.cancel('연결 확인을 취소했어요. 기존 설정은 유지했어요.');serverActivity.cancel('연결 확인을 취소했어요. 기존 설정은 유지했어요.');setBusy(false);}
   function dismiss() {stop();key.input.value = '';code.input.value = '';dialog.close();}
   function open(options = {}) {
     const name = options?.tab === 'server' ? 'server' : 'openai';
     if (dialog.open) {if (!busy) {selectTab(name);(name === 'server' ? url.input : key.input).focus();}return;}
-    stop();render();hydrate();status.textContent = '';error.textContent = '';directStatus.textContent = '';directErrorText.textContent = '';selectTab(name);dialog.showModal();(name === 'server' ? url.input : key.input).focus();
+    stop();directActivity.clear();serverActivity.clear();render();hydrate();status.textContent = '';error.textContent = '';directStatus.textContent = '';directErrorText.textContent = '';selectTab(name);dialog.showModal();(name === 'server' ? url.input : key.input).focus();
   }
   function captureDirect() {
     const value = key.input.value.trim(), existing = getDirectSettings();
@@ -108,7 +111,9 @@ export function setupApiSettings(api = {}) {
     let captured;
     try {captured = captureDirect();} catch (cause) {directErrorText.textContent = cause.message;return;}
     const sequence = ++operation;
+    const feedback = directActivity.start(verifyFirst ? 'OpenAI 연결 응답을 기다리고 있어요.' : 'OpenAI 설정을 저장하고 있어요.');setBusy(true);
     try {
+      await nextPaint();if (sequence !== operation || !dialog.open) return;
       if (verifyFirst) {
         controller = new AbortController();setBusy(true);directStatus.textContent = 'OpenAI 모델 목록으로 키 연결을 확인하고 있어요. 생성 요청은 보내지 않아요.';
         let timedOut = false;timeout = setTimeout(() => {timedOut = true;controller?.abort();}, 30000);
@@ -116,18 +121,20 @@ export function setupApiSettings(api = {}) {
         try {result = await checkDirectKey(captured.value, {signal: controller.signal});}
         catch (cause) {if (timedOut) throw new ApiConnectionError('timeout', 'OpenAI 연결 확인 시간이 초과됐어요. 기존 설정은 유지했어요.');throw cause;}
         if (sequence !== operation || !dialog.open) return;
-        if (!result?.verified) {directStatus.textContent = '모델 목록 조회를 확인하지 못했어요. 제한된 키는 목록 조회 권한이 없을 수 있어요. 필요한 권한이 있는 키라면 ‘저장’을 누른 뒤 실제 생성에서 확인할 수 있어요. 기존 설정은 유지했어요.';return;}
+        if (!result?.verified) {directStatus.textContent = '모델 목록 조회를 확인하지 못했어요. 제한된 키는 목록 조회 권한이 없을 수 있어요. 필요한 권한이 있는 키라면 ‘저장’을 누른 뒤 실제 생성에서 확인할 수 있어요. 기존 설정은 유지했어요.';feedback.fail('연결 확인을 완료하지 못했어요. 기존 설정은 유지했어요.');return;}
       }
       if (sequence !== operation || !dialog.open) return;
       setDirectSettings(captured.settings);key.input.value = '';render();
       directStatus.textContent = verifyFirst ? 'OpenAI 연결을 확인하고 저장했어요. 대본·이미지·음성 분석에서 이 키를 사용해요.' : 'OpenAI 설정을 저장했어요. 연결 확인과 실제 생성은 아직 실행하지 않았어요. 대본·이미지·음성 분석에서 이 키를 사용해요.';
-    } catch (cause) {if (sequence !== operation || !dialog.open || cause?.name === 'AbortError') return;directStatus.textContent = '';directErrorText.textContent = directError(cause);}
+      feedback.finish(verifyFirst ? 'OpenAI 연결 확인·설정 저장을 마쳤어요.' : 'OpenAI 설정을 저장했어요.');
+    } catch (cause) {if (sequence !== operation || !dialog.open || cause?.name === 'AbortError') return;directStatus.textContent = '';directErrorText.textContent = directError(cause);feedback.fail(directErrorText.textContent);}
     finally {if (sequence === operation) {if (timeout) clearTimeout(timeout);timeout = null;controller = null;setBusy(false);}}
   }
   async function checkAndSaveServer() {
-    if (busy) return;error.textContent = '';status.textContent = '';const sequence = ++operation;
+    if (busy) return;error.textContent = '';status.textContent = '';const sequence = ++operation;let feedback;
     try {
       const baseUrl = normalizeApiBaseUrl(url.input.value), settings = code.input.value ? {baseUrl, accessToken: code.input.value} : {baseUrl};
+      feedback = serverActivity.start('AI 서버 연결 응답을 기다리고 있어요.');
       controller = new AbortController();setBusy(true);status.textContent = 'AI 서버의 연결과 대본 서비스 상태를 확인하고 있어요.';
       let timedOut = false;timeout = setTimeout(() => {timedOut = true;controller?.abort();}, 60000);
       let response;
@@ -142,7 +149,8 @@ export function setupApiSettings(api = {}) {
       try {setApiSettings(settings);} catch (cause) {if (previousDirect.enabled) {try {setDirectEnabled(true);} catch {}}throw cause;}
       code.input.value = '';url.input.value = getApiSettings().baseUrl;render();
       status.textContent = data.configured ? 'AI 대본 서버에 연결했어요. 참고자료와 정리 방향을 넣고 ‘AI 대본 작성’을 눌러 주세요.' : '서버에 연결했어요. AI 대본 작성은 제공자 API 키를 서버에서 설정한 뒤 사용할 수 있어요.';
-    } catch (cause) {if (sequence !== operation || !dialog.open || cause?.name === 'AbortError') return;status.textContent = '';error.textContent = cause instanceof ApiConnectionError ? cause.message : 'AI 서버 연결을 확인하지 못했어요. 기존 연결은 유지했어요.';if (cause?.code === 'provider-key') code.input.value = '';}
+      feedback.finish(data.configured ? 'AI 서버 연결 확인·설정 저장을 마쳤어요.' : '서버 연결을 저장했어요. 대본 API 키 설정은 필요해요.');
+    } catch (cause) {if (sequence !== operation || !dialog.open || cause?.name === 'AbortError') return;status.textContent = '';error.textContent = cause instanceof ApiConnectionError ? cause.message : 'AI 서버 연결을 확인하지 못했어요. 기존 연결은 유지했어요.';feedback?.fail(error.textContent);if (cause?.code === 'provider-key') code.input.value = '';}
     finally {if (sequence === operation) {if (timeout) clearTimeout(timeout);timeout = null;controller = null;setBusy(false);}}
   }
   launcher.addEventListener('click', () => open());connect.addEventListener('click', checkAndSaveServer);save.addEventListener('click', () => saveDirect(false));verify.addEventListener('click', () => saveDirect(true));
