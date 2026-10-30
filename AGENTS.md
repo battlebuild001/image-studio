@@ -299,6 +299,18 @@ for credential values in chat. Inspect configured presence without exposing valu
   failure. Store manual text in schema-version-1 `project.scriptDraft.draftScript`
   with `result:null`; manual text and an explicit reference-to-draft copy are not
   web research or AI output. Preserve draft text independently of API evidence.
+- Script composition uses optional sourceFidelity (summary/balanced/faithful) and
+  detailLevel (concise/standard/expanded), persisted in scriptDraft and its result.
+  New UI drafts default faithful/expanded; missing legacy fields canonicalize to
+  balanced/standard without rewriting text or changing schema version 1.
+  Faithful mode preserves event/year/entity order, qualifiers and unknowns; detailed
+  explanations may use supported context, never invented actions, mechanisms,
+  environmental conditions, motives or casualty figures. Keep actual web evidence
+  and phonetic/clean-narration rules in both transports. No claimed coverage audit.
+  targetMinutes remains the sole length budget: explicit 1.5x/2x buttons edit the
+  actual 1..60 integer minutes, with no hidden multiplier or automatic paid retry.
+  Option changes preserve existing text and result metadata until a new request.
+  Source-size warnings are heuristics, not translation or semantic coverage checks.
 - Research results require an actually completed web-search call and valid provider
   sources. Keep summary, source URLs and uncertainties separate from spoken narration.
   Never label a fabricated/local fallback as web-researched content. Cancellation,
@@ -382,6 +394,13 @@ For optional research, test duration estimates, validated source links, cancella
 draft restoration and handoff to scene creation. API/unit/browser fixtures must
 not be described as verified live AI generation. Without configured credentials,
 finish independent tests and report live web-search/generation as unverified.
+For source-fidelity changes, run npm run test:script-fidelity-browser and npm test.
+Verify strict enum validation, full source/settings in actual direct/Node transport,
+8->12/16 minute presets and 60-minute bounds, non-destructive selection, canonical
+legacy/default backup and workspace roundtrips, actual character estimates, and
+cancel/error preservation. Use synthetic reference material in committed tests;
+never add user uploads to public source, fixtures or release archives. Mocked
+provider responses do not establish actual narrative fidelity or completeness.
 For operation feedback, run npm run test:operation-browser and
 npm run test:local-operations-browser. Exercise delayed success, provider/storage
 failure, cancel/restart, terminal elapsed-time freeze, aria-busy cleanup and stale

@@ -183,6 +183,11 @@ function validateScriptDraft(input) {
   const narrationStyles = ['standard', 'korean', 'korean-digits', 'korean-native-digits'];
   const narrationStyle = input.narrationStyle ?? 'standard';
   if (!narrationStyles.includes(narrationStyle)) fail('대본 발음 표기 옵션을 확인해 주세요.');
+  const sourceFidelities = ['summary', 'balanced', 'faithful'], detailLevels = ['concise', 'standard', 'expanded'];
+  const sourceFidelity = input.sourceFidelity === undefined ? 'balanced' : input.sourceFidelity;
+  const detailLevel = input.detailLevel === undefined ? 'standard' : input.detailLevel;
+  if (!sourceFidelities.includes(sourceFidelity)) fail('원본 반영 정도 옵션을 확인해 주세요.');
+  if (!detailLevels.includes(detailLevel)) fail('설명 상세도 옵션을 확인해 주세요.');
   let result = null;
   if (input.result !== undefined && input.result !== null) {
     const data = input.result;
@@ -198,6 +203,10 @@ function validateScriptDraft(input) {
     const characters = Array.from(script.replace(/\s/g, '')).length;
     const resultStyle = data.narrationStyle ?? 'standard';
     if (!narrationStyles.includes(resultStyle)) fail('생성 대본 발음 표기 옵션을 확인해 주세요.');
+    const resultFidelity = data.sourceFidelity === undefined ? 'balanced' : data.sourceFidelity;
+    const resultDetail = data.detailLevel === undefined ? 'standard' : data.detailLevel;
+    if (!sourceFidelities.includes(resultFidelity)) fail('생성 대본 원본 반영 정도 옵션을 확인해 주세요.');
+    if (!detailLevels.includes(resultDetail)) fail('생성 대본 설명 상세도 옵션을 확인해 주세요.');
     result = {
       title: scriptText(data.title, '', 200, '생성 대본 제목'),
       summary: scriptText(data.summary, '', 20000, '자료 요약'),
@@ -214,6 +223,8 @@ function validateScriptDraft(input) {
       searchedAt: scriptTimestamp(data.searchedAt),
       webSearchUsed: true,
       narrationStyle: resultStyle,
+      sourceFidelity: resultFidelity,
+      detailLevel: resultDetail,
     };
   }
   if (input.draftScript !== undefined && typeof input.draftScript !== 'string') {
@@ -230,6 +241,8 @@ function validateScriptDraft(input) {
     targetMinutes,
     charsPerMinute,
     narrationStyle,
+    sourceFidelity,
+    detailLevel,
     draftScript,
     result,
   };
