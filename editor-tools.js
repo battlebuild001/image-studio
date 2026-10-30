@@ -65,6 +65,55 @@ export function setupEditorTools(api) {
     watch(fields.get(id), 'change', event => api.mutate(project => { project.settings[key] = convert(event.target); }));
   }
 
+  // Small local image animation/effects stay visible beside the selected scene.
+  // Controls change only on explicit user actions; restoring a project is passive.
+  const currentScene = () => api.getProject().scenes.find(item => item.id === api.getSelectedId());
+  function effectTargets() {
+    const selected = typeof api.getSelectedIds === 'function' ? api.getSelectedIds() : [api.getSelectedId()];
+    const ids = new Set(selected || []);
+    if (!ids.size && api.getSelectedId()) ids.add(api.getSelectedId());
+    return api.getProject().scenes.filter(item => ids.has(item.id)).map(item => item.id);
+  }
+  const effectLabels = {none: '없음', dust: '은은한 먼지', fog: '옅은 안개', light: '부드러운 빛'};
+  const sceneEffects = node('section', {id: 'sceneEffectsControls', className: 'scene-effects-controls', 'aria-labelledby': 'sceneEffectsTitle'});
+  const effectsHeading = node('div', {className: 'scene-effects-heading'}, node('h3', {id: 'sceneEffectsTitle', text: '이미지 움직임·효과'}));
+  const effectsSelection = node('span', {id: 'sceneEffectsSelectionHint', className: 'scene-effects-selection'});effectsHeading.append(effectsSelection);
+  const subtleMotion = button('applySubtleMotionBtn', '은은하게 움직이기', () => {
+    const ids = effectTargets();if (!ids.length) return;
+    api.mutate(project => {
+      let index = 0;
+      for (const scene of project.scenes) if (ids.includes(scene.id)) scene.motion = index++ % 2 ? 'subtle-drift' : 'subtle-zoom';
+    });
+    api.toast(`${ids.length}개 장면에 아주 느린 확대·이동을 적용했어요.`);
+  }, 'outline full');
+  const effectField = field('sceneEffect', '화면 효과', {select: Object.entries(effectLabels)});
+  const intensityField = field('sceneEffectIntensity', '효과 강도', {type: 'range', min: 0, max: 100, step: 1, value: 25});
+  const intensityValue = node('output', {id: 'sceneEffectIntensityValue', htmlFor: 'sceneEffectIntensity', text: '25%'});
+  intensityField.firstElementChild.append(intensityValue);
+  fields.get('sceneEffectIntensity').setAttribute('aria-describedby', 'sceneEffectIntensityValue');
+  const applyEffects = button('applySceneEffectsToSelectionBtn', '선택 장면에 효과 적용', () => {
+    const scene = currentScene(), ids = effectTargets();if (!scene || !ids.length) return;
+    const effect = scene.effect || 'none', effectIntensity = scene.effectIntensity ?? 0.25;
+    api.mutate(project => {for (const item of project.scenes) if (ids.includes(item.id)) Object.assign(item, {effect, effectIntensity});});
+    api.toast(`${ids.length}개 장면에 ${effect === 'none' ? '효과 없음' : effectLabels[effect]} 설정을 적용했어요.`);
+  }, 'ghost full');
+  sceneEffects.append(effectsHeading, subtleMotion, effectField, intensityField, applyEffects,
+    node('p', {className: 'editor-help', text: '정지 이미지에 카메라 움직임과 화면 효과를 더해요. 별도 생성 비용 없이 미리보기와 저장 영상에 함께 적용돼요.'}));
+  document.querySelector('label[for="sceneMotion"]').before(sceneEffects);
+  watch(fields.get('sceneEffect'), 'change', event => {
+    const effect = event.target.value;
+    if (!Object.hasOwn(effectLabels, effect)) throw new Error('화면 효과를 다시 선택해 주세요.');
+    if (!currentScene()) return;
+    api.mutate(project => {const scene = project.scenes.find(item => item.id === api.getSelectedId());if (scene) scene.effect = effect;});
+  });
+  watch(fields.get('sceneEffectIntensity'), 'input', event => {intensityValue.textContent = `${event.target.value}%`;});
+  watch(fields.get('sceneEffectIntensity'), 'change', () => {
+    const value = number('sceneEffectIntensity', 25);
+    if (value < 0 || value > 100) throw new Error('효과 강도는 0~100%로 정해 주세요.');
+    if (!currentScene()) return;
+    api.mutate(project => {const scene = project.scenes.find(item => item.id === api.getSelectedId());if (scene) scene.effectIntensity = value / 100;});
+  });
+
   // Image composition controls. Pointer dragging makes one undo entry per gesture.
   const framing = details('이미지 위치 · 세부 움직임', 'framingDetails',
     node('p', {className: 'editor-help editor-crop-note', text: '위 이미지를 끌거나 위치를 조절하세요. 직접 설정은 시작 → 끝으로 움직여요.'}),
@@ -424,6 +473,16 @@ export function setupEditorTools(api) {
   function render() {
     const project = api.getProject(), settings = project.settings;
     const scene = project.scenes.find(item => item.id === api.getSelectedId());
+    const targetCount = effectTargets().length;
+    const canEditEffects = Boolean(scene) && (typeof api.canUseSceneImages !== 'function' || api.canUseSceneImages());
+    set('sceneEffect', scene?.effect || 'none');set('sceneEffectIntensity', Math.round((scene?.effectIntensity ?? 0.25) * 100));
+    intensityValue.textContent = `${fields.get('sceneEffectIntensity').value}%`;
+    effectsSelection.textContent = targetCount ? `${targetCount}개 선택` : '장면 선택';
+    fields.get('sceneEffect').disabled = !canEditEffects;
+    fields.get('sceneEffectIntensity').disabled = !canEditEffects || !scene?.effect || scene.effect === 'none';
+    subtleMotion.disabled = !canEditEffects || !targetCount;
+    applyEffects.disabled = !canEditEffects || targetCount < 2;
+    applyEffects.textContent = targetCount > 1 ? `선택 ${targetCount}개 장면에 효과 적용` : '여러 장면 선택 후 함께 적용';
     for (const key of ['focusX', 'focusY', 'endX', 'endY']) set(key, Math.round((scene?.[key] ?? 0.5) * 100));
     for (const key of ['zoomStart', 'zoomEnd']) set(key, scene?.[key] ?? (key === 'zoomEnd' ? 1.12 : 1));
     for (const input of framing.querySelectorAll('input, button')) input.disabled = !scene;

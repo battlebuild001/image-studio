@@ -5,6 +5,7 @@
  * explicit user choice. Export runs in real time and stops if the tab is hidden.
  */
 import {getTimeline, getCaptions} from './project.js';
+import {drawSceneEffect} from './scene-effects.js';
 
 const FONT = '"Pretendard", "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 const clamp = (n, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, Number.isFinite(n) ? n : lo));
@@ -33,7 +34,7 @@ function checkAbort(signal) {
 
 function snapshot(project) {
   const signature = [project.captionMode, project.aspect,
-    ...(project.scenes || []).map(s => `${s.id}|${s.duration}|${s.caption || ''}|${s.imageId || ''}|${s.motion}|${s.fit}|${s.focusX}|${s.focusY}|${s.endX}|${s.endY}|${s.zoomStart}|${s.zoomEnd}`),
+    ...(project.scenes || []).map(s => `${s.id}|${s.duration}|${s.caption || ''}|${s.imageId || ''}|${s.motion}|${s.fit}|${s.focusX}|${s.focusY}|${s.endX}|${s.endY}|${s.zoomStart}|${s.zoomEnd}|${s.effect}|${s.effectIntensity}`),
     ...(project.captionMode !== 'auto' ? project.captions || [] : []).map(c => `${c.start}|${c.end}|${c.text}`),
     ...(project.captionMode === 'speech' ? [project.audio?.narrationId, project.audio?.narrationStart,
       project.audio?.narrationEnd, project.audio?.narrationOffset, JSON.stringify(project.captionAnalysis)] : []),
@@ -135,7 +136,7 @@ function drawEmpty(ctx, width, height, index = 0) {
   ctx.fillText(`SCENE ${String(index + 1).padStart(2, '0')}`, width / 2, height * 0.59);
 }
 
-function drawScene(ctx, scene, assets, progress, width, height, index) {
+function drawScene(ctx, scene, assets, progress, width, height, index, localTime = 0) {
   const image = assets.get(scene.imageId)?.image;
   const iw = image?.naturalWidth || image?.width || 0;
   const ih = image?.naturalHeight || image?.height || 0;
@@ -149,6 +150,8 @@ function drawScene(ctx, scene, assets, progress, width, height, index) {
     case 'zoom-out': zoom = lerp(fit === 'contain' ? 1 : 1.12, fit === 'contain' ? 0.9 : 1, p);break;
     case 'pan-left': zoom = fit === 'contain' ? 0.92 : 1.12;px = fit === 'contain' ? lerp(0.8, 0.2, p) : lerp(0.2, 0.8, p);break;
     case 'pan-right': zoom = fit === 'contain' ? 0.92 : 1.12;px = fit === 'contain' ? lerp(0.2, 0.8, p) : lerp(0.8, 0.2, p);break;
+    case 'subtle-zoom': zoom = lerp(fit === 'contain' ? .975 : 1, fit === 'contain' ? 1 : 1.025, p);break;
+    case 'subtle-drift': zoom = fit === 'contain' ? .975 : 1.025;break;
     case 'custom':
       zoom = lerp(clamp(scene.zoomStart ?? 1, 1, 3), clamp(scene.zoomEnd ?? 1.12, 1, 3), p);
       px = lerp(clamp(scene.focusX ?? 0.5), clamp(scene.endX ?? 0.5), p);
@@ -161,10 +164,20 @@ function drawScene(ctx, scene, assets, progress, width, height, index) {
     py = clamp(py + (scene.focusY ?? 0.5) - 0.5);
   }
   const dw = iw * baseScale * zoom, dh = ih * baseScale * zoom;
+  let x = (width - dw) * px, y = (height - dh) * py;
+  if (scene.motion === 'subtle-drift') {
+    // Bound travel in viewport pixels: a very wide/tall source must not turn a
+    // gentle preset into a large pan merely because it has more crop to spare.
+    const travelX = Math.min(Math.abs(width - dw) * .25, width * .00625);
+    const travelY = Math.min(Math.abs(height - dh) * .05, height * .00125);
+    x = clamp(x + lerp(travelX, -travelX, p), Math.min(0, width - dw), Math.max(0, width - dw));
+    y = clamp(y + lerp(travelY, -travelY, p), Math.min(0, height - dh), Math.max(0, height - dh));
+  }
   ctx.save();ctx.beginPath();ctx.rect(0, 0, width, height);ctx.clip();
   ctx.fillStyle = '#080b0d';ctx.fillRect(0, 0, width, height);
   ctx.imageSmoothingEnabled = true;ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(image, (width - dw) * px, (height - dh) * py, dw, dh);
+  ctx.drawImage(image, x, y, dw, dh);
+  drawSceneEffect(ctx, scene, localTime, width, height);
   ctx.restore();
 }
 
@@ -241,7 +254,7 @@ export function renderFrame(ctx, project, assets, time = 0, width = ctx.canvas.w
   ctx.clearRect(0, 0, width, height);
   if (!current) drawEmpty(ctx, width, height, 0);
   else {
-    drawScene(ctx, current.scene, assets, current.progress, width, height, current.index);
+    drawScene(ctx, current.scene, assets, current.progress, width, height, current.index, current.localTime);
     const next = state.scenes[current.index + 1];
     const transition = Math.min(clamp(Number(settings.transition) || 0, 0, 3), current.duration / 2, (next?.duration || 0) / 2);
     if (next && transition > 0 && t >= current.end - transition) {
@@ -252,7 +265,7 @@ export function renderFrame(ctx, project, assets, time = 0, width = ctx.canvas.w
         surface = {canvas, ctx: canvas.getContext('2d', {alpha: false}), width, height};
         transitions.set(ctx, surface);
       }
-      drawScene(surface.ctx, next, assets, 0, width, height, current.index + 1);
+      drawScene(surface.ctx, next, assets, 0, width, height, current.index + 1, 0);
       ctx.save();ctx.globalAlpha = ease(clamp((t - current.end + transition) / transition));
       ctx.drawImage(surface.canvas, 0, 0);ctx.restore();
     }

@@ -7,7 +7,8 @@ const MAX_REFERENCE_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_REFERENCE_BYTES = 20 * 1024 * 1024;
 export const DB_NAME = 'bth-blkout-image-studio';
 export const DB_VERSION = 3;
-const MOTIONS = new Set(['zoom-in', 'zoom-out', 'pan-left', 'pan-right', 'none', 'custom']);
+const MOTIONS = new Set(['zoom-in', 'zoom-out', 'pan-left', 'pan-right', 'subtle-zoom', 'subtle-drift', 'none', 'custom']);
+const EFFECTS = ['none', 'dust', 'fog', 'light'];
 const FITS = new Set(['cover', 'contain']);
 const ID_PATTERN = /^[a-zA-Z0-9_-]{1,180}$/;
 const encoder = new TextEncoder();
@@ -31,6 +32,8 @@ export function createScene(overrides = {}) {
     endY: 0.5,
     zoomStart: 1,
     zoomEnd: 1.12,
+    effect: 'none',
+    effectIntensity: 0.25,
     ...overrides,
   };
 }
@@ -359,6 +362,8 @@ export function validateProject(input) {
       endY: finiteNumber(scene.endY, 0.5, 0, 1, '이동 종료 세로 위치'),
       zoomStart: finiteNumber(scene.zoomStart, 1, 1, 3, '시작 확대 배율'),
       zoomEnd: finiteNumber(scene.zoomEnd, 1.12, 1, 3, '종료 확대 배율'),
+      effect: choice(scene.effect, 'none', EFFECTS, '장면 효과'),
+      effectIntensity: finiteNumber(scene.effectIntensity, 0.25, 0, 1, '장면 효과 강도'),
     };
   });
   if (scenes.reduce((sum, scene) => sum + scene.duration, 0) > 3600.001) fail('한 프로젝트의 길이는 최대 60분입니다.');
@@ -552,7 +557,7 @@ export function duplicateScenes(input, ids) {
 export function updateScenes(input, ids, patch) {
   const project = validateProject(input);
   const selected = selectedSceneIds(project, ids);
-  const allowed = new Set(['duration', 'caption', 'motion', 'fit', 'focusX', 'focusY', 'endX', 'endY', 'zoomStart', 'zoomEnd']);
+  const allowed = new Set(['duration', 'caption', 'motion', 'fit', 'focusX', 'focusY', 'endX', 'endY', 'zoomStart', 'zoomEnd', 'effect', 'effectIntensity']);
   if (!plainObject(patch) || Object.keys(patch).some(key => !allowed.has(key))) {
     fail('장면에 적용할 설정을 확인해 주세요.');
   }
