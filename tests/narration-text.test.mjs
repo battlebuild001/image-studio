@@ -87,6 +87,24 @@ test('recognizable naked online addresses are removed without erasing abbreviati
   assert.match(result.summary, /1991년 NASA/);
 });
 
+test('gaming wiki citations are removed completely and legacy .gg fragments never enter spoken text', () => {
+  const narration = '탐사대가 신호를 확인했습니다.';
+  for (const citation of ['(lore.wiki.gg)', '(lore.wiki.gg/wiki/Foo)', '[wiki.gg](https://lore.wiki.gg/wiki/Foo)', 'lore.wiki.gg/wiki/Foo', '(.gg)', '（.gg）', '[.gg]']) {
+    const text = `${narration} ${citation}`;
+    assert.equal(cleanNarrationText(text), narration, citation);
+    assert.equal(formatNarrationText(text, 'korean-digits'), narration, citation);
+    const generated = response(text);
+    generated.output[0].action.sources[0].url = 'https://lore.wiki.gg/wiki/Foo';
+    const parsed = parseScriptResponse(generated, {...input, narrationStyle: 'korean-digits'});
+    assert.equal(parsed.script, narration, citation);
+    assert.equal(parsed.sources[0].url, 'https://lore.wiki.gg/wiki/Foo');
+  }
+  // An unknown final suffix must stay intact rather than lose a known prefix.
+  assert.equal(cleanNarrationText('자료: lore.wiki.xyz/wiki/Foo'), '자료: lore.wiki.xyz/wiki/Foo');
+  assert.equal(cleanNarrationText('자료: lore.wiki.gg'), '자료:');
+  assert.equal(cleanNarrationText('GG는 좋은 경기라는 뜻입니다. (GG) U.S.와 A.BoL을 구분합니다.'), 'GG는 좋은 경기라는 뜻입니다. (GG) U.S.와 A.BoL을 구분합니다.');
+});
+
 test('numeric pronunciation preserves digit order including grouping, zero, decimal and the chosen vocabulary', () => {
   assert.equal(formatNarrationText('1991년, 2022년. 거리는 1,991.05입니다.', 'korean-digits'), '일구구일년, 이영이이년. 거리는 일구구일점영오입니다.');
   assert.equal(formatNarrationText('1991년, 2022년. 0과 1.5를 읽습니다.', 'korean-native-digits'), '하나아홉아홉하나년, 둘공둘둘년. 공과 하나점다섯를 읽습니다.');
