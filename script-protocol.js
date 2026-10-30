@@ -18,13 +18,16 @@ export function cleanNarrationText(value) {
     .replace(/(?:https?:\/\/|www\.)[^\s<>()\[\]{}"'`]+/giu, '')
     // Recognizable bare web domains also occur in AI prose. A known, complete
     // suffix avoids treating abbreviations such as U.S. or A.BoL as addresses.
-    .replace(/(?<![\p{L}\p{N}_@-])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:com|org|net|edu|gov|mil|int|info|biz|name|museum|aero|coop|pro|io|ai|app|dev|site|online|website|wiki|tech|news|blog|tv|me|co|kr|uk|us|ca|au|nz|jp|cn|de|fr|it|es|nl|ch|se|no|fi|dk|in|sg|tw|hk|br|mx|za|eu)(?![a-z0-9_-])(?::\d{1,5})?(?:[/?#][^\s<>()\[\]{}"'`]+)?/giu, '')
+    .replace(/(?<![\p{L}\p{N}_@-])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:com|org|net|edu|gov|mil|int|info|biz|name|museum|aero|coop|pro|io|ai|app|dev|site|online|website|wiki|tech|news|blog|tv|gg|me|co|kr|uk|us|ca|au|nz|jp|cn|de|fr|it|es|nl|ch|se|no|fi|dk|in|sg|tw|hk|br|mx|za|eu)(?![a-z0-9_-]|\.[a-z0-9-])(?::\d{1,5})?(?:[/?#][^\s<>()\[\]{}"'`]+)?/giu, '')
     .replace(/\[(?:\d+[\s,;–-]*)+\]|【\s*\d+(?:\s*[,;–-]\s*\d+)*\s*】/gu, '')
     .replace(/\[\^[^\]\n]+\]/gu, '');
   return text.split('\n').map(line => {
     let cleaned = line.trim();
     // These are labels, never narration. Do not discard any following paragraph.
     if (/^(?:#{1,6}\s*)?(?:출처|참고\s*(?:문헌|자료|출처|링크)|온라인\s*주소|웹\s*검색\s*결과|검증\s*(?:결과|메모|안내|사항)|확인\s*(?:결과|사항)|팩트\s*체크)(?:\s*[:：].*)?$/iu.test(cleaned)) return '';
+    // Older releases could truncate a wiki.gg citation to (.gg). Remove only
+    // this bracketed address fragment, preserving ordinary GG in the story.
+    cleaned = cleaned.replace(/\(\s*\.gg\s*\)|（\s*\.gg\s*）|\[\s*\.gg\s*\]/giu, '');
     cleaned = cleaned.replace(/\([^()]*\)|（[^（）]*）/gu, part => /^[（(]\s*(?:출처|참고|원문)?\s*[:：]?\s*[）)]$/u.test(part) ? '' : part)
       .replace(/(?:\[\s*\]|【\s*】|\(\s*\)|（\s*）)/gu, '');
     // Strip a research-method prefix while retaining its substantive sentence.
