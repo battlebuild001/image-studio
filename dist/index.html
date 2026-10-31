@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101618">
-  <meta name="description" content="분야별로 대본과 레퍼런스를 관리하고 음성·이미지·자막을 영상으로 연결하는 BTH 콘텐츠 스튜디오.">
-  <title>BTH · 콘텐츠 스튜디오</title>
+  <meta name="description" content="분야별로 대본과 레퍼런스를 관리하고 음성·이미지·자막을 영상으로 연결하는 콘텐츠 스튜디오.">
+  <title>콘텐츠 스튜디오</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2310181c'/%3E%3Cpath d='M15 14h20l-8 14h22L27 52H15l13-21H15z' fill='%23dfbb84'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="./convenience.css">
@@ -14,7 +14,7 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="./" aria-label="BTH 이미지 스튜디오"><span class="brand-mark">B<span>/</span>T</span><span><strong>CONTENT <em>STUDIO</em></strong><small>BATTLE TABLE HOBBY</small></span></a>
+    <a class="brand" href="./" aria-label="콘텐츠 스튜디오 홈"><span class="brand-mark" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="m10 8 6 4-6 4V8Z" fill="currentColor"/></svg></span><span><strong>CONTENT <em>STUDIO</em></strong><small>IMAGE &amp; VIDEO EDITOR</small></span></a>
     <div class="top-actions"><span class="save-state" id="saveState"><i></i> 준비 중</span><button class="icon-button" id="undoBtn" title="되돌리기" aria-label="되돌리기" disabled>↶</button><button class="icon-button" id="redoBtn" title="다시 실행 (Ctrl+Shift+Z)" aria-label="다시 실행" disabled>↷</button><button class="ghost" id="helpBtn">사용법</button><button class="ghost hide-small" id="openProjectBtn">프로젝트 열기</button><button class="ghost hide-small" id="backupBtn">백업 저장</button><button class="primary" id="exportBtn"><span aria-hidden="true">↗</span> 영상 내보내기</button></div>
   </header>
   <div class="projectbar"><div class="project-title"><span class="eyebrow">YOUR STORY, FRAME BY FRAME</span><input id="projectTitle" type="text" maxlength="120" aria-label="프로젝트 제목" value="새 콘텐츠 프로젝트"></div><div class="project-tools"><span class="local-pill"><i></i> 영상 편집은 이 브라우저에서 처리</span><button class="ghost small" id="newProjectBtn">새 프로젝트 +</button></div></div>
@@ -78,7 +78,7 @@
       <div class="video-settings">
         <h3>영상 전체</h3>
         <label class="toggle-row"><span>자막 표시</span><input id="subtitlesToggle" type="checkbox" checked><i></i></label>
-        <label class="toggle-row"><span>BTH 표기</span><input id="brandingToggle" type="checkbox" checked><i></i></label>
+        <label class="toggle-row"><span>영상 제목 표시</span><input id="brandingToggle" type="checkbox" checked><i></i></label>
         <label class="toggle-row"><span>AI 생성 이미지 안내</span><input id="aiImageNoticeToggle" type="checkbox" aria-describedby="aiImageNoticeHelp"><i aria-hidden="true"></i></label>
         <div class="field-row" id="aiImageNoticePositionRow" hidden><label for="aiImageNoticePosition">안내 위치</label><select id="aiImageNoticePosition" aria-describedby="aiImageNoticeHelp" disabled><option value="bottom-center">하단 중앙</option><option value="bottom-left">좌측 하단</option><option value="bottom-right">우측 하단</option></select></div>
         <p class="field-help ai-image-notice-help" id="aiImageNoticeHelp" hidden></p>

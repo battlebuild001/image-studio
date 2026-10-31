@@ -28,6 +28,7 @@
     "test:api-retention-browser": "node tests/api-retention.browser.cjs",
     "test:topic-research-browser": "node tests/topic-research.browser.cjs",
     "test:ai-notice-browser": "node tests/ai-image-notice.browser.cjs",
+    "test:channel-neutral-browser": "node tests/channel-neutral.browser.cjs",
     "test:scene-timing-browser": "node tests/scene-timing-ui.browser.cjs",
     "test:scene-batch-browser": "node tests/scene-image-batch.browser.cjs",
     "test:timed-workflow-browser": "node tests/timed-scenes-workflow.browser.cjs",

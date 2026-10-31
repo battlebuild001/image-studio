@@ -301,7 +301,6 @@ export function setupLibraryTools(api) {
     } while (true);
     ctx.fillStyle = '#acbec2';
     subtitles.forEach((line, index) => ctx.fillText(line, x, subtitleTop + (index + .5) * subSize * 1.5));
-    ctx.font = '600 19px sans-serif'; ctx.fillStyle = accent; ctx.fillText('BTH / BLKOUT IMAGE STUDIO', x, h * .83);
   }
   function releaseLogo() {
     logo = null;

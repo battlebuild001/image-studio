@@ -1,4 +1,4 @@
-# BTH CONTENT STUDIO
+# CONTENT STUDIO
 
 ## Purpose
 
@@ -15,6 +15,10 @@ Users choose an image-change interval, review and confirm the timeline, then exp
 Users configure their own OpenAI key in the app Settings for browser-direct script, image and timestamped transcription requests; Render is optional.
 Category workspaces keep independent in-progress projects; users can add their
 own topics beyond the four defaults. Keep branding and new-project titles neutral.
+The old fixed channel name must not appear automatically in the editor, generated
+templates, preview, PNG or video export. Keep legacy settings.branding compatible,
+but use it only for the user's project title; UI label is 영상 제목 표시. Never
+rename internal storage/database/backup identifiers or erase user-entered text.
 Voice-provider choice is undecided. Keep user-visible voice guidance, demo captions
 and API errors provider-neutral (음성 API / 음성 생성). Preserve implementation
 credential names, official endpoints and provider metadata until an actual adapter

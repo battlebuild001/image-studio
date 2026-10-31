@@ -71,12 +71,12 @@ test('animated overlays are deterministic when seeking and change smoothly with 
   }
 });
 
-test('effects are image-only and painted beneath all narration and branding',()=>{
+test('effects are image-only and painted beneath narration and the user project title',()=>{
   const {project,assets}=fixture({effect:'light',effectIntensity:1,caption:'자막은 효과 위에 표시합니다.'});
   project.settings.branding=true;project.settings.subtitles=true;
   const trace=frame(project,assets,2).operations;
   const imageIndex=trace.findIndex(row=>row[0]==='image'),effectIndex=trace.findIndex(row=>row[0]==='gradient'&&row[1]==='radial');
-  const brandingIndex=trace.findIndex(row=>row[0]==='text'&&row[1]==='BATTLE TABLE HOBBY'),captionIndex=trace.findIndex(row=>row[0]==='text'&&row[1].includes('자막'));
+  const brandingIndex=trace.findIndex(row=>row[0]==='text'&&row[1]===project.title),captionIndex=trace.findIndex(row=>row[0]==='text'&&row[1].includes('자막'));
   assert.ok(imageIndex>=0&&effectIndex>imageIndex&&brandingIndex>effectIndex&&captionIndex>effectIndex);
   const missing=frame(project,new Map(),2).operations;assert.equal(missing.some(row=>row[0]==='gradient'&&row[1]==='radial'),false);
 });
