@@ -37,7 +37,13 @@
     "test:local-operations-browser": "node tests/local-operations.browser.cjs",
     "test:script-fidelity-browser": "node tests/script-fidelity.browser.cjs",
     "test:scene-effects-browser": "node tests/scene-effects.browser.cjs",
-    "test:whole-video-browser": "node tests/whole-video-images.browser.cjs"
+    "test:whole-video-browser": "node tests/whole-video-images.browser.cjs",
+    "test:production-speech-browser": "node tests/production-speech.browser.cjs",
+    "test:production-changes-browser": "node tests/production-changes.browser.cjs",
+    "test:production-budget-browser": "node tests/production-budget-history.browser.cjs",
+    "test:production-visual-browser": "node tests/production-visual-tools.browser.cjs",
+    "test:production-delivery-browser": "node tests/production-delivery.browser.cjs",
+    "test:production-guards-browser": "node tests/production-suite-guards.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

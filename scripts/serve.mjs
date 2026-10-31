@@ -7,6 +7,7 @@ import { createScriptApi } from './script-api.mjs';
 import { createImageApi } from './image-api.mjs';
 import { createImagePlanApi } from './image-plan-api.mjs';
 import { createTopicResearchApi } from './topic-research-api.mjs';
+import { createProductionApi } from './production-api.mjs';
 import { createTranscriptApi } from './transcript-api.mjs';
 import { createVoiceApi } from './voice-api.mjs';
 import { createBackendAccess } from './backend-access.mjs';
@@ -39,6 +40,7 @@ const handleScriptApi = createScriptApi();
 const handleImageApi = createImageApi();
 const handleImagePlanApi = createImagePlanApi();
 const handleTopicResearchApi = createTopicResearchApi();
+const handleProductionApi = createProductionApi();
 const handleTranscriptApi = createTranscriptApi();
 const handleVoiceApi = createVoiceApi();
 const handleAccess = createBackendAccess({publicMode: !['127.0.0.1', 'localhost', '::1'].includes(values.host)});
@@ -52,6 +54,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (handleAccess(req, res, pathname)) return;
+  if (await handleProductionApi(req, res, pathname)) return;
   if (await handleTopicResearchApi(req, res, pathname)) return;
   if (await handleScriptApi(req, res, pathname)) return;
   if (await handleImagePlanApi(req, res, pathname)) return;

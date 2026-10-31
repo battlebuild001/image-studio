@@ -1,0 +1,1 @@
+.production-speech-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}.production-speech-grid textarea{min-height:220px}.production-field textarea{width:100%;min-width:0}.production-speech-grid>*{min-width:0}@media(max-width:700px){.production-speech-grid{grid-template-columns:minmax(0,1fr)}.production-speech-grid textarea{min-height:160px}}

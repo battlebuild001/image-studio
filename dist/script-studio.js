@@ -5,6 +5,7 @@ import {normalizeNarrationStyle, cleanNarrationText, formatNarrationText} from '
 import {createOperationStatus, nextPaint} from './operation-status.js';
 import {normalizeSourceFidelity as normalizedFidelity, normalizeDetailLevel as normalizedDetail} from './script-protocol.js';
 import {validateTopicResearchRequest, normalizeTopicResearchResult, topicResearchSourceText} from './topic-research-protocol.js';
+import {getDisplayScript, applyPronunciations, normalizePronunciations} from './production-speech.js';
 
 const LIMIT = 100000;
 const FILE_LIMIT = 10 * 1024 * 1024;
@@ -190,7 +191,10 @@ export function setupScriptStudio(api) {
   resultField.input.placeholder = '참고 자료와 정리 방향을 입력하고 ‘AI로 대본 작성’을 누르면 새 한국어 대본이 여기에 표시돼요.\n\n직접 작성한 대본도 이곳에서 편집하고 저장할 수 있어요.';
   const resultStats = node('p', 'script-result-metrics'); resultStats.id = 'generatedScriptStats'; resultStats.setAttribute('aria-live', 'polite');
   const lengthMismatch = node('p', 'script-length-mismatch'); lengthMismatch.id = 'scriptLengthMismatch'; lengthMismatch.hidden = true;
-  results.append(resultField.wrapper, resultStats, lengthMismatch);
+  const displayDetails = node('details', 'script-display-draft');displayDetails.id = 'displayScriptDetails';displayDetails.append(node('summary', '', '화면 자막용 대본 · 숫자와 고유명사 원래 표기'));
+  const displayField = field('generatedDisplayScript', '화면용 대본 · 음성 대본과 별도로 저장', 'textarea');displayField.input.rows = 9;displayField.input.maxLength = LIMIT * 2;displayField.input.placeholder = '1991년, ABOL처럼 화면에 보여 줄 표기예요. 읽는 대본과 사건·문단 순서를 맞춰 주세요.';
+  const displayTools = node('div','script-result-tools'), displayCopy = button('copyDisplayScriptBtn','화면 대본 복사'), displayTxt = button('downloadDisplayScriptTxtBtn','화면 대본 TXT');displayTools.append(displayCopy,displayTxt);displayDetails.append(displayField.wrapper,displayTools);
+  results.append(resultField.wrapper, resultStats, lengthMismatch, displayDetails);
   const stale = node('p', 'script-studio-help script-stale-goal'); stale.id = 'scriptGoalChanged'; results.append(stale);
   const notes = node('ul', 'script-research-notes'); notes.id = 'scriptResearchNotes';
   const sourcesLabel = node('strong', 'script-result-label', '웹에서 확인한 출처');
@@ -211,17 +215,18 @@ export function setupScriptStudio(api) {
   let projectId = api.getProject().id;
   let draft = projectDraft(api.getProject());
   let fingerprint = JSON.stringify(api.getProject().scriptDraft || null);
-  let timer = 0, saving = false, busy = false, operation = 0, controller = null, configSequence = 0, configController = null, activeOperation = '';
+  let timer = 0, saving = false, busy = false, operation = 0, controller = null, configSequence = 0, configController = null, activeOperation = '', displayTouched = false;
   let configured = false, connectionChecked = false;
   const progress = createOperationStatus({container: operationHost, region: columns, id: 'scriptOperation', slowAfterMs: 30000});
   const connectionProgress = createOperationStatus({container: connectionProgressHost, region: connectionActions, id: 'scriptConnectionOperation', slowAfterMs: 10000});
   let progressHandle = null, connectionProgressHandle = null;
   operationHost.append(cancel);
-  const inputControls = [files.input, topic.input, source.input, minutes.input, pace.input, narrationStyle.input, sourceFidelity.input, detailLevel.input, instructions.input, resultField.input];
+  const inputControls = [files.input, topic.input, source.input, minutes.input, pace.input, narrationStyle.input, sourceFidelity.input, detailLevel.input, instructions.input, resultField.input, displayField.input];
   function showError(value, notify = true) { error.textContent = value || ''; if (value && notify) api.toast(value, true); }
   function run(task) { return event => { event?.preventDefault(); Promise.resolve().then(task).catch(cause => showError(cause.message || '작업을 마치지 못했어요.')); }; }
   function snapshot() {
     return {...draft, sourceText: source.input.value, instructions: instructions.input.value, draftScript: resultField.input.value,
+      ...((Object.hasOwn(draft,'displayScript') || displayTouched || typeof draft.result?.displayScript === 'string') ? {displayScript:displayField.input.value} : {}),
       targetMinutes: Number(minutes.input.value), charsPerMinute: Number(pace.input.value), narrationStyle: normalizeNarrationStyle(narrationStyle.input.value), sourceFidelity: sourceFidelity.input.value, detailLevel: detailLevel.input.value,
       ...((draft.topicResearch || topic.input.value) ? {topicResearch: {topic: topic.input.value, instructions: draft.topicResearch?.result ? draft.topicResearch.instructions : instructions.input.value, result: draft.topicResearch?.result || null}} : {})};
   }
@@ -233,6 +238,7 @@ export function setupScriptStudio(api) {
     if (length(value.instructions) > 2000) throw new Error('정리 방향은 2,000자 이하로 입력해 주세요.');
     if (length(value.topicResearch?.topic || '') > 500) throw new Error('찾아볼 주제는 500자 이하로 입력해 주세요.');
     if (length(value.draftScript) > LIMIT) throw new Error('대본은 100,000자 이하로 줄여 주세요.');
+    if (value.displayScript !== undefined && length(value.displayScript) > LIMIT) throw new Error('화면용 대본은 100,000자 이하로 줄여 주세요.');
     return value;
   }
   function capture() {
@@ -240,7 +246,7 @@ export function setupScriptStudio(api) {
     if (draft.result) {
       const script = resultField.input.value;
       if (length(script) > LIMIT) throw new Error('대본은 100,000자 이하로 줄여 주세요.');
-      value.result = {...draft.result, script, characters: count(script), estimatedMinutes: count(script) / draft.result.charsPerMinute};
+      value.result = {...draft.result, script, ...(value.displayScript === undefined ? {} : {displayScript:value.displayScript}), characters: count(script), estimatedMinutes: count(script) / draft.result.charsPerMinute};
     }
     draft = value; return value;
   }
@@ -328,6 +334,7 @@ export function setupScriptStudio(api) {
     const currentMinutes = Number(minutes.input.value);
     for (const item of [extend15, extend2]) item.disabled = busy || !Number.isInteger(currentMinutes) || currentMinutes < 1 || currentMinutes >= 60;
     copy.disabled = !hasScript || busy; txt.disabled = !hasScript || busy; markdown.disabled = !hasScript || busy; convertPronunciation.disabled = !hasScript || busy;
+    displayCopy.disabled = busy || !displayField.input.value.trim();displayTxt.disabled = displayCopy.disabled;
   }
   function updateMetrics() {
     sourceStats.textContent = `${length(source.input.value).toLocaleString()} / 100,000자`;
@@ -364,6 +371,7 @@ export function setupScriptStudio(api) {
     summaryLabel.hidden = summary.hidden = !result;
     sourcesLabel.hidden = sources.hidden = !result; evidence.hidden = !result;
     if (document.activeElement !== resultField.input) resultField.input.value = draft.draftScript ?? result?.script ?? '';
+    if (document.activeElement !== displayField.input) displayField.input.value = getDisplayScript({scriptDraft:draft});
     notes.replaceChildren(...(result?.notes || []).map(text => node('li', '', text)));
     notes.hidden = !(result?.notes || []).length;
     sources.replaceChildren();
@@ -379,7 +387,7 @@ export function setupScriptStudio(api) {
     minutes.input.value = String(draft.targetMinutes ?? 8); pace.input.value = String(draft.charsPerMinute ?? 330);
     narrationStyle.input.value = normalizeNarrationStyle(draft.narrationStyle);
     sourceFidelity.input.value = normalizedFidelity(draft.sourceFidelity); detailLevel.input.value = normalizedDetail(draft.detailLevel);
-    resultField.input.value = draft.draftScript ?? draft.result?.script ?? ''; renderTopicResearch(true);renderResults();
+    resultField.input.value = draft.draftScript ?? draft.result?.script ?? '';displayField.input.value = getDisplayScript({scriptDraft:draft});displayTouched = false; renderTopicResearch(true);renderResults();
   }
   function stop(message = '작업을 취소했어요. 기존 자료와 대본은 그대로 있어요.') {
     operation++; controller?.abort(); controller = null; activeOperation = '';
@@ -447,21 +455,33 @@ export function setupScriptStudio(api) {
     const links = Array.isArray(value.sources) ? value.sources.filter(entry => entry && typeof entry.title === 'string' && entry.title.length <= 500 && safeUrl(entry.url)).slice(0, 30) : [];
     if (!links.length) throw new Error('참고 출처를 확인하지 못했어요. 기존 대본은 유지했어요.');
     if (typeof value.searchedAt !== 'string' || !Number.isFinite(Date.parse(value.searchedAt))) throw new Error('검색 시각을 확인하지 못했어요. 잠시 뒤 다시 시도해 주세요.');
-    const script = formatNarrationText(value.script, settings.narrationStyle);
+    const script = applyPronunciations(value.script,settings.pronunciations || [],settings.narrationStyle);
+    if (value.displayScript !== undefined && (typeof value.displayScript !== 'string' || !value.displayScript.trim() || length(value.displayScript) > LIMIT)) throw new Error('화면용 대본의 형식이나 길이를 확인하지 못해 기존 두 대본을 유지했어요.');
+    const displayScript = value.displayScript === undefined ? undefined : cleanNarrationText(value.displayScript);
+    if (displayScript !== undefined && !displayScript.trim()) throw new Error('화면용 대본 본문이 없어 기존 두 대본을 유지했어요.');
     if (!script.trim()) throw new Error('읽을 내레이션 없이 조사 설명만 반환되어 적용하지 않았어요. 기존 대본은 유지했어요.');
     if (normalizeNarrationStyle(settings.narrationStyle) !== 'standard' && (/\p{Script=Latin}/u.test(script) || /\d/u.test(script))) throw new Error('선택한 한글 발음 표기가 적용되지 않아 기존 대본을 유지했어요. 영문 이름과 숫자를 한글 발음으로 다시 작성해 주세요.');
     if (length(script) > LIMIT) throw new Error('발음 표기 후 대본이 100,000자를 넘어서 적용하지 않았어요. 기존 대본은 유지했어요.');
-    return {...value, script, narrationStyle: settings.narrationStyle, sourceFidelity: settings.sourceFidelity, detailLevel: settings.detailLevel, title: String(value.title || '영상 대본').slice(0, 200), summary: String(value.summary || '').slice(0, 20000),
+    return {...value, script, ...(displayScript === undefined ? {} : {displayScript}), narrationStyle: settings.narrationStyle, sourceFidelity: settings.sourceFidelity, detailLevel: settings.detailLevel, title: String(value.title || '영상 대본').slice(0, 200), summary: String(value.summary || '').slice(0, 20000),
       sources: links.map(entry => ({title: entry.title, url: safeUrl(entry.url)})), notes: Array.isArray(value.notes) ? value.notes.filter(item => typeof item === 'string').map(item => item.slice(0, 2000)).slice(0, 30) : [],
       targetMinutes: settings.targetMinutes, charsPerMinute: settings.charsPerMinute, characters: count(script), estimatedMinutes: count(script) / settings.charsPerMinute};
   }
   async function writeScript(value, abort, seq, startedProject) {
+    const pronunciations = normalizePronunciations(api.getProject().production?.speech?.pronunciations || []), channel = api.getProject().production?.channel || {};
+    const speechKey = JSON.stringify({pronunciations,tone:channel.tone || '',name:channel.name || ''});
     const result = await request('/api/script/generate', {method: 'POST', headers: {'Content-Type': 'application/json'}, signal: abort.signal,
-      body: JSON.stringify({sourceText: value.sourceText, targetMinutes: value.targetMinutes, charsPerMinute: value.charsPerMinute, instructions: value.instructions, projectTitle: api.getProject().title, ...(value.narrationStyle !== 'standard' ? {narrationStyle: value.narrationStyle} : {}), ...(value.sourceFidelity !== 'balanced' ? {sourceFidelity: value.sourceFidelity} : {}), ...(value.detailLevel !== 'standard' ? {detailLevel: value.detailLevel} : {})})});
+      body: JSON.stringify({sourceText: value.sourceText, targetMinutes: value.targetMinutes, charsPerMinute: value.charsPerMinute, instructions: value.instructions, projectTitle: api.getProject().title, ...(value.narrationStyle !== 'standard' ? {narrationStyle: value.narrationStyle} : {}), ...(value.sourceFidelity !== 'balanced' ? {sourceFidelity: value.sourceFidelity} : {}), ...(value.detailLevel !== 'standard' ? {detailLevel: value.detailLevel} : {}),...(pronunciations.length ? {pronunciations}:{}),...(channel.tone ? {channelTone:channel.tone}:{}),...(channel.name ? {channelName:channel.name}:{})})});
     if (seq !== operation || api.getProject().id !== startedProject) return false;
-    const previous = {result: draft.result, script: draft.draftScript};
-    draft.result = checkedResult(result, value);draft.draftScript = draft.result.script;resultField.input.value = draft.draftScript;
-    try {flush();} catch (cause) {draft.result = previous.result;draft.draftScript = previous.script;resultField.input.value = previous.script;throw cause;}
+    const now = api.getProject().production || {};
+    if (speechKey !== JSON.stringify({pronunciations:normalizePronunciations(now.speech?.pronunciations || []),tone:now.channel?.tone || '',name:now.channel?.name || ''})) throw new Error('발음 사전이나 채널 말투가 바뀌어 이전 요청의 대본을 적용하지 않았어요. 현재 설정으로 다시 작성해 주세요.');
+    const checked = checkedResult(result,{...value,pronunciations});
+    await api.captureProductionVersion?.('script',{label:'AI 대본 작성 전'});
+    if (seq !== operation || api.getProject().id !== startedProject) return false;
+    const previous = {result:draft.result,script:draft.draftScript,displayScript:draft.displayScript,hadDisplay:Object.hasOwn(draft,'displayScript')};
+    draft.result = checked;draft.draftScript = draft.result.script;resultField.input.value = draft.draftScript;
+    if (typeof checked.displayScript === 'string') draft.displayScript = checked.displayScript;else if (previous.hadDisplay) draft.displayScript = checked.script;else delete draft.displayScript;
+    displayField.input.value = getDisplayScript({scriptDraft:draft});displayTouched = false;
+    try {flush();} catch (cause) {draft.result = previous.result;draft.draftScript = previous.script;if (previous.hadDisplay) draft.displayScript = previous.displayScript;else delete draft.displayScript;resultField.input.value = previous.script;displayField.input.value = getDisplayScript({scriptDraft:draft});throw cause;}
     evidence.open = false;renderResults();return true;
   }
   async function collectTopicResearch(writeAfter) {
@@ -572,16 +592,20 @@ export function setupScriptStudio(api) {
     flush();
     const value = validateSettings();
     if (!value.sourceText.trim()) throw new Error('대본 초안으로 가져올 자료를 먼저 넣어 주세요.');
-    draft.result = null; draft.draftScript = value.sourceText.trim(); resultField.input.value = draft.draftScript;
+    draft.result = null; draft.draftScript = value.sourceText.trim();draft.displayScript = draft.draftScript;resultField.input.value = draft.draftScript;displayField.input.value = draft.displayScript;
     showError('', false); renderResults(); flush();
     status.textContent = '원문을 수동으로 그대로 복사했어요. AI 대본 작성·요약·번역·웹 검색은 실행하지 않았어요.';
   }));
   copy.addEventListener('click', run(async () => { const value = capture(), script = cleanNarrationText(value.draftScript); if (!script.trim()) return; await shortOperation('내레이션 대본 복사 중', () => copyText(script), '내레이션 대본만 복사했어요.'); api.toast('내레이션 대본만 복사했어요.'); }));
+  displayCopy.addEventListener('click',run(async()=>{const text = cleanNarrationText(displayField.input.value);if (!text) return;await shortOperation('화면용 대본 복사 중',()=>copyText(text),'화면용 대본만 복사했어요.');}));
+  displayTxt.addEventListener('click',run(async()=>{const text = cleanNarrationText(displayField.input.value);if (!text) return;await shortOperation('화면용 TXT 준비 중',()=>downloadText(text,`${filename(draft.result?.title)}-화면용.txt`,'text/plain;charset=utf-8'),'화면용 대본 TXT를 준비했어요.');}));
   txt.addEventListener('click', run(async () => { const text = documentText(false), name = `${filename(draft.result?.title)}.txt`; await shortOperation('내레이션 TXT 준비 중', () => downloadText(text, name, 'text/plain;charset=utf-8'), '내레이션 TXT를 브라우저 다운로드로 보냈어요.'); }));
   markdown.addEventListener('click', run(async () => { const text = documentText(true), name = `${filename(draft.result?.title)}.md`; await shortOperation('별도 조사 기록 준비 중', () => downloadText(text, name, 'text/markdown;charset=utf-8'), '별도 조사 기록을 브라우저 다운로드로 보냈어요.'); }));
   apply.addEventListener('click', run(() => {
     flush(); const value = capture(), script = cleanNarrationText(value.draftScript); if (!script.trim()) throw new Error('장면으로 가져올 읽는 대본이 없어요.');
-    dialog.close(); api.applyScriptDraft({script, title: value.result?.title || api.getProject().title, targetMinutes: value.targetMinutes});
+    const displayScript = cleanNarrationText(getDisplayScript({scriptDraft:value}));
+    if (!displayScript) throw new Error('타이밍에 사용할 화면용 대본을 먼저 작성해 주세요.');
+    dialog.close(); api.applyScriptDraft({script, displayScript, title: value.result?.title || api.getProject().title, targetMinutes: value.targetMinutes});
   }));
   toVoice.addEventListener('click', run(async () => {
     if (busy) return;
@@ -623,9 +647,15 @@ export function setupScriptStudio(api) {
     cancelConnectionCheck(); configured = false; connectionChecked = false; refreshGenerate();
     if (dialog.open) checkConnection();
   });
-  for (const input of [topic.input, source.input, instructions.input, minutes.input, pace.input, narrationStyle.input, sourceFidelity.input, detailLevel.input, resultField.input]) {
+  for (const input of [topic.input, source.input, instructions.input, minutes.input, pace.input, narrationStyle.input, sourceFidelity.input, detailLevel.input, resultField.input,displayField.input]) {
     input.addEventListener('input', () => {
-      if (input === resultField.input) { draft.draftScript = input.value; if (draft.result) draft.result.script = input.value; }
+      if (input === resultField.input) {
+        const same = text => String(text || '').normalize('NFC').replace(/\u0000|\s/gu,'');
+        const linked = !displayTouched && (!Object.hasOwn(draft,'displayScript') || same(draft.displayScript) === same(draft.draftScript));
+        if (linked) {displayField.input.value = input.value;if (Object.hasOwn(draft,'displayScript')) draft.displayScript = input.value;if (typeof draft.result?.displayScript === 'string') draft.result.displayScript = input.value;}
+        draft.draftScript = input.value;if (draft.result) draft.result.script = input.value;
+      }
+      if (input === displayField.input) {displayTouched = true;draft.displayScript = input.value;if (draft.result) draft.result.displayScript = input.value;}
       showError('', false); updateMetrics(); queueSave();
     });
     input.addEventListener('change', () => { try { flush(); } catch (cause) { showError(cause.message, false); } });

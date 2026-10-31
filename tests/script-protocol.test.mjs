@@ -16,9 +16,13 @@ test('Node script API reexports the same protocol functions used by direct brows
 
 test('complete shared script protocol runs without Node or provider globals and retains research guards', async () => {
   const source = await readFile(new URL('../dist/script-protocol.js', import.meta.url), 'utf8');
-  assert.equal(/\bimport\s|\bBuffer\b|\bprocess\b|\brequire\b/u.test(source), false);
+  const dictionary = await readFile(new URL('../dist/pronunciation.js', import.meta.url),'utf8');
+  assert.equal(/\bBuffer\b|\bprocess\b|\brequire\b/u.test(source + dictionary), false);
+  assert.equal(/\bimport\s/u.test(dictionary), false);
+  const importLine = "import {normalizePronunciations, applyPronunciationDictionary} from './pronunciation.js';";
+  assert.ok(source.includes(importLine));
   const context = vm.createContext({URL});
-  const code = source.replace(/^export /gmu, '') + '\n globalThis.protocol = {ScriptApiError, scriptCharacters, validateScriptRequest, buildScriptRequest, parseScriptResponse};';
+  const code = dictionary.replace(/^export /gmu,'') + '\n' + source.replace(importLine,'').replace(/^export /gmu, '') + '\n globalThis.protocol = {ScriptApiError, scriptCharacters, validateScriptRequest, buildScriptRequest, parseScriptResponse};';
   new vm.Script(code, {filename: 'script-protocol.js'}).runInContext(context);
   const browser = context.protocol;
   const input = browser.validateScriptRequest({sourceText: 'A fictional chronology describes a mysterious radio signal, a political authority, and a conflict at an orbital elevator.', targetMinutes: 8, instructions: '흥미로운 한국어 로어 설명 위주로'});

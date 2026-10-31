@@ -3,6 +3,7 @@ import {buildImagePrompt} from './image-prompt.js';
 import {validateStoryboardRequest, buildStoryboardRequest, parseStoryboardResponse} from './storyboard-protocol.js';
 import {buildDirectTranscriptRequest, parseTranscriptResponse} from './transcript-protocol.js';
 import {validateTopicResearchRequest, buildTopicResearchRequest, parseTopicResearchResponse} from './topic-research-protocol.js';
+import {PRODUCTION_TASKS, MAX_PRODUCTION_REQUEST_BYTES, validateProductionAssistantRequest, buildProductionAssistantRequest, parseProductionAssistantResponse} from './production-assistant-protocol.js';
 
 const SESSION_KEY = 'bth-studio-openai-session-v1';
 const BROWSER_KEY = 'bth-studio-openai-browser-v1';
@@ -10,7 +11,8 @@ const SCRIPT_CONFIG = '/api/script/config', SCRIPT_GENERATE = '/api/script/gener
 const IMAGE_CONFIG = '/api/image/config', IMAGE_GENERATE = '/api/image/generate', IMAGE_PLAN = '/api/image/plan';
 const TRANSCRIPT_CONFIG = '/api/transcript/config', TRANSCRIPT_ANALYZE = '/api/transcript/analyze';
 const RESEARCH_CONFIG = '/api/research/config', RESEARCH_COLLECT = '/api/research/collect';
-const ROUTES = new Set([SCRIPT_CONFIG, SCRIPT_GENERATE, IMAGE_CONFIG, IMAGE_GENERATE, IMAGE_PLAN, TRANSCRIPT_CONFIG, TRANSCRIPT_ANALYZE, RESEARCH_CONFIG, RESEARCH_COLLECT]);
+const PRODUCTION_CONFIG = '/api/production/config', PRODUCTION_ASSIST = '/api/production/assist';
+const ROUTES = new Set([SCRIPT_CONFIG, SCRIPT_GENERATE, IMAGE_CONFIG, IMAGE_GENERATE, IMAGE_PLAN, TRANSCRIPT_CONFIG, TRANSCRIPT_ANALYZE, RESEARCH_CONFIG, RESEARCH_COLLECT, PRODUCTION_CONFIG, PRODUCTION_ASSIST]);
 const DEFAULTS = Object.freeze({enabled: false, apiKey: '', rememberForTab: false, rememberInBrowser: false,
   scriptModel: 'gpt-5-mini', imageModel: 'gpt-image-2', transcribeModel: 'whisper-1'});
 const MAX_REFERENCE_BYTES = 10 * 1024 * 1024, MAX_REFERENCES_BYTES = 20 * 1024 * 1024;
@@ -316,6 +318,7 @@ export function createDirectOpenAi({fetchImpl = (...args) => globalThis.fetch(..
       const body = path === SCRIPT_CONFIG ? {configured, minMinutes: 1, maxMinutes: 60, formats: ['txt', 'md', 'pdf', 'docx'], maxFileBytes: 10485760, maxInputCharacters: 100000}
         : path === IMAGE_CONFIG ? {configured, maxReferences: 5, maxReferenceBytes: MAX_REFERENCE_BYTES, maxTotalReferenceBytes: MAX_REFERENCES_BYTES, sizes: SIZES, qualities: QUALITIES}
         : path === RESEARCH_CONFIG ? {configured, model: settings.scriptModel, maxTopicCharacters: 500, maxInstructionsCharacters: 2000}
+        : path === PRODUCTION_CONFIG ? {configured, model: settings.scriptModel, tasks: PRODUCTION_TASKS, maxImages: 12, maxImageBytes: 1048576}
         : {configured, model: settings.transcribeModel, maxChunkSeconds: 300, maxAudioBytes: 9600044, languages: ['ko', 'en', 'auto'], reason: configured ? '' : '설정에서 OpenAI API 키를 입력해 주세요.'};
       return jsonResponse(200, body, method === 'HEAD');
     }
@@ -326,7 +329,11 @@ export function createDirectOpenAi({fetchImpl = (...args) => globalThis.fetch(..
     const forward = () => controller.abort();options.signal?.addEventListener('abort', forward, {once: true});activeController = controller;
     try {
       let result;
-      if (path === RESEARCH_COLLECT) {
+      if (path === PRODUCTION_ASSIST) {
+        const input = validateProductionAssistantRequest(appInput(options, MAX_PRODUCTION_REQUEST_BYTES));
+        const response = await requestProvider('responses', {key: current.apiKey, body: JSON.stringify(buildProductionAssistantRequest(input, current.scriptModel)), signal: controller.signal});
+        result = parseProductionAssistantResponse(response, input, current.scriptModel);
+      } else if (path === RESEARCH_COLLECT) {
         const input = validateTopicResearchRequest(appInput(options, 32 * 1024));
         const response = await requestProvider('responses', {key: current.apiKey, body: JSON.stringify(buildTopicResearchRequest(input, current.scriptModel)), signal: controller.signal});
         result = parseTopicResearchResponse(response, input);

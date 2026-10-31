@@ -110,9 +110,15 @@ test('real IndexedDB autosave and independent library records retain confirmed p
 }, async () => {
   const source = await readFile(new URL('../dist/project.js', import.meta.url));
   const researchProtocol = await readFile(new URL('../dist/topic-research-protocol.js', import.meta.url));
+  const productionState = await readFile(new URL('../dist/production-state.js', import.meta.url));
+  const pronunciation = await readFile(new URL('../dist/pronunciation.js', import.meta.url));
+  const visualProtocol = await readFile(new URL('../dist/production-visual-protocol.js', import.meta.url));
   const server = createServer((req, res) => {
     if (req.url === '/project.js') {res.setHeader('Content-Type', 'text/javascript');res.end(source);}
     else if (req.url === '/topic-research-protocol.js') {res.setHeader('Content-Type', 'text/javascript');res.end(researchProtocol);}
+    else if (req.url === '/production-state.js') {res.setHeader('Content-Type', 'text/javascript');res.end(productionState);}
+    else if (req.url === '/pronunciation.js') {res.setHeader('Content-Type', 'text/javascript');res.end(pronunciation);}
+    else if (req.url === '/production-visual-protocol.js') {res.setHeader('Content-Type', 'text/javascript');res.end(visualProtocol);}
     else if (req.url === '/') {res.setHeader('Content-Type', 'text/html');res.end('<!doctype html><title>Scene plan persistence</title>');}
     else res.writeHead(404).end();
   });

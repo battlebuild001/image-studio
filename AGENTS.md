@@ -35,6 +35,62 @@ For notice changes run npm run test:ai-notice-browser and npm test; verify reada
 landscape/portrait layouts, off-state pixel parity and a real short exported video
 with images, narration, BGM and captions. Do not replace this with a DOM overlay.
 
+## Production management
+
+The header's 제작 관리 dialog contains the requested ten production features in
+nine tabs: speech/dictionary, partial changes, budget, history, image review,
+information cards, channel presets, shorts and publishing materials. Keep this
+secondary workbench separate from the four primary workflow steps.
+
+- `dist/production-workbench.js` / `.css` composes feature modules through toolsApi.
+  Flush dirty speech fields before switching sections, projects or workspaces;
+  closing cancels active jobs without deleting completed results or manual fields.
+- `dist/production-state.js` validates optional production version1 metadata.
+  Legacy projects omit it. Keep the 2MiB bound, typed domains, credential/raw-body
+  exclusions and asset retention for image/voice version entries.
+- `dist/production-speech.js` and `dist/pronunciation.js` separate optional
+  scriptDraft.displayScript from spoken draftScript. Equal/missing display scripts
+  retain legacy coupling until an explicit separate edit. Timing/subtitles use
+  display text; voice generation uses spoken text. Pronunciation rules are local
+  project data and explicit prompt context, never provider configuration.
+- `dist/production-changes.js` / `.css` and `production-changes-protocol.js` compare
+  stable baselines, stage selected image replacements and splice actual decoded
+  PCM into a user-reviewed source-audio interval. Image and voice baselines are
+  independent. Applying an image must not clear pending voice changes. Measure
+  replacement duration, preserve untouched samples and retime downstream scenes,
+  cues and scenePlan; update narrationPlanKey after registering the new asset.
+  Ambiguous text spans require explicit full-script review instead of silent edits.
+- `dist/production-budget.js` guards paid apiFetch POST calls centrally, including
+  direct and optional server transports. Rates are editable estimates, not a live
+  invoice. Reserve before dispatch, retain uncertain failures/cancellations and
+  avoid retries. Metadata updates must not cancel their own job. Undo/redo must
+  preserve current cost records. Bridge scope includes workspace and project ID.
+- `dist/production-history.js` captures versions in the same mutation before
+  replacing scripts, image IDs or narration IDs. Retain actual old media and keep
+  BGM unchanged when restoring narration. Do not nest version histories.
+- `dist/production-assistant-protocol.js`, `production-visual-protocol.js` and
+  `production-api.mjs` share strict bounded task schemas for actual image review,
+  diagrams, shorts and publishing. Use the fixed Responses provider, current
+  script model, explicit calls, cancellation and the existing shared paid-job lock.
+- `dist/production-visual.js`, `production-diagrams.js`,
+  `production-diagram-renderer.js` and `production-visual-utils.js` send resized
+  actual images/references, detect stale inputs and render editable real Canvas
+  cards. Maps are schematic and must retain their disclaimer. Never invent data
+  measurements or claim a text-only check inspected image pixels.
+- `dist/production-channels.js`, `production-shorts.js`,
+  `production-publishing.js` and `production-delivery-utils.js` provide allowlisted
+  presets, title cards, source-timed 9:16 variants and real PNG/ZIP downloads.
+  Archive the original before installing a shorts project. Cut/concatenate actual
+  narration and cues, preserve image/BGM assets and start its cost ledger empty.
+  Publishing creates downloadable materials; it does not upload to a channel.
+
+Run npm test and the six test:production-*-browser scripts after suite changes.
+Browser suites use synthetic media and mocked providers, with actual IndexedDB,
+Web Audio, PNG/ZIP and backup roundtrips. Changes to partial audio or shorts also
+need a real short export with images, narration, BGM and captions; inspect decoded
+playback and ffprobe audio/video streams. Run real exports sequentially. Never
+describe these fixtures as live AI quality or actual billing verification.
+
 ## Architecture
 
 - `dist/index.html` and `dist/style.css`: editor UI.
