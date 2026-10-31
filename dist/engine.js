@@ -202,7 +202,7 @@ function wrapText(ctx, text, maxWidth) {
   return lines;
 }
 
-function aiImageNoticeLayout(ctx, width, height) {
+function aiImageNoticeLayout(ctx, width, height, position) {
   const scale = Math.min(width, height) / 1080, fontSize = (width < height ? 30 : 22) * scale;
   const paddingX = 14 * scale, paddingY = 6 * scale, lineHeight = fontSize * 1.45;
   ctx.save();ctx.font = `500 ${fontSize}px ${FONT}`;
@@ -210,17 +210,20 @@ function aiImageNoticeLayout(ctx, width, height) {
   const panelWidth = Math.min(width * 0.94, Math.max(...lines.map(line => ctx.measureText(line).width), 0) + paddingX * 2);
   ctx.restore();
   const panelHeight = lines.length * lineHeight + paddingY * 2;
-  return {scale, fontSize, paddingY, lineHeight, lines, panelWidth, panelHeight,
-    x: (width - panelWidth) / 2, top: height - Math.min(width, height) * 0.02 - panelHeight};
+  const left = position === 'bottom-left', inset = Math.min(width, height) * 0.02;
+  const x = left ? inset : (width - panelWidth) / 2;
+  return {scale, fontSize, paddingY, lineHeight, lines, panelWidth, panelHeight, x,
+    textAlign: left ? 'left' : 'center', textX: left ? x + paddingX : width / 2,
+    top: height - inset - panelHeight};
 }
 
-function drawAiImageNotice(ctx, layout, width) {
-  const {scale, fontSize, paddingY, lineHeight, lines, panelWidth, panelHeight, x, top} = layout;
+function drawAiImageNotice(ctx, layout) {
+  const {scale, fontSize, paddingY, lineHeight, lines, panelWidth, panelHeight, x, top, textAlign, textX} = layout;
   ctx.save();ctx.globalAlpha = 1;ctx.globalCompositeOperation = 'source-over';
   ctx.shadowColor = 'rgba(0,0,0,0)';ctx.shadowBlur = 0;ctx.shadowOffsetY = 0;
   ctx.fillStyle = 'rgba(0,0,0,0.68)';roundedRect(ctx, x, top, panelWidth, panelHeight, 5 * scale);ctx.fill();
-  ctx.font = `500 ${fontSize}px ${FONT}`;ctx.fillStyle = '#ffffff';ctx.textAlign = 'center';ctx.textBaseline = 'middle';
-  lines.forEach((line, index) => ctx.fillText(line, width / 2, top + paddingY + (index + 0.5) * lineHeight));
+  ctx.font = `500 ${fontSize}px ${FONT}`;ctx.fillStyle = '#ffffff';ctx.textAlign = textAlign;ctx.textBaseline = 'middle';
+  lines.forEach((line, index) => ctx.fillText(line, textX, top + paddingY + (index + 0.5) * lineHeight));
   ctx.restore();
 }
 
@@ -314,12 +317,12 @@ export function renderFrame(ctx, project, assets, time = 0, width = ctx.canvas.w
       ctx.fillText(titleLines[0] || '', x + 16 * scale, y + 43 * scale);
     }
   }
-  const notice = settings.aiImageNotice === true ? aiImageNoticeLayout(ctx, width, height) : null;
+  const notice = settings.aiImageNotice === true ? aiImageNoticeLayout(ctx, width, height, settings.aiImageNoticePosition) : null;
   if (settings.subtitles !== false) {
     const cue = state.captions.find(caption => t >= caption.start && t < caption.end);
     if (cue) drawCaption(ctx, cue.text, settings, width, height, notice ? notice.top - 10 * scale : undefined);
   }
-  if (notice) drawAiImageNotice(ctx, notice, width);
+  if (notice) drawAiImageNotice(ctx, notice);
   ctx.restore();
 }
 

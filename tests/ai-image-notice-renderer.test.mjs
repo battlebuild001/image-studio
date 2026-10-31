@@ -15,7 +15,7 @@ function context(width, height) {
     fill() {trace.push(['fill', this.fillStyle]);}, drawImage(...value) {trace.push(['image', ...value]);},
     createLinearGradient() {return {addColorStop() {}};},
     measureText(text) {const size = Number(/([\d.]+)px/u.exec(this.font)?.[1] || 10);return {width: Array.from(text).reduce((sum, value) => sum + (/\s/u.test(value) ? .32 : /[A-Za-z.]/u.test(value) ? .55 : 1), 0) * size};},
-    fillText(text, x, y) {trace.push(['text', {text, x, y, width: this.measureText(text).width, fontSize: Number(/([\d.]+)px/u.exec(this.font)[1]), font: this.font, fillStyle: this.fillStyle, alpha: this.globalAlpha}]);},
+    fillText(text, x, y) {trace.push(['text', {text, x, y, width: this.measureText(text).width, fontSize: Number(/([\d.]+)px/u.exec(this.font)[1]), font: this.font, fillStyle: this.fillStyle, alpha: this.globalAlpha, textAlign: this.textAlign}]);},
     strokeText(text, x, y) {trace.push(['strokeText', text, x, y]);},
   };
   return ctx;
@@ -35,6 +35,31 @@ test('notice absence and explicit false leave the legacy frame drawing exactly u
   assert.deepEqual(draw(project, assets).trace, legacy);
   project.settings.aiImageNotice = true;assert.notDeepEqual(draw(project, assets).trace, legacy);
   project.settings.aiImageNotice = false;assert.deepEqual(draw(project, assets).trace, legacy, 'in-place toggling cannot cache a stale notice');
+  project.settings.aiImageNoticePosition = 'bottom-left';assert.deepEqual(draw(project, assets).trace, legacy, 'a stored position cannot enable a disabled notice');
+});
+
+test('missing and explicit center positions keep the existing notice drawing unchanged', () => {
+  const {project, assets} = fixture();project.settings.aiImageNotice = true;
+  delete project.settings.aiImageNoticePosition;
+  const legacy = draw(project, assets).trace;
+  project.settings.aiImageNoticePosition = 'bottom-center';assert.deepEqual(draw(project, assets).trace, legacy);
+  project.settings.aiImageNoticePosition = 'bottom-left';assert.notDeepEqual(draw(project, assets).trace, legacy);
+  project.settings.aiImageNoticePosition = 'bottom-center';assert.deepEqual(draw(project, assets).trace, legacy);
+});
+
+test('left-bottom notice aligns text to the safe left inset without changing wrap or vertical caption space', () => {
+  const {project, assets} = fixture();project.settings.aiImageNotice = true;
+  for (const [width, height] of [[1280, 720], [1920, 1080], [720, 1280], [1080, 1920]]) {
+    project.settings.aiImageNoticePosition = 'bottom-center';const centered = text(draw(project, assets, width, height));
+    project.settings.aiImageNoticePosition = 'bottom-left';const left = text(draw(project, assets, width, height));
+    const min = Math.min(width, height), expectedX = min * .02 + 14 * min / 1080;
+    assert.equal(left.map(line => line.text).join(' '), AI_IMAGE_NOTICE_TEXT);
+    assert.deepEqual(left.map(({text, y, fontSize, width}) => ({text, y, fontSize, width})), centered.map(({text, y, fontSize, width}) => ({text, y, fontSize, width})));
+    assert.ok(left.every(line => line.textAlign === 'left' && Math.abs(line.x - expectedX) < .001));
+    assert.ok(left.every(line => line.x >= min * .02 && line.x + line.width <= width * .96));
+    assert.ok(left.every(line => line.y - line.fontSize / 2 > height * .85 && line.y + line.fontSize / 2 < height - min * .01));
+    assert.ok(left[0].x < centered[0].x, 'left mode moves the real text anchor instead of only moving a panel');
+  }
 });
 
 test('the exact notice is drawn after the image with subtitles and branding disabled', () => {
@@ -61,10 +86,10 @@ test('footer wraps responsively instead of clipping or shrinking portrait text b
   }
 });
 
-test('all supported caption positions remain above the footer without changing its exact text', () => {
+test('all supported caption positions remain above both notice positions without changing the exact text', () => {
   const {project, assets} = fixture();project.settings.aiImageNotice = true;project.settings.subtitles = true;
-  for (const [width, height] of [[1280, 720], [720, 1280]]) for (const captionPosition of ['top', 'center', 'bottom']) for (const fontSize of [20, 48, 100]) {
-    Object.assign(project.settings, {captionPosition, fontSize, captionStrokeWidth: 2});
+  for (const [width, height] of [[1280, 720], [720, 1280]]) for (const captionPosition of ['top', 'center', 'bottom']) for (const fontSize of [20, 48, 100]) for (const aiImageNoticePosition of ['bottom-center', 'bottom-left']) {
+    Object.assign(project.settings, {captionPosition, fontSize, captionStrokeWidth: 2, aiImageNoticePosition});
     const ctx = draw(project, assets, width, height), lines = text(ctx);
     const footerIndex = lines.findIndex(line => line.font.startsWith('500 '));
     assert.ok(footerIndex > 0);
