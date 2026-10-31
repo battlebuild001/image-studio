@@ -1,9 +1,10 @@
 import {normalizePronunciations} from './pronunciation.js';
 import {normalizeDiagramCard, normalizeVisualReview, DIAGRAM_TYPES} from './production-visual-protocol.js';
+import {normalizeYouTubeUploadDraft, normalizeYouTubeUploadRecord} from './youtube-protocol.js';
 
 /** Credential-free, schema-one production tools state shared by backups and workspaces. */
 export const MAX_PRODUCTION_BYTES = 2 * 1024 * 1024;
-const DOMAINS = new Set(['version', 'speech', 'changes', 'budget', 'versions', 'visual', 'diagrams', 'channel', 'shorts', 'publishing']);
+const DOMAINS = new Set(['version', 'speech', 'changes', 'budget', 'versions', 'visual', 'diagrams', 'channel', 'shorts', 'publishing', 'youtube']);
 const ID = /^[a-zA-Z0-9_-]{1,180}$/u;
 const DENIED = /(?:api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|credentials?|private[_-]?key)|^(?:__proto__|prototype|constructor|token|secret|raw[_-]?provider(?:response)?|provider[_-]?response|base64|b64_json)$/iu;
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && [Object.prototype, null].includes(Object.getPrototypeOf(value));
@@ -168,6 +169,17 @@ function validateVersions(value) {
   }
 }
 
+function validateYouTube(value) {
+  if (Object.keys(value).some(key => !['draft', 'uploads'].includes(key))) fail('유튜브 설정에는 대본과 업로드 기록만 보관할 수 있어요.');
+  if (value.draft !== undefined) value.draft = normalizeYouTubeUploadDraft(value.draft);
+  if (value.uploads !== undefined) {
+    if (!Array.isArray(value.uploads) || value.uploads.length > 10) fail('유튜브 업로드 기록은 최근 10개까지 보관할 수 있어요.');
+    value.uploads = value.uploads.map(normalizeYouTubeUploadRecord);
+    const ids = new Set(value.uploads.map(record => record.videoId));
+    if (ids.size !== value.uploads.length) fail('같은 유튜브 영상의 업로드 기록이 중복돼요.');
+  }
+}
+
 export function normalizeProductionState(input) {
   if (input === undefined || input === null) return null;
   if (!plain(input) || input.version !== 1 || Object.keys(input).some(key => !DOMAINS.has(key))) fail('제작 관리 자료 버전을 확인해 주세요.');
@@ -185,6 +197,7 @@ export function normalizeProductionState(input) {
   if (result.shorts) validateShorts(result.shorts);
   if (result.publishing) validatePublishing(result.publishing);
   if (result.changes) validateChanges(result.changes);
+  if (result.youtube) validateYouTube(result.youtube);
   return result;
 }
 
