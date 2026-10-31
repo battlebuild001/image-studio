@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
 import {test} from 'node:test';
 
-const source = await readFile(new URL('../dist/project.js', import.meta.url), 'utf8');
-const module = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+const module = await import('../dist/project.js');
 const {createProject, createScene, validateProject, parseSrt, exportSrt, splitScript,
   distributeDurations, getTimeline, getCaptions, exportProjectBackup, importProjectBackup,
   duplicateScenes, updateScenes, splitScene, mergeScenes, shiftCaptions, referencedAssetIds} = module;

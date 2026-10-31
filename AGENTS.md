@@ -53,6 +53,12 @@ own topics beyond the four defaults. Keep branding and new-project titles neutra
 - `dist/scene-image-batch.js` / `.css`: reviewed, confirmed-plan image generation, sequential application to existing slot IDs, safe cancellation and explicit resumption.
 - `dist/script-studio.js` / `.css`: actual AI rewriting of reference files/text and user production instructions, target duration,
   always-available manual draft editing, researched results, sources and handoff.
+- `dist/topic-research-protocol.js`: shared topic-driven web research requests,
+  completed-search/citation validation and canonical evidence storage. Visual
+  composition suggestions stay separate from factual script reference text.
+- `scripts/topic-research-api.mjs`: optional authenticated research config/collect
+  routes; direct OpenAI mode shares the user's script model and key. Both use
+  actual Responses web_search, no fallback to unsearched model recollection.
 - `dist/script-local-files.js` and `dist/vendor/`: local TXT/MD/PDF/DOCX extraction
   using pinned browser libraries; never upload originals or fetch external CDN code.
 - `dist/voice-studio.js` / `.css`: CLOVA narration generation, preview, download and
@@ -444,6 +450,18 @@ bytes and no original-file upload, including static Pages with absent API routes
 Verify manual draft editing, explicit source copy and independent persistence with
 `result:null`, plus draft → timing → image/edit handoff without a voice API key
 and the optional draft → voice → video handoff without an OpenAI key.
+For topic collection run `npm run test:topic-research-browser` and `npm test`,
+plus script, direct API settings, key retention, timing, whole-video and layout
+regressions. Verify topic-only research→script stage ordering, production direction
+and chosen duration, real citation requirements, separate factual/visual guidance,
+no manual source overwrite, scope/input/API cancellation, stale result treatment,
+project/backup/workspace persistence and mobile access. Research and script actions
+authorize their own text/search calls; they never authorize automatic paid images.
+Current collected visualBrief may seed a new confirmed scenePlan without replacing
+an explicit existing brief. Original images are not fetched by the text research
+API; do not describe generated visual suggestions as retrieved original art.
+Use synthetic sources/keys; mocked results do not prove live fact accuracy,
+coverage, search quality, account access or billing.
 For optional research, test duration estimates, validated source links, cancellation/error preservation,
 draft restoration and handoff to scene creation. API/unit/browser fixtures must
 not be described as verified live AI generation. Without configured credentials,

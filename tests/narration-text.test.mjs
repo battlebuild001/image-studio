@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {readFile} from 'node:fs/promises';
 import {NARRATION_STYLES, normalizeNarrationStyle, cleanNarrationText, formatNarrationText} from '../dist/narration-text.js';
 import {buildScriptRequest, parseScriptResponse, validateScriptRequest} from '../dist/script-protocol.js';
 
-const source = await readFile(new URL('../dist/project.js', import.meta.url), 'utf8');
-const projectModule = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+const projectModule = await import('../dist/project.js');
 const input = {sourceText: '제공된 연표와 기관 이름을 바탕으로 우주 탐사가 시작되는 과정을 이야기합니다.', targetMinutes: 1, charsPerMinute: 330};
 const response = script => ({status: 'completed', output: [
   {type: 'web_search_call', status: 'completed', action: {sources: [{url: 'https://example.org/official', title: '공식 연표'}]}},

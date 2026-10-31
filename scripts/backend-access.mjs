@@ -5,6 +5,7 @@ const WINDOW_MS = 60_000;
 const PAID_ROUTES = new Set([
   '/api/script/generate', '/api/voice/generate',
   '/api/image/generate', '/api/image/plan', '/api/transcript/analyze',
+  '/api/research/collect',
 ]);
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 

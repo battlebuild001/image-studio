@@ -109,8 +109,10 @@ test('real IndexedDB autosave and independent library records retain confirmed p
   skip: !chromium || !existsSync('/usr/bin/chromium'), timeout: 30000,
 }, async () => {
   const source = await readFile(new URL('../dist/project.js', import.meta.url));
+  const researchProtocol = await readFile(new URL('../dist/topic-research-protocol.js', import.meta.url));
   const server = createServer((req, res) => {
     if (req.url === '/project.js') {res.setHeader('Content-Type', 'text/javascript');res.end(source);}
+    else if (req.url === '/topic-research-protocol.js') {res.setHeader('Content-Type', 'text/javascript');res.end(researchProtocol);}
     else if (req.url === '/') {res.setHeader('Content-Type', 'text/html');res.end('<!doctype html><title>Scene plan persistence</title>');}
     else res.writeHead(404).end();
   });

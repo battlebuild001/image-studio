@@ -1,5 +1,7 @@
 /** BLKOUT Image Studio: project model, captions, and local storage. */
 
+import {normalizeTopicResearchResult} from './topic-research-protocol.js';
+
 export const SCHEMA_VERSION = 1;
 export const MAX_BACKUP_BYTES = 250 * 1024 * 1024;
 export const MAX_ASSET_BYTES = 180 * 1024 * 1024;
@@ -172,6 +174,16 @@ function scriptTimestamp(value) {
   return timestamp.toISOString();
 }
 
+/** Topic collection is independent of editable sources and spoken narration. */
+function validateTopicResearch(input) {
+  if (!plainObject(input)) fail('주제 자료 수집 설정 형식을 확인해 주세요.');
+  return {
+    topic: scriptText(input.topic, '', 500, '자료 수집 주제'),
+    instructions: scriptText(input.instructions, '', 2000, '자료 수집 방향'),
+    result: input.result === undefined || input.result === null ? null : normalizeTopicResearchResult(input.result),
+  };
+}
+
 /** Spoken drafts can be written before narration; researched results retain their separate evidence. */
 function validateScriptDraft(input) {
   if (input === undefined || input === null) return null;
@@ -248,6 +260,7 @@ function validateScriptDraft(input) {
     detailLevel,
     draftScript,
     result,
+    ...(input.topicResearch === undefined || input.topicResearch === null ? {} : {topicResearch: validateTopicResearch(input.topicResearch)}),
   };
 }
 

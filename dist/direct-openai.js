@@ -2,13 +2,15 @@ import {validateScriptRequest, buildScriptRequest, parseScriptResponse} from './
 import {buildImagePrompt} from './image-prompt.js';
 import {validateStoryboardRequest, buildStoryboardRequest, parseStoryboardResponse} from './storyboard-protocol.js';
 import {buildDirectTranscriptRequest, parseTranscriptResponse} from './transcript-protocol.js';
+import {validateTopicResearchRequest, buildTopicResearchRequest, parseTopicResearchResponse} from './topic-research-protocol.js';
 
 const SESSION_KEY = 'bth-studio-openai-session-v1';
 const BROWSER_KEY = 'bth-studio-openai-browser-v1';
 const SCRIPT_CONFIG = '/api/script/config', SCRIPT_GENERATE = '/api/script/generate';
 const IMAGE_CONFIG = '/api/image/config', IMAGE_GENERATE = '/api/image/generate', IMAGE_PLAN = '/api/image/plan';
 const TRANSCRIPT_CONFIG = '/api/transcript/config', TRANSCRIPT_ANALYZE = '/api/transcript/analyze';
-const ROUTES = new Set([SCRIPT_CONFIG, SCRIPT_GENERATE, IMAGE_CONFIG, IMAGE_GENERATE, IMAGE_PLAN, TRANSCRIPT_CONFIG, TRANSCRIPT_ANALYZE]);
+const RESEARCH_CONFIG = '/api/research/config', RESEARCH_COLLECT = '/api/research/collect';
+const ROUTES = new Set([SCRIPT_CONFIG, SCRIPT_GENERATE, IMAGE_CONFIG, IMAGE_GENERATE, IMAGE_PLAN, TRANSCRIPT_CONFIG, TRANSCRIPT_ANALYZE, RESEARCH_CONFIG, RESEARCH_COLLECT]);
 const DEFAULTS = Object.freeze({enabled: false, apiKey: '', rememberForTab: false, rememberInBrowser: false,
   scriptModel: 'gpt-5-mini', imageModel: 'gpt-image-2', transcribeModel: 'whisper-1'});
 const MAX_REFERENCE_BYTES = 10 * 1024 * 1024, MAX_REFERENCES_BYTES = 20 * 1024 * 1024;
@@ -313,6 +315,7 @@ export function createDirectOpenAi({fetchImpl = (...args) => globalThis.fetch(..
       if (!['GET', 'HEAD'].includes(method)) return jsonResponse(405, {error: 'GET 요청을 사용해 주세요.', code: 'METHOD_NOT_ALLOWED'});
       const body = path === SCRIPT_CONFIG ? {configured, minMinutes: 1, maxMinutes: 60, formats: ['txt', 'md', 'pdf', 'docx'], maxFileBytes: 10485760, maxInputCharacters: 100000}
         : path === IMAGE_CONFIG ? {configured, maxReferences: 5, maxReferenceBytes: MAX_REFERENCE_BYTES, maxTotalReferenceBytes: MAX_REFERENCES_BYTES, sizes: SIZES, qualities: QUALITIES}
+        : path === RESEARCH_CONFIG ? {configured, model: settings.scriptModel, maxTopicCharacters: 500, maxInstructionsCharacters: 2000}
         : {configured, model: settings.transcribeModel, maxChunkSeconds: 300, maxAudioBytes: 9600044, languages: ['ko', 'en', 'auto'], reason: configured ? '' : '설정에서 OpenAI API 키를 입력해 주세요.'};
       return jsonResponse(200, body, method === 'HEAD');
     }
@@ -323,7 +326,11 @@ export function createDirectOpenAi({fetchImpl = (...args) => globalThis.fetch(..
     const forward = () => controller.abort();options.signal?.addEventListener('abort', forward, {once: true});activeController = controller;
     try {
       let result;
-      if (path === SCRIPT_GENERATE) {
+      if (path === RESEARCH_COLLECT) {
+        const input = validateTopicResearchRequest(appInput(options, 32 * 1024));
+        const response = await requestProvider('responses', {key: current.apiKey, body: JSON.stringify(buildTopicResearchRequest(input, current.scriptModel)), signal: controller.signal});
+        result = parseTopicResearchResponse(response, input);
+      } else if (path === SCRIPT_GENERATE) {
         const input = validateScriptRequest(appInput(options, 512 * 1024));
         const response = await requestProvider('responses', {key: current.apiKey, body: JSON.stringify(buildScriptRequest(input, current.scriptModel)), signal: controller.signal});
         result = parseScriptResponse(response, input);
