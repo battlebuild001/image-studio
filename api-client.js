@@ -1,4 +1,5 @@
 import {getDirectSettings, handlesDirectPath, directApiFetch} from './direct-openai.js';
+import {beginProductionBudgetRequest} from './production-budget.js';
 
 const BASE_KEY = 'bth-studio-api-base-v1';
 const TOKEN_KEY = 'bth-studio-api-token-v1';
@@ -8,6 +9,7 @@ const ROUTES = new Set([
   '/api/image/config', '/api/image/generate', '/api/image/plan',
   '/api/transcript/config', '/api/transcript/analyze',
   '/api/research/config', '/api/research/collect',
+  '/api/production/config', '/api/production/assist',
 ]);
 const PROVIDER_HOSTS = new Set([
   'api.openai.com', 'api.anthropic.com', 'generativelanguage.googleapis.com',
@@ -50,7 +52,7 @@ function storageError() {return new ApiConnectionError('storage', '이 브라우
 function invalidSavedSettings() {return new ApiConnectionError('saved-settings', '저장된 AI 서버 연결 설정을 확인하지 못했어요. ‘AI 서버 연결’에서 다시 연결하거나 해제해 주세요.');}
 
 /** Injectable storage/fetch keeps tests offline and credentials out of project state. */
-export function createApiClient({localStorage = browserStorage('localStorage'), sessionStorage = browserStorage('sessionStorage'), fetchImpl = (...args) => globalThis.fetch(...args), directClient = null, dispatchChange = () => {
+export function createApiClient({localStorage = browserStorage('localStorage'), sessionStorage = browserStorage('sessionStorage'), fetchImpl = (...args) => globalThis.fetch(...args), directClient = null, budgetGuard = beginProductionBudgetRequest, dispatchChange = () => {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('studio-api-settings-change'));
 }} = {}) {
   function readSettings() {
@@ -124,10 +126,24 @@ export function createApiClient({localStorage = browserStorage('localStorage'), 
     if (typeof path !== 'string' || !ROUTES.has(path)) throw new ApiConnectionError('invalid-path', '허용되지 않은 AI 요청 주소예요.');
     const headers = new Headers(options.headers);
     if (headers.has('Authorization') || headers.has('Proxy-Authorization')) throw new ApiConnectionError('request-credential', 'API 인증은 설정에 입력한 키나 접속코드만 사용할 수 있어요.');
-    if (directClient?.getSettings().enabled && directClient.handles(path)) return directClient.fetch(path, options);
-    return fetchWithSettings(path, readSettings(), options);
+    const direct = directClient?.getSettings().enabled && directClient.handles(path);
+    // Validate stored backend settings before reserving a paid estimate. Neither
+    // key checks nor explicit server-configuration checks use this paid path.
+    const settings = direct ? null : readSettings();
+    const reservation = budgetGuard ? await budgetGuard(path, options) : null;
+    try {
+      const response = await (direct ? directClient.fetch(path, options) : fetchWithSettings(path, settings, options));
+      try {reservation?.finish(response.ok ? 'completed' : 'uncertain');} catch {}return response;
+    } catch (error) {try {reservation?.finish('uncertain');} catch {}throw error;}
   };
-  const candidateApiFetch = (path, settings, options = {}) => fetchWithSettings(path, candidateSettings(settings), options);
+  const candidateApiFetch = async (path, settings, options = {}) => {
+    if (typeof path !== 'string' || !ROUTES.has(path)) throw new ApiConnectionError('invalid-path', '허용되지 않은 AI 서버 요청 주소예요.');
+    const next = candidateSettings(settings), headers = new Headers(options.headers);
+    if (headers.has('Authorization') || headers.has('Proxy-Authorization')) throw new ApiConnectionError('request-credential', 'AI 서버 인증은 저장된 앱 접속코드만 사용할 수 있어요.');
+    const reservation = budgetGuard ? await budgetGuard(path, options) : null;
+    try {const response = await fetchWithSettings(path, next, options);try {reservation?.finish(response.ok ? 'completed' : 'uncertain');} catch {}return response;}
+    catch (error) {try {reservation?.finish('uncertain');} catch {}throw error;}
+  };
   return {apiFetch, candidateApiFetch, getApiSettings, setApiSettings, clearApiSettings};
 }
 

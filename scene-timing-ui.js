@@ -4,6 +4,10 @@ const $ = id => document.getElementById(id);
 const clone = value => structuredClone(value);
 const basisNames = {target: '지정한 목표 길이', narration: '내레이션의 실제 길이', current: '현재 영상의 길이', estimated: '대본 글자 수로 추정한 길이'};
 const compact = value => String(value || '').normalize('NFC').replace(/\u0000|\s/gu, '');
+function narrationEstimate(project, text) {
+  const draft = project.scriptDraft, display = draft?.displayScript ?? draft?.result?.displayScript;
+  return typeof display === 'string' && compact(display) === compact(text) && typeof draft?.draftScript === 'string' ? draft.draftScript : text;
+}
 
 function timestamp(value) {
   const milliseconds = Math.max(0, Math.round(value * 1000));
@@ -35,7 +39,7 @@ export function setupSceneTimingUi(api) {
   function inputs() {
     const project = api.getProject(), text = fields.text.value;
     const pace = project.scriptDraft?.charsPerMinute || 330;
-    const characters = scriptLength(text, pace).characters;
+    const characters = scriptLength(narrationEstimate(project,text), pace).characters;
     const intervalSeconds = Number(fields.interval.value);
     let totalSeconds, basis;
     if (fields.useGoal.checked) {
@@ -95,8 +99,8 @@ export function setupSceneTimingUi(api) {
   }
   function refresh() {
     fields.goal.disabled = !fields.useGoal.checked;
-    const pace = api.getProject().scriptDraft?.charsPerMinute || 330, stats = scriptLength(fields.text.value, pace);
-    $('scriptStats').textContent = `${stats.characters.toLocaleString()}자 · 약 ${stats.estimatedMinutes.toFixed(1)}분 (추정)`;
+    const project = api.getProject(), pace = project.scriptDraft?.charsPerMinute || 330, estimated = narrationEstimate(project,fields.text.value), stats = scriptLength(estimated, pace);
+    $('scriptStats').textContent = `${stats.characters.toLocaleString()}자 · 약 ${stats.estimatedMinutes.toFixed(1)}분 (${estimated !== fields.text.value ? '음성용 글자 수로 ' : ''}추정)`;
     for (const preset of document.querySelectorAll('[data-image-interval]')) {
       preset.setAttribute('aria-pressed', String(Number(preset.dataset.imageInterval) === Number(fields.interval.value)));
     }

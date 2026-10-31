@@ -1,6 +1,7 @@
 /** BLKOUT Image Studio: project model, captions, and local storage. */
 
 import {normalizeTopicResearchResult} from './topic-research-protocol.js';
+import {normalizeProductionState, referencedProductionAssetIds, referencedProductionImageIds} from './production-state.js';
 
 export const SCHEMA_VERSION = 1;
 export const MAX_BACKUP_BYTES = 250 * 1024 * 1024;
@@ -192,8 +193,10 @@ function validateScriptDraft(input) {
   if (!plainObject(input)) fail('대본 제작 자료 형식이 올바르지 않습니다.');
   let serialized;
   try { serialized = JSON.stringify(input); } catch { fail('대본 제작 자료 형식이 올바르지 않습니다.'); }
-  if (typeof serialized !== 'string' || encoder.encode(serialized).byteLength > 600 * 1024) {
-    fail('대본 제작 자료는 합계 600KiB 이하로 줄여 주세요.');
+  const dualText = input.displayScript !== undefined || (plainObject(input.result) && input.result.displayScript !== undefined);
+  const draftLimit = dualText ? 2 * 1024 * 1024 : 600 * 1024;
+  if (typeof serialized !== 'string' || encoder.encode(serialized).byteLength > draftLimit) {
+    fail(`대본 제작 자료는 합계 ${dualText ? '2MiB' : '600KiB'} 이하로 줄여 주세요.`);
   }
   const targetMinutes = scriptInteger(input.targetMinutes, 8, 1, 60, '목표 분량');
   const charsPerMinute = scriptInteger(input.charsPerMinute, 330, 200, 500, '분당 글자 수');
@@ -242,6 +245,7 @@ function validateScriptDraft(input) {
       narrationStyle: resultStyle,
       sourceFidelity: resultFidelity,
       detailLevel: resultDetail,
+      ...(data.displayScript === undefined ? {} : {displayScript: scriptText(data.displayScript, '', 100000, '화면용 대본')}),
     };
   }
   if (input.draftScript !== undefined && typeof input.draftScript !== 'string') {
@@ -261,6 +265,7 @@ function validateScriptDraft(input) {
     sourceFidelity,
     detailLevel,
     draftScript,
+    ...(input.displayScript === undefined ? {} : {displayScript: scriptText(input.displayScript, '', 100000, '화면용 대본')}),
     result,
     ...(input.topicResearch === undefined || input.topicResearch === null ? {} : {topicResearch: validateTopicResearch(input.topicResearch)}),
   };
@@ -436,6 +441,7 @@ export function validateProject(input) {
     scriptDraft: validateScriptDraft(input.scriptDraft),
     scenePlan: validateScenePlan(input.scenePlan),
     imageStudio: validateImageStudio(input.imageStudio),
+    ...(input.production === undefined || input.production === null ? {} : {production: normalizeProductionState(input.production)}),
     settings: {
       transition: finiteNumber(settings.transition, 0.4, 0, 3, '전환 시간'),
       subtitles: settings.subtitles !== false,
@@ -750,6 +756,7 @@ export function referencedAssetIds(project) {
     project.audio?.narrationId,
     project.audio?.bgmId,
     ...(project.imageStudio?.references || []).map(reference => reference.assetId),
+    ...referencedProductionAssetIds(project),
   ].filter(Boolean));
 }
 
@@ -760,6 +767,7 @@ export function canonicalAssets(project, assets) {
   const imageIds = new Set([
     ...project.scenes.map(scene => scene.imageId),
     ...referenceIds,
+    ...referencedProductionImageIds(project),
   ].filter(Boolean));
   for (const id of referencedAssetIds(project)) {
     const asset = assets instanceof Map ? assets.get(id) : assets[id];

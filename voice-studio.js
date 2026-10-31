@@ -1,6 +1,7 @@
 import {combineVoiceChunks, VOICE_SAMPLE_RATE} from './voice-audio.js';
 import {apiFetch} from './api-client.js';
 import {createOperationStatus, nextPaint} from './operation-status.js';
+import {getNarrationScript, getDisplayScript} from './production-speech.js';
 
 const $ = id => document.getElementById(id);
 const characterCount = value => Array.from(String(value || '')).length;
@@ -65,7 +66,7 @@ export function setupVoiceStudio(api) {
   let projectId = api.getProject().id, busy = false, applying = false, configured = false, connectionSequence = 0, operation = 0, controller = null, connectionController = null;
   let lastResult = null, resultUrl = null, active = null, draftTitle = '', targetMinutes = 8;
   const run = task => event => {event?.preventDefault();Promise.resolve().then(task).catch(cause => {error.textContent = cause.message || '음성 작업을 마치지 못했어요.';});};
-  const projectScript = () => {const p = api.getProject();return p.scriptDraft?.draftScript ?? p.scriptDraft?.result?.script ?? p.scenes.map(scene => scene.caption).join('\n\n');};
+  const projectScript = () => getNarrationScript(api.getProject());
   function snapshot() {
     const p = api.getProject();return {projectId: p.id, projectScript: projectScript(), narrationId: p.audio?.narrationId ?? null,
       narrationAsset: api.getAssets().get(p.audio?.narrationId) ?? null,
@@ -185,7 +186,8 @@ export function setupVoiceStudio(api) {
   }));
   next.addEventListener('click', run(() => {
     const script = text.input.value.trim();if (!script) throw new Error('먼저 대본을 작성해 주세요.');
-    audio.pause();dialog.close();api.applyScriptDraft({script, title: draftTitle, targetMinutes});
+    const project = api.getProject(), hasDisplay = typeof project.scriptDraft?.displayScript === 'string' || typeof project.scriptDraft?.result?.displayScript === 'string';
+    audio.pause();dialog.close();api.applyScriptDraft({script,...(hasDisplay ? {displayScript:getDisplayScript(project)}:{}), title: draftTitle, targetMinutes});
   }));
   function reset() {stop('');cancelConnectionCheck();clearResult();text.input.value = '';projectId = api.getProject().id;if (dialog.open) dialog.close();render();}
   render();return {open, render, reset};

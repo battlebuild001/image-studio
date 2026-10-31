@@ -167,7 +167,8 @@ export function getScenePlanStatus(project) {
       typeof plan.sourceScript !== 'string' || !Array.isArray(plan.items) || !plan.items.length || plan.items.length > 200) return invalid('저장된 장면 계획을 다시 확인·확정해 주세요.');
   if (!Array.isArray(project.scenes) || project.scenes.length !== plan.items.length) return invalid('장면 수가 바뀌었어요. 타이밍 계획을 다시 확정해 주세요.');
   if (plan.narrationKey !== narrationPlanKey(project)) return invalid('내레이션 또는 자르기·시작 시간이 바뀌었어요. 타이밍 계획을 다시 확정해 주세요.');
-  if (typeof project.scriptDraft?.draftScript === 'string' && sourceKey(project.scriptDraft.draftScript) !== sourceKey(plan.sourceScript)) return invalid('대본이 바뀌었어요. 타이밍 계획을 다시 확정해 주세요.');
+  const displayScript = project.scriptDraft?.displayScript ?? project.scriptDraft?.result?.displayScript ?? project.scriptDraft?.draftScript;
+  if (typeof displayScript === 'string' && sourceKey(displayScript) !== sourceKey(plan.sourceScript)) return invalid('화면용 대본이 바뀌었어요. 타이밍 계획을 다시 확정해 주세요.');
   let start = 0;
   for (let index = 0; index < plan.items.length; index++) {
     const item = plan.items[index], scene = project.scenes[index];
