@@ -210,10 +210,10 @@ function aiImageNoticeLayout(ctx, width, height, position) {
   const panelWidth = Math.min(width * 0.94, Math.max(...lines.map(line => ctx.measureText(line).width), 0) + paddingX * 2);
   ctx.restore();
   const panelHeight = lines.length * lineHeight + paddingY * 2;
-  const left = position === 'bottom-left', inset = Math.min(width, height) * 0.02;
-  const x = left ? inset : (width - panelWidth) / 2;
+  const left = position === 'bottom-left', right = position === 'bottom-right', inset = Math.min(width, height) * 0.02;
+  const x = left ? inset : right ? width - inset - panelWidth : (width - panelWidth) / 2;
   return {scale, fontSize, paddingY, lineHeight, lines, panelWidth, panelHeight, x,
-    textAlign: left ? 'left' : 'center', textX: left ? x + paddingX : width / 2,
+    textAlign: left ? 'left' : right ? 'right' : 'center', textX: left ? x + paddingX : right ? width - inset - paddingX : width / 2,
     top: height - inset - panelHeight};
 }
 

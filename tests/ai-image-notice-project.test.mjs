@@ -28,7 +28,7 @@ test('legacy enabled notice stays centered and explicit placement is independent
   const legacy = createProject({settings: {aiImageNotice: true}});
   delete legacy.settings.aiImageNoticePosition;
   assert.equal(validateProject(legacy).settings.aiImageNoticePosition, 'bottom-center');
-  for (const aiImageNotice of [true, false]) for (const aiImageNoticePosition of ['bottom-center', 'bottom-left']) {
+  for (const aiImageNotice of [true, false]) for (const aiImageNoticePosition of ['bottom-center', 'bottom-left', 'bottom-right']) {
     const project = createProject({settings: {aiImageNotice, aiImageNoticePosition}}), before = structuredClone(project);
     const canonical = validateProject(project);
     assert.equal(canonical.settings.aiImageNotice, aiImageNotice);
@@ -40,7 +40,7 @@ test('legacy enabled notice stays centered and explicit placement is independent
 
 test('invalid notice positions reject without mutating the caller; absent and null positions use the legacy center', () => {
   const project = createProject({settings: {aiImageNotice: false, aiImageNoticePosition: 'bottom-left'}}), before = structuredClone(project);
-  for (const aiImageNoticePosition of ['', 'left', 'bottom-right', 'BOTTOM-LEFT', true, false, 1, [], {}]) {
+  for (const aiImageNoticePosition of ['', 'left', 'top-right', 'BOTTOM-LEFT', true, false, 1, [], {}]) {
     assert.throws(() => validateProject({...project, settings: {...project.settings, aiImageNoticePosition}}), /AI 생성 이미지 안내 위치/);
   }
   assert.equal(validateProject({...project, settings: {...project.settings, aiImageNoticePosition: null}}).settings.aiImageNoticePosition, 'bottom-center');
@@ -69,7 +69,7 @@ test('malformed notice values never turn the notice on or mutate a valid project
 });
 
 test('schema-one portable backups preserve an enabled or disabled notice and default old backups to off', async () => {
-  for (const aiImageNotice of [true, false]) for (const aiImageNoticePosition of ['bottom-center', 'bottom-left']) {
+  for (const aiImageNotice of [true, false]) for (const aiImageNoticePosition of ['bottom-center', 'bottom-left', 'bottom-right']) {
     const original = createProject({title: '안내 표시 백업 검증', settings: {aiImageNotice, aiImageNoticePosition, subtitles: false, branding: false}});
     const backup = await exportProjectBackup(original, new Map()), serialized = JSON.parse(await backup.text());
     assert.equal(serialized.version, 1);assert.equal(serialized.project.schemaVersion, 1);
@@ -115,9 +115,15 @@ test('actual IndexedDB autosave, library and workspaces retain each project noti
       const other = p.createProject({id: initial.id, title: '독립된 영상', settings: {aiImageNotice: false, aiImageNoticePosition: 'bottom-center'}});
       await w.saveWorkspaceProject(second.workspace.id, other, assets);
       const first = await w.loadWorkspace(firstId), independent = await w.loadWorkspace(second.workspace.id);
+      const rightProject = p.createProject({title: '오른쪽 하단 안내 영상', settings: {aiImageNotice: true, aiImageNoticePosition: 'bottom-right'}});
+      await p.saveProject(rightProject, assets);const rightAutosave = await p.loadProject();
+      await p.saveLibraryProject(rightProject, assets);const rightLibrary = await p.loadLibraryProject(rightProject.id);
+      const third = await w.createWorkspace('오른쪽 하단 안내');
+      await w.saveWorkspaceProject(third.workspace.id, rightProject, assets);const rightWorkspace = await w.loadWorkspace(third.workspace.id);
       const disabled = p.createProject({...initial, settings: {...initial.settings, aiImageNotice: false}});
       await p.saveProject(disabled, assets);const disabledAutosave = await p.loadProject();
-      return {autosave: autosave.project, library: library.project, first: first.project, second: independent.project, disabled: disabledAutosave.project};
+      return {autosave: autosave.project, library: library.project, first: first.project, second: independent.project, disabled: disabledAutosave.project,
+        rightAutosave: rightAutosave.project, rightLibrary: rightLibrary.project, rightWorkspace: rightWorkspace.project};
     });
     for (const name of ['autosave', 'library', 'first']) {
       assert.equal(saved[name].settings.aiImageNotice, true);
@@ -128,6 +134,10 @@ test('actual IndexedDB autosave, library and workspaces retain each project noti
     assert.equal(saved.second.settings.aiImageNoticePosition, 'bottom-center');
     assert.equal(saved.disabled.settings.aiImageNotice, false);
     assert.equal(saved.disabled.settings.aiImageNoticePosition, 'bottom-left');
+    for (const name of ['rightAutosave', 'rightLibrary', 'rightWorkspace']) {
+      assert.equal(saved[name].settings.aiImageNotice, true);
+      assert.equal(saved[name].settings.aiImageNoticePosition, 'bottom-right');
+    }
     assert.deepEqual(errors, []);
   } finally {await browser.close();await new Promise(resolve => server.close(resolve));}
 });

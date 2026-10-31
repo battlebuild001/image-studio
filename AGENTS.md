@@ -21,9 +21,9 @@ credential names, official endpoints and provider metadata until an actual adapt
 change is requested; neutral copy does not add support for another provider.
 Optional settings.aiImageNotice controls a fixed small bottom AI-image notice.
 Default/missing legacy is false; keep it independent of subtitles and branding.
-settings.aiImageNoticePosition supports bottom-center (default/legacy) and
-bottom-left. Preserve the selected position even while notice is off. Left
-placement uses a small safe inset and left-aligned text; center pixels remain
+settings.aiImageNoticePosition supports bottom-center (default/legacy), bottom-left
+and bottom-right. Preserve the selected position even while notice is off. Side
+placements use mirrored safe insets with left/right-aligned text; center pixels remain
 unchanged. Expose 위치 only when the notice is enabled.
 Render the exact requested text in Canvas for preview, PNG and video export,
 reserve caption space, and persist the flag through undo/workspaces/backups.

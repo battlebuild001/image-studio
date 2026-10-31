@@ -35,7 +35,7 @@ test('notice absence and explicit false leave the legacy frame drawing exactly u
   assert.deepEqual(draw(project, assets).trace, legacy);
   project.settings.aiImageNotice = true;assert.notDeepEqual(draw(project, assets).trace, legacy);
   project.settings.aiImageNotice = false;assert.deepEqual(draw(project, assets).trace, legacy, 'in-place toggling cannot cache a stale notice');
-  project.settings.aiImageNoticePosition = 'bottom-left';assert.deepEqual(draw(project, assets).trace, legacy, 'a stored position cannot enable a disabled notice');
+  for (const position of ['bottom-left', 'bottom-right']) {project.settings.aiImageNoticePosition = position;assert.deepEqual(draw(project, assets).trace, legacy, 'a stored position cannot enable a disabled notice');}
 });
 
 test('missing and explicit center positions keep the existing notice drawing unchanged', () => {
@@ -44,7 +44,28 @@ test('missing and explicit center positions keep the existing notice drawing unc
   const legacy = draw(project, assets).trace;
   project.settings.aiImageNoticePosition = 'bottom-center';assert.deepEqual(draw(project, assets).trace, legacy);
   project.settings.aiImageNoticePosition = 'bottom-left';assert.notDeepEqual(draw(project, assets).trace, legacy);
+  project.settings.aiImageNoticePosition = 'bottom-right';assert.notDeepEqual(draw(project, assets).trace, legacy);
   project.settings.aiImageNoticePosition = 'bottom-center';assert.deepEqual(draw(project, assets).trace, legacy);
+});
+
+test('right-bottom text and panel mirror the safe left inset at every supported orientation and resolution', () => {
+  const {project, assets} = fixture();project.settings.aiImageNotice = true;
+  // With captions/branding disabled, this is the notice's actual rounded panel.
+  const panel = ctx => {const arcs = ctx.trace.filter(row => row[0] === 'arcTo');return {left: arcs[2][1], right: arcs[0][1], top: arcs[0][2], bottom: arcs[0][4]};};
+  for (const [width, height] of [[1280, 720], [1920, 1080], [720, 1280], [1080, 1920]]) {
+    project.settings.aiImageNoticePosition = 'bottom-left';const leftFrame = draw(project, assets, width, height), left = text(leftFrame);
+    project.settings.aiImageNoticePosition = 'bottom-right';const rightFrame = draw(project, assets, width, height), right = text(rightFrame);
+    const min = Math.min(width, height), inset = min * .02, expectedX = width - inset - 14 * min / 1080;
+    assert.equal(right.map(line => line.text).join(' '), AI_IMAGE_NOTICE_TEXT);
+    assert.deepEqual(right.map(({text, y, fontSize, width}) => ({text, y, fontSize, width})), left.map(({text, y, fontSize, width}) => ({text, y, fontSize, width})));
+    assert.ok(right.every(line => line.textAlign === 'right' && Math.abs(line.x - expectedX) < .001));
+    assert.ok(right.every(line => line.x - line.width >= width * .04 && line.x <= width - inset));
+    assert.ok(right.every((line, index) => Math.abs(line.x + left[index].x - width) < .001), 'text anchors mirror around the frame center');
+    const leftPanel = panel(leftFrame), rightPanel = panel(rightFrame);
+    assert.ok(Math.abs(leftPanel.left - inset) < .001);assert.ok(Math.abs(rightPanel.right - (width - inset)) < .001);
+    assert.ok(Math.abs(leftPanel.left + rightPanel.right - width) < .001 && Math.abs(leftPanel.right + rightPanel.left - width) < .001, 'background panel mirrors along with the text');
+    assert.equal(leftPanel.top, rightPanel.top);assert.equal(leftPanel.bottom, rightPanel.bottom);
+  }
 });
 
 test('left-bottom notice aligns text to the safe left inset without changing wrap or vertical caption space', () => {
@@ -86,9 +107,9 @@ test('footer wraps responsively instead of clipping or shrinking portrait text b
   }
 });
 
-test('all supported caption positions remain above both notice positions without changing the exact text', () => {
+test('all supported caption positions remain above all three notice positions without changing the exact text', () => {
   const {project, assets} = fixture();project.settings.aiImageNotice = true;project.settings.subtitles = true;
-  for (const [width, height] of [[1280, 720], [720, 1280]]) for (const captionPosition of ['top', 'center', 'bottom']) for (const fontSize of [20, 48, 100]) for (const aiImageNoticePosition of ['bottom-center', 'bottom-left']) {
+  for (const [width, height] of [[1280, 720], [720, 1280]]) for (const captionPosition of ['top', 'center', 'bottom']) for (const fontSize of [20, 48, 100]) for (const aiImageNoticePosition of ['bottom-center', 'bottom-left', 'bottom-right']) {
     Object.assign(project.settings, {captionPosition, fontSize, captionStrokeWidth: 2, aiImageNoticePosition});
     const ctx = draw(project, assets, width, height), lines = text(ctx);
     const footerIndex = lines.findIndex(line => line.font.startsWith('500 '));
