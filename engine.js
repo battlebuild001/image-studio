@@ -300,22 +300,20 @@ export function renderFrame(ctx, project, assets, time = 0, width = ctx.canvas.w
       ctx.drawImage(surface.canvas, 0, 0);ctx.restore();
     }
   }
+  // The optional heading is the user's project title, never a fixed channel name.
+  const title = settings.branding && typeof project.title === 'string' ? project.title.trim() : '';
   // Very light edge shading helps white titles without obscuring the user's image.
   const shade = ctx.createLinearGradient(0, 0, 0, height * 0.22);
-  shade.addColorStop(0, settings.branding ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0)');
+  shade.addColorStop(0, title ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0)');
   shade.addColorStop(1, 'rgba(0,0,0,0)');ctx.fillStyle = shade;ctx.fillRect(0, 0, width, height * 0.22);
   const scale = Math.min(width, height) / 1080;
-  if (settings.branding) {
+  if (title) {
     const x = width * 0.045, y = height * 0.055;
     ctx.fillStyle = '#d2dbb3';ctx.fillRect(x, y, 4 * scale, 26 * scale);
     ctx.textAlign = 'left';ctx.textBaseline = 'middle';
-    ctx.font = `700 ${20 * scale}px ${FONT}`;ctx.fillStyle = '#f2f4ef';
-    ctx.fillText('BATTLE TABLE HOBBY', x + 16 * scale, y + 13 * scale);
-    if (project.title) {
-      ctx.font = `500 ${18 * scale}px ${FONT}`;ctx.fillStyle = '#d4d8d2';
-      const titleLines = wrapText(ctx, project.title, width * 0.7);
-      ctx.fillText(titleLines[0] || '', x + 16 * scale, y + 43 * scale);
-    }
+    ctx.font = `500 ${18 * scale}px ${FONT}`;ctx.fillStyle = '#d4d8d2';
+    const titleLines = wrapText(ctx, title, width * 0.7);
+    ctx.fillText(titleLines[0] || '', x + 16 * scale, y + 13 * scale);
   }
   const notice = settings.aiImageNotice === true ? aiImageNoticeLayout(ctx, width, height, settings.aiImageNoticePosition) : null;
   if (settings.subtitles !== false) {
