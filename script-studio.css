@@ -18,6 +18,21 @@
 .script-studio-columns { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 25px; align-items: start; }
 .script-input-panel, .script-result-panel { min-width: 0; }
 .script-input-panel > h3, .script-result-panel > h3 { font-size: 13px; color: #d9e1dc; margin: 0 0 15px; }
+.script-topic-card { margin: 0 0 23px; padding: 15px; border: 1px solid #756447; border-radius: 7px; background: #202921; min-width: 0; }
+.script-topic-card > h3 { margin: 0; font-size: 14px; color: #e6c996; }
+.script-topic-card .script-studio-field { margin-top: 12px; }
+.script-topic-card .script-generation-controls { margin-top: 12px; }
+.script-topic-state { margin: 11px 0 0; color: #b8cbb8; font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
+.script-topic-state[data-state=stale] { color: #dbbe89; }
+.script-topic-results { margin: 0 0 22px; padding: 13px; border: 1px solid #52614d; border-radius: 7px; background: #162421; min-width: 0; }
+.script-topic-results[hidden] { display: none; }
+.script-topic-results > summary { cursor: pointer; color: #d1d5b3; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.script-topic-results:not([open]) > :not(summary) { display: none !important; }
+.script-topic-results > .script-summary { margin-top: 13px; }
+.script-topic-sections > section { margin-top: 16px; }
+.script-topic-sections h4 { margin: 0 0 6px; font-size: 12px; color: #c7d1c4; }
+.script-topic-section-links { display: flex; gap: 5px 10px; flex-wrap: wrap; margin-top: 6px; }
+.script-topic-section-links a { font-size: 10px; line-height: 1.8; color: #9cbcb7; text-decoration: underline; overflow-wrap: anywhere; }
 .script-studio-field { display: grid; min-width: 0; gap: 7px; margin: 15px 0 0; color: #adbdc2; font-size: 11px; }
 .script-studio-field input, .script-studio-field textarea { width: 100%; min-width: 0; max-width: 100%; font-size: 12px; padding: 9px 10px; }
 .script-studio-field input[type=file] { border: 1px dashed #46544f; background: #1a2526; border-radius: 6px; cursor: pointer; font-size: 11px; }

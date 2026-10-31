@@ -7,6 +7,7 @@ const ROUTES = new Set([
   '/api/voice/config', '/api/voice/generate',
   '/api/image/config', '/api/image/generate', '/api/image/plan',
   '/api/transcript/config', '/api/transcript/analyze',
+  '/api/research/config', '/api/research/collect',
 ]);
 const PROVIDER_HOSTS = new Set([
   'api.openai.com', 'api.anthropic.com', 'generativelanguage.googleapis.com',

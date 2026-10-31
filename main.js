@@ -309,6 +309,11 @@ function applyScriptDraft({script,title,targetMinutes}){
  pause();$('scriptText').value=script;$('scriptUseDuration').checked=!project.audio.narrationId;$('scriptGoalMinutes').value=String(targetMinutes);
  pendingScriptTitle=title||null;$('promptTopic').value=title||project.title;timingGeneration++;sceneTimingUi.reset();$('scriptDialog').showModal();
 }
+function researchedVisualBrief(value){
+ const draft=value.scriptDraft,research=draft?.topicResearch,result=research?.result;
+ if(!result||research.topic.trim()!==result.topic.trim()||research.instructions!==(draft.instructions||''))return undefined;
+ return result.visualBrief||undefined;
+}
 async function applyScript(){
  if(timingApplying)return;
  const raw=$('scriptText').value.trim(),targetMinutes=Number($('scriptGoalMinutes').value);
@@ -323,7 +328,13 @@ async function applyScript(){
   await nextPaint();
   if(project.scenes.length){operation.update('기존 프로젝트를 보관하고 있어요.');await archiveCurrent();}
   if(!($('scriptDialog').open&&request===timingGeneration&&project.id===id&&workspaceCatalog?.activeId===owner))return;
-  mutate(p=>{p.scenes=prepared.scenes;p.scenePlan={...prepared.scenePlan,confirmedAt:new Date().toISOString(),...(p.scenePlan?.visualBrief!==undefined?{visualBrief:p.scenePlan.visualBrief}:{})};if(!preserveTimedCaptions){p.captionMode='auto';p.captions=[];p.captionAnalysis=null;}p.scriptDraft={...(p.scriptDraft||{sourceText:'',instructions:'',charsPerMinute:330,result:null}),draftScript:raw,targetMinutes:Number.isInteger(targetMinutes)&&targetMinutes>=1&&targetMinutes<=60?targetMinutes:(p.scriptDraft?.targetMinutes||8)};if(p.scriptDraft.result)p.scriptDraft.result.script=raw;if(pendingScriptTitle)p.title=pendingScriptTitle.slice(0,120);selectedId=p.scenes[0]?.id;selectedIds=new Set(selectedId?[selectedId]:[]);current=0;});
+  mutate(p=>{
+   const visualBrief=p.scenePlan?.visualBrief!==undefined?p.scenePlan.visualBrief:researchedVisualBrief(p);
+   p.scenes=prepared.scenes;p.scenePlan={...prepared.scenePlan,confirmedAt:new Date().toISOString(),...(visualBrief!==undefined?{visualBrief}:{})};
+   if(!preserveTimedCaptions){p.captionMode='auto';p.captions=[];p.captionAnalysis=null;}
+   p.scriptDraft={...(p.scriptDraft||{sourceText:'',instructions:'',charsPerMinute:330,result:null}),draftScript:raw,targetMinutes:Number.isInteger(targetMinutes)&&targetMinutes>=1&&targetMinutes<=60?targetMinutes:(p.scriptDraft?.targetMinutes||8)};
+   if(p.scriptDraft.result)p.scriptDraft.result.script=raw;if(pendingScriptTitle)p.title=pendingScriptTitle.slice(0,120);selectedId=p.scenes[0]?.id;selectedIds=new Set(selectedId?[selectedId]:[]);current=0;
+  });
   operation.update('확정한 장면과 타이밍을 저장하고 있어요.');await persist();if(!($('scriptDialog').open&&request===timingGeneration&&project.id===id&&workspaceCatalog?.activeId===owner))return;pendingScriptTitle=null;operation.finish('장면 타이밍을 저장했어요.');$('scriptDialog').close();toast(`${project.scenes.length}개 장면의 전환 타이밍을 확정했어요. ‘영상 전체 이미지 만들기’에서 전체 구성을 만든 뒤 생성하세요.`);
  }catch(error){operation.fail(error.message);$('sceneTimingError').textContent=error.message;throw error;}
  finally{if(operation.isRunning)operation.cancel('현재 계획의 저장을 중단했어요.');timingApplying=false;controls.forEach((control,index)=>control.disabled=disabled[index]);sceneImageBatch?.render();renderWorkflow();if($('scriptDialog').open)sceneTimingUi.refresh();}
