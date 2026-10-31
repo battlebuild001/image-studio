@@ -8,6 +8,7 @@ import {getTimeline, getCaptions} from './project.js';
 import {drawSceneEffect} from './scene-effects.js';
 
 const FONT = '"Pretendard", "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
+export const AI_IMAGE_NOTICE_TEXT = '해당 이미지는 이해를 돕기위한 ai 생성 이미지입니다. 본 원작과는 관련이 없습니다.';
 const clamp = (n, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, Number.isFinite(n) ? n : lo));
 const lerp = (a, b, p) => a + (b - a) * p;
 const ease = p => p * p * (3 - 2 * p);
@@ -201,7 +202,29 @@ function wrapText(ctx, text, maxWidth) {
   return lines;
 }
 
-function drawCaption(ctx, text, settings, width, height) {
+function aiImageNoticeLayout(ctx, width, height) {
+  const scale = Math.min(width, height) / 1080, fontSize = (width < height ? 30 : 22) * scale;
+  const paddingX = 14 * scale, paddingY = 6 * scale, lineHeight = fontSize * 1.45;
+  ctx.save();ctx.font = `500 ${fontSize}px ${FONT}`;
+  const lines = wrapText(ctx, AI_IMAGE_NOTICE_TEXT, width * 0.92 - paddingX * 2);
+  const panelWidth = Math.min(width * 0.94, Math.max(...lines.map(line => ctx.measureText(line).width), 0) + paddingX * 2);
+  ctx.restore();
+  const panelHeight = lines.length * lineHeight + paddingY * 2;
+  return {scale, fontSize, paddingY, lineHeight, lines, panelWidth, panelHeight,
+    x: (width - panelWidth) / 2, top: height - Math.min(width, height) * 0.02 - panelHeight};
+}
+
+function drawAiImageNotice(ctx, layout, width) {
+  const {scale, fontSize, paddingY, lineHeight, lines, panelWidth, panelHeight, x, top} = layout;
+  ctx.save();ctx.globalAlpha = 1;ctx.globalCompositeOperation = 'source-over';
+  ctx.shadowColor = 'rgba(0,0,0,0)';ctx.shadowBlur = 0;ctx.shadowOffsetY = 0;
+  ctx.fillStyle = 'rgba(0,0,0,0.68)';roundedRect(ctx, x, top, panelWidth, panelHeight, 5 * scale);ctx.fill();
+  ctx.font = `500 ${fontSize}px ${FONT}`;ctx.fillStyle = '#ffffff';ctx.textAlign = 'center';ctx.textBaseline = 'middle';
+  lines.forEach((line, index) => ctx.fillText(line, width / 2, top + paddingY + (index + 0.5) * lineHeight));
+  ctx.restore();
+}
+
+function drawCaption(ctx, text, settings, width, height, maximumBottom) {
   if (!text?.trim()) return;
   const scale = Math.min(width, height) / 1080;
   const maxWidth = width * (width < height ? 0.82 : 0.84);
@@ -224,7 +247,10 @@ function drawCaption(ctx, text, settings, width, height) {
   let top = Math.max(height * 0.12, height - bottom - panelHeight);
   if (settings.captionPosition === 'top') top = height * 0.12;
   if (settings.captionPosition === 'center') top = (height - panelHeight) / 2;
-  top = clamp(top, height * 0.04, Math.max(height * 0.04, height * 0.96 - panelHeight));
+  top = clamp(top, height * 0.04, Math.max(height * 0.04, (maximumBottom ?? height * 0.96) - panelHeight));
+  // Very long imported cues may exceed the available frame even at the minimum
+  // font size. Keep that text/panel above the notice instead of painting over it.
+  if (maximumBottom !== undefined) {ctx.save();ctx.beginPath();ctx.rect(0, 0, width, maximumBottom);ctx.clip();}
   ctx.save();
   ctx.fillStyle = settings.captionBackground || '#070a0d';
   ctx.globalAlpha = clamp(settings.captionOpacity ?? 0.83);
@@ -241,6 +267,7 @@ function drawCaption(ctx, text, settings, width, height) {
     ctx.fillText(line, width / 2, y);
   });
   ctx.shadowBlur = 0;ctx.shadowOffsetY = 0;
+  if (maximumBottom !== undefined) ctx.restore();
 }
 
 /** Synchronous renderer used by both preview and the export canvas. */
@@ -287,10 +314,12 @@ export function renderFrame(ctx, project, assets, time = 0, width = ctx.canvas.w
       ctx.fillText(titleLines[0] || '', x + 16 * scale, y + 43 * scale);
     }
   }
+  const notice = settings.aiImageNotice === true ? aiImageNoticeLayout(ctx, width, height) : null;
   if (settings.subtitles !== false) {
     const cue = state.captions.find(caption => t >= caption.start && t < caption.end);
-    if (cue) drawCaption(ctx, cue.text, settings, width, height);
+    if (cue) drawCaption(ctx, cue.text, settings, width, height, notice ? notice.top - 10 * scale : undefined);
   }
+  if (notice) drawAiImageNotice(ctx, notice, width);
   ctx.restore();
 }
 
