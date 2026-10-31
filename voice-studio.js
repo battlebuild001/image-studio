@@ -45,7 +45,7 @@ export function setupVoiceStudio(api) {
   const pitch = field('voicePitch', '음높이');pitch.input.min = -5;pitch.input.max = 5;pitch.input.step = 1;pitch.input.value = '0';
   const volume = field('voiceVolume', '음량');volume.input.min = -5;volume.input.max = 5;volume.input.step = 1;volume.input.value = '0';
   settings.append(speaker.wrapper, speed.wrapper, pitch.wrapper, volume.wrapper);body.append(settings);
-  body.append(node('p', 'voice-privacy', '‘음성 생성’을 누를 때만 이 대본과 목소리 설정이 CLOVA Voice 서비스로 전송되며 요금이 발생할 수 있어요. 긴 대본은 나누어 합성하고 하나의 WAV로 합쳐요. 취소 전 처리된 구간에는 요금이 발생할 수 있습니다. 이미지·배경음악은 보내지 않아요.'));
+  body.append(node('p', 'voice-privacy', '‘음성 생성’을 누를 때만 이 대본과 목소리 설정이 연결된 음성 API로 전송되며 요금이 발생할 수 있어요. 긴 대본은 나누어 합성하고 하나의 WAV로 합쳐요. 취소 전 처리된 구간에는 요금이 발생할 수 있습니다. 이미지·배경음악은 보내지 않아요.'));
   const actions = node('div', 'voice-actions');const generate = button('generateVoiceBtn', '음성 생성', 'primary'), cancel = button('cancelVoiceBtn', '생성 취소', 'ghost');cancel.hidden = true;actions.append(generate, cancel);body.append(actions);
   const status = node('p', 'voice-status');status.id = 'voiceStatus';status.setAttribute('role', 'status');status.setAttribute('aria-live', 'polite');
   const error = node('p', 'voice-error');error.id = 'voiceError';error.setAttribute('role', 'alert');body.append(status, error);
@@ -101,7 +101,7 @@ export function setupVoiceStudio(api) {
       const response = await request('/api/voice/config', {signal: abort.signal});if (sequence !== connectionSequence) return;
       configured = response.configured === true;
       service.dataset.state = configured ? 'ready' : 'unavailable';
-      serviceText.textContent = configured ? 'CLOVA Voice 한국어 음성을 사용할 수 있어요. ‘음성 생성’을 누를 때만 합성해요.'
+      serviceText.textContent = configured ? '연결된 음성 API로 한국어 음성을 만들 수 있어요. ‘음성 생성’을 누를 때만 합성해요.'
         : '대본은 준비됐어요. 음성 생성은 서버 연결 후 사용하거나 MP3·WAV 파일을 불러오세요.';
       task.finish(configured?'음성 생성 연결 확인 완료':'연결 확인 완료 · 파일 불러오기는 사용할 수 있어요.');
     } catch {
