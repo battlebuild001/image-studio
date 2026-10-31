@@ -19,6 +19,13 @@ Voice-provider choice is undecided. Keep user-visible voice guidance, demo capti
 and API errors provider-neutral (음성 API / 음성 생성). Preserve implementation
 credential names, official endpoints and provider metadata until an actual adapter
 change is requested; neutral copy does not add support for another provider.
+Optional settings.aiImageNotice controls a fixed small bottom AI-image notice.
+Default/missing legacy is false; keep it independent of subtitles and branding.
+Render the exact requested text in Canvas for preview, PNG and video export,
+reserve caption space, and persist the flag through undo/workspaces/backups.
+For notice changes run npm run test:ai-notice-browser and npm test; verify readable
+landscape/portrait layouts, off-state pixel parity and a real short exported video
+with images, narration, BGM and captions. Do not replace this with a DOM overlay.
 
 ## Architecture
 
