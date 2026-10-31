@@ -44,7 +44,7 @@ async function narrationBuffer(asset,signal){if(asset.audioBuffer)return asset.a
 export async function buildShortsVariant(project,assets,result,{targetSeconds=60,signal}={}) {
   const timeline=getTimeline(project),segments=validateShortSegments(result.segments,{durationSeconds:timeline.duration,targetSeconds});
   if(signal?.aborted)throw new DOMException('쇼츠 생성을 취소했어요.','AbortError');const captions=extractShortCaptions(project,segments),scenes=extractShortScenes(project,segments),title=String(result.title||project.title+' 쇼츠').slice(0,200),text=captions.map(cue=>cue.text).join('\n\n');
-  const production=clone(project.production||{version:1});delete production.versions;delete production.shorts;delete production.publishing;delete production.visual;delete production.changes;if(production.budget)production.budget={...production.budget,spentUsd:0,ledger:[]};
+  const production=clone(project.production||{version:1});delete production.versions;delete production.shorts;delete production.publishing;delete production.youtube;delete production.visual;delete production.changes;if(production.budget)production.budget={...production.budget,spentUsd:0,ledger:[]};
   const spoken=applyPronunciations(text,production.speech?.pronunciations||[],project.scriptDraft?.narrationStyle||'standard');
   const next=createProject({...clone(project),id:createId('episode'),title,aspect:'9:16',scenes,captions,captionMode:'srt',captionAnalysis:null,scenePlan:null,production,
     scriptDraft:{...(clone(project.scriptDraft)||{sourceText:'',instructions:'',charsPerMinute:330,result:null}),draftScript:spoken,displayScript:text,targetMinutes:Math.max(1,Math.ceil(scenes.reduce((sum,scene)=>sum+scene.duration,0)/60)),result:null},

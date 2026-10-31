@@ -7,6 +7,7 @@ import {setupProductionDiagrams} from './production-diagrams.js';
 import {setupProductionChannels} from './production-channels.js';
 import {setupProductionShorts} from './production-shorts.js';
 import {setupProductionPublishing} from './production-publishing.js';
+import {setupYouTubeStudio} from './youtube-studio.js';
 
 const SECTIONS = [
   ['speech', '대본·발음', setupProductionSpeech],
@@ -18,6 +19,7 @@ const SECTIONS = [
   ['channels', '채널 프리셋', setupProductionChannels],
   ['shorts', '쇼츠', setupProductionShorts],
   ['publishing', '게시 준비', setupProductionPublishing],
+  ['youtube', '유튜브 업로드', setupYouTubeStudio],
 ];
 function node(tag, className = '', text) {const value = document.createElement(tag);value.className = className;if (text !== undefined) value.textContent = text;return value;}
 

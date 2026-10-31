@@ -91,6 +91,54 @@ need a real short export with images, narration, BGM and captions; inspect decod
 playback and ffprobe audio/video streams. Run real exports sequentially. Never
 describe these fixtures as live AI quality or actual billing verification.
 
+## YouTube integration
+
+The user explicitly requested account-connected uploads including editable title
+and description. This authorizes the optional upload feature and its deployment.
+Tests must still use synthetic video and intercepted Google responses; never
+publish user media as a regression check or claim authenticated upload success.
+
+- `dist/youtube-protocol.js`: strict public Web OAuth client ID, title100Unicode
+  characters, description5000UTF8bytes, aggregate tag500character limits, privacy
+  and disclosure fields, safe receipt validation and render-source signatures.
+  Explicit publishing import must preserve text or report limits, never silently
+  truncate description facts. Include captionAnalysis in export signatures.
+- `dist/youtube-client.js`: official Google Identity Services token model and
+  direct resumable YouTube REST transport. Require upload + readonly scopes for
+  uploads and channel identity. Only public clientID is locally stored; tokens,
+  channel auth state and resumable capability URLs stay in memory. SDK loading is
+  explicit; separate cold SDK preparation from the popup's user gesture.
+  Validate exact Google session hosts/paths before forwarding credentials. Keep
+  fetch redirects disabled, bounded response-body timeouts and abort cleanup.
+  Use confirmed308Range acknowledgements and explicit same-session status probes.
+  Never initialize another upload automatically after ambiguous final responses.
+- `dist/youtube-studio.js` / `.css`: Korean upload form, connected destination,
+  file/current-export selection, publishing metadata import, progress and resume,
+  one-shot automatic upload arming and project-scoped receipts. Auto arming is
+  memory-only, explicit and consumed once. Preserve it through video export and
+  closing the setup dialog; cancel on content/project/workspace/channel changes.
+  Root delivers an actual exported Blob only after exportController is cleared.
+  Closing active upload cancels transmission, not remote video deletion.
+- `dist/youtube-storage.js`: atomic receipt cleanup across saved current projects,
+  workspace projects and library records. Preserve draft text/media/timestamps.
+  Root serializes saves and clears live Undo/Redo copies as well. Disconnect
+  revokes access and removes stored API history; a separate clear-history action
+  never deletes YouTube videos. Preserve actual upload receipts through ordinary
+  Undo/Redo. New shorts projects must not inherit original upload records.
+- `dist/youtube-privacy.html`: public OAuth privacy notice, actual data handling,
+  local deletion and Google permission controls, YouTube Terms/GooglePrivacy links.
+  Keep its claims aligned with code. Do not add a clientsecret input or backend
+  requirement. Google JavaScript origin is https://battlebuild001.github.io,
+  without /image-studio/; the OAuth Client ID is supplied by the user in-app.
+
+Run npm test and test:youtube-browser. Cover OAuth grants/expiry/popup abort,
+exact metadata and actual Blob chunks, interruption/probe/no duplicate uploads,
+invalid session destinations, body timeout, scoped cancellation, backup credential
+exclusion, receipt Undo retention/deletion, mobile and an actual short local
+image+narration+BGM+caption export followed by a mocked upload. Run real exports
+sequentially. Current official Google docs are linked in README; avoid hardcoding
+outdated quota numbers or blanket project private-only restrictions.
+
 ## Architecture
 
 - `dist/index.html` and `dist/style.css`: editor UI.
@@ -637,7 +685,9 @@ The user explicitly requested optional research/script generation, fixed-referen
 image generation, narration recognition for timed captions and CLOVA voice
 synthesis after drafting. This authorizes the explicit draft-to-voice workflow
 and publication of its static UI; it does not authorize paid video-generation
-services or publishing user media. Static `dist/` deployment alone does not run
+services or publishing user media during routine fixes. The later explicit
+YouTube request authorizes its dedicated reviewed/armed upload workflow, without
+authorizing regression tests to publish actual user media. Static `dist/` deployment alone does not run
 `/api/script/*`, `/api/voice/*`, `/api/image/*` or `/api/transcript/*`.
 Public shared-key API backends require authentication and per-user usage controls;
 do not expose the local development server as an unauthenticated billing proxy.
