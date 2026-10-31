@@ -37,7 +37,7 @@ export function setupApiSettings(api = {}) {
   const title = node('h2', '', '설정 · API 연결');title.id = 'apiSettingsTitle';titles.append(title);
   const close = button('closeApiSettingsHeaderBtn', '×', 'icon-button');close.setAttribute('aria-label', 'API 설정 닫기');heading.append(titles, close);dialog.append(heading);
   const body = node('div', 'dialog-body');dialog.append(body);
-  body.append(node('p', 'api-settings-intro', 'OpenAI API 키를 입력하면 별도 서버 없이 대본 작성·레퍼런스 이미지 생성·음성 분석을 사용할 수 있어요. CLOVA 음성 합성은 선택적인 서버 연결을 사용해요.'));
+  body.append(node('p', 'api-settings-intro', 'OpenAI API 키를 입력하면 별도 서버 없이 대본 작성·레퍼런스 이미지 생성·음성 분석을 사용할 수 있어요. 음성 생성은 별도의 음성 API 연결이 필요해요.'));
   const tabs = node('div', 'api-settings-tabs');tabs.setAttribute('role', 'tablist');tabs.setAttribute('aria-label', 'API 연결 방식');
   const directTab = button('openAiSettingsTab', 'OpenAI API', 'api-settings-tab'), serverTab = button('serverConnectionTab', '서버 연결 (선택)', 'api-settings-tab');
   const directPanel = node('section', 'api-settings-panel'), serverPanel = node('section', 'api-settings-panel');directPanel.id = 'openAiSettingsPanel';serverPanel.id = 'serverConnectionPanel';
@@ -66,7 +66,7 @@ export function setupApiSettings(api = {}) {
   const directActions = node('div', 'api-settings-actions'), verify = button('verifyOpenAiKeyBtn', '연결 확인·저장', 'primary'), save = button('saveOpenAiSettingsBtn', '저장', 'outline'), clearKey = button('clearOpenAiKeyBtn', '키 삭제', 'ghost');directActions.append(verify, save, clearKey);directPanel.append(directActions);
   const directStatus = announcement('openAiSettingsStatus', 'api-settings-status', 'status'), directErrorText = announcement('openAiSettingsError', 'api-settings-error', 'alert');directPanel.append(directStatus, directErrorText);
 
-  serverPanel.append(node('p', 'api-settings-help', '서버에 설정한 키를 사용하거나 CLOVA 음성을 만들 때 연결하세요. OpenAI API 탭에 직접 키를 입력한 경우 대본·이미지 생성용 서버는 필요하지 않아요.'));
+  serverPanel.append(node('p', 'api-settings-help', '서버에 설정한 키를 사용하거나 음성 생성 API를 연결할 때 사용하세요. OpenAI API 탭에 직접 키를 입력한 경우 대본·이미지 생성용 서버는 필요하지 않아요.'));
   const serverGuide = node('p', 'api-settings-help'), createServer = node('a', '', 'AI 서버 만들기 (Render 무료 플랜)');
   createServer.href = 'https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fbattlebuild001%2Fimage-studio%2Ftree%2Fimage-studio-server';createServer.target = '_blank';createServer.rel = 'noopener noreferrer';serverGuide.append('서버가 필요한 경우 ', createServer, '에서 배포할 수 있어요.');serverPanel.append(serverGuide);
   const current = node('p', 'api-settings-current');current.id = 'apiSettingsCurrent';serverPanel.append(current);

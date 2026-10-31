@@ -15,6 +15,10 @@ Users choose an image-change interval, review and confirm the timeline, then exp
 Users configure their own OpenAI key in the app Settings for browser-direct script, image and timestamped transcription requests; Render is optional.
 Category workspaces keep independent in-progress projects; users can add their
 own topics beyond the four defaults. Keep branding and new-project titles neutral.
+Voice-provider choice is undecided. Keep user-visible voice guidance, demo captions
+and API errors provider-neutral (음성 API / 음성 생성). Preserve implementation
+credential names, official endpoints and provider metadata until an actual adapter
+change is requested; neutral copy does not add support for another provider.
 
 ## Architecture
 

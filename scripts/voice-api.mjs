@@ -100,10 +100,10 @@ export function validateVoiceAudio(result) {
 }
 
 function providerError(status) {
-  if (status === 401 || status === 403) return new VoiceApiError(502, 'VOICE_AUTH_FAILED', 'CLOVA Voice 인증 또는 서비스 권한을 확인해 주세요. 대본은 그대로 유지됩니다.');
-  if (status === 429) return new VoiceApiError(429, 'VOICE_RATE_LIMITED', 'CLOVA Voice 사용량 또는 요청 한도에 도달했습니다. 사용량을 확인한 뒤 다시 시도해 주세요.');
-  if (status === 400 || status === 404) return new VoiceApiError(502, 'VOICE_CONFIGURATION_ERROR', 'CLOVA Voice가 대본이나 음성 설정을 처리하지 못했습니다. 설정을 확인해 주세요.');
-  return new VoiceApiError(502, 'VOICE_SERVICE_UNAVAILABLE', 'CLOVA Voice 서비스가 응답하지 않습니다. 대본은 그대로 유지됩니다.');
+  if (status === 401 || status === 403) return new VoiceApiError(502, 'VOICE_AUTH_FAILED', '음성 API 인증 또는 서비스 권한을 확인해 주세요. 대본은 그대로 유지됩니다.');
+  if (status === 429) return new VoiceApiError(429, 'VOICE_RATE_LIMITED', '음성 API 사용량 또는 요청 한도에 도달했습니다. 사용량을 확인한 뒤 다시 시도해 주세요.');
+  if (status === 400 || status === 404) return new VoiceApiError(502, 'VOICE_CONFIGURATION_ERROR', '음성 API가 대본이나 음성 설정을 처리하지 못했습니다. 설정을 확인해 주세요.');
+  return new VoiceApiError(502, 'VOICE_SERVICE_UNAVAILABLE', '음성 생성 서비스가 응답하지 않습니다. 대본은 그대로 유지됩니다.');
 }
 
 export function createVoiceProviderRequest(env = process.env, requestImpl = https.request) {
@@ -191,7 +191,7 @@ export function createVoiceApi({env = process.env, requestProvider = createVoice
     if (pathname === '/api/voice/config' && ['GET', 'HEAD'].includes(req.method)) {
       send(res, 200, {configured: configured(), provider: 'clova', speakers: SPEAKERS,
         limits: {maxCharacters: MAX_CHARACTERS, chunkCharacters: CHUNK_CHARACTERS, maxAudioBytes: MAX_AUDIO_BYTES}, ranges: RANGES,
-        reason: configured() ? '' : '음성 생성 서버에 CLOVA_VOICE_CLIENT_ID와 CLOVA_VOICE_CLIENT_SECRET 연결이 필요합니다. 대본 작성·저장에는 필요하지 않습니다.'}, req.method === 'HEAD');return true;
+        reason: configured() ? '' : '음성 생성 서버에 음성 API 인증 설정이 필요합니다. 대본 작성·저장에는 필요하지 않습니다.'}, req.method === 'HEAD');return true;
     }
     if (pathname !== '/api/voice/generate') {req.resume();send(res, 404, {error: '요청한 음성 생성 기능을 찾지 못했습니다.', code: 'NOT_FOUND'});return true;}
     if (req.method !== 'POST') {req.resume();res.setHeader('Allow', 'POST');send(res, 405, {error: 'POST 요청으로 사용해 주세요.', code: 'METHOD_NOT_ALLOWED'});return true;}
@@ -199,7 +199,7 @@ export function createVoiceApi({env = process.env, requestProvider = createVoice
     let controller, timer, clientClosed, ownsSlot = false, timedOut = false, completedChunks = 0;
     try {
       const settings = validateVoiceRequest(await readJson(req));
-      if (!configured()) throw new VoiceApiError(503, 'VOICE_NOT_CONFIGURED', 'CLOVA Voice 인증 연결이 필요합니다. 음성 API 없이도 대본을 작성·저장할 수 있습니다.');
+      if (!configured()) throw new VoiceApiError(503, 'VOICE_NOT_CONFIGURED', '음성 API 인증 연결이 필요합니다. 음성 API 없이도 대본을 작성·저장할 수 있습니다.');
       if (generating) throw new VoiceApiError(429, 'VOICE_BUSY', '다른 대본의 음성을 생성 중입니다. 완료하거나 취소한 뒤 다시 시도해 주세요.');
       generating = true;ownsSlot = true;controller = new AbortController();
       clientClosed = () => {if (!res.writableEnded) controller.abort();};res.on('close', clientClosed);
