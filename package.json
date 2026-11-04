@@ -73,7 +73,9 @@
     "test:chat-edit-browser": "node tests/chat-edit.browser.cjs",
     "test:shorts-framing-browser": "node tests/shorts-framing.browser.cjs",
     "test:ai-assistant-export-browser": "node tests/ai-assistant-export.browser.cjs",
-    "test:ai-chat-integration-browser": "node tests/ai-chat-integration.browser.cjs"
+    "test:ai-chat-integration-browser": "node tests/ai-chat-integration.browser.cjs",
+    "test:youtube-schedule-single-browser": "node tests/youtube-schedule-single.browser.cjs",
+    "test:youtube-schedule-series-browser": "node tests/youtube-schedule-series.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

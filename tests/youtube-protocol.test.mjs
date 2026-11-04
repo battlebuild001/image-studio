@@ -19,7 +19,7 @@ test('metadata keeps exact description and explicit disclosure/privacy values in
   const resource=buildYouTubeVideoResource(value);assert.deepEqual(resource,{snippet:{title:value.title,description:input.description,tags:['세계관','우주 이야기'],categoryId:'22',defaultLanguage:'ko'},status:{privacyStatus:'unlisted',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}});
   assert.equal(normalizeYouTubeMetadata(metadata({defaultLanguage:'en',privacyStatus:'public',selfDeclaredMadeForKids:true,containsSyntheticMedia:false})).defaultLanguage,'en');
   for(const key of ['privacyStatus','selfDeclaredMadeForKids','containsSyntheticMedia']){const absent=metadata();delete absent[key];assert.throws(()=>normalizeYouTubeMetadata(absent));}
-  for(const value of [metadata({privacyStatus:'PUBLIC'}),metadata({selfDeclaredMadeForKids:'false'}),metadata({containsSyntheticMedia:1}),metadata({categoryId:'arbitrary'}),metadata({defaultLanguage:'unrecognized'}),metadata({publishAt:'2027-01-01T00:00:00Z'})])assert.throws(()=>normalizeYouTubeMetadata(value));
+  for(const value of [metadata({privacyStatus:'PUBLIC'}),metadata({selfDeclaredMadeForKids:'false'}),metadata({containsSyntheticMedia:1}),metadata({categoryId:'arbitrary'}),metadata({defaultLanguage:'unrecognized'}),metadata({publishAt:'invalid-date'})])assert.throws(()=>normalizeYouTubeMetadata(value));
 });
 
 test('YouTube title limits count Unicode characters and description limits count UTF-8 bytes',()=>{

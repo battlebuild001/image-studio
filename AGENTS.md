@@ -278,6 +278,46 @@ Also run test:project-upload-browser, test:upload-metadata-browser and
 test:upload-series-browser (plus the focused series guard suite) for delivery
 changes. Synthetic/mocked transport checks are not live Google account publishing.
 
+## Scheduled YouTube publication
+
+User requested time-based reservations. Use the official initial videos.insert
+status.publishAt mechanism: upload now privately, YouTube publishes at the reviewed
+future time after accepted upload. Do not imply this static app can start uploading
+new bytes after the browser closes. No new OAuth scopes or videos.update calls.
+
+- `youtube-schedule.js` handles explicit IANA timezone conversion (default Asia/Seoul),
+  calendar validation, DST gaps/folds and reviewed interval/daily time slots. Persist
+  exact UTC publishAt and display timezone. Structural restoration accepts past times;
+  active arm/dispatch validates the moving clock, private visibility and future lead.
+  Reject past/too-soon dates instead of silently publishing immediately or shifting dates.
+- Optional YouTube draft publishAt/scheduleTimeZone and receipt scheduleConfirmed are
+  credential-free schema-one data. Missing fields preserve legacy normalizations.
+  Schedule confirmation requires the actual matching returned status.publishAt AND
+  actual returned private status. Preserve completed video receipts even when the
+  provider does not confirm scheduling; no duplicate POST to repair an ambiguous echo.
+- Keep upload deadlines checked before initialization and each media PUT; resume must
+  first probe to discover already completed uploads, then reject expired pending media.
+  Do not discard an unresolved session, upload receipt or reviewed thumbnail on expiry.
+- Single date/zone controls persist with the project, survive publishing import and
+  participate in reviewed auto-upload arming. Recheck after export, clear readiness on
+  metadata/date/connection/source changes, never dispatch on clock/date/input changes.
+- Series optional schedule pattern and per-episode publishAt/timezone survive backup
+  and reload. Preview/apply targets pending episodes; uploaded/uncertain episodes and
+  receipts remain intact. Unapplied schedule drafts block Run. Validate all remaining
+  future dates before rendering and recheck the next date after rendering. Preserve
+  original source/media, queue/framing guards, resume/no-duplicate behavior and progress.
+- Show actual dates, selected timezone and confirmed-versus-requested status, without
+  assuming a past local record is publicly live. End-user reservation changes after
+  upload belong to YouTube Studio under existing scopes. Local disconnect/history clear
+  never cancels a remote reservation or deletes a Google video; state this clearly.
+
+Run scheduling pure/project/transport/browser tests plus existing YouTube, thumbnail,
+four-step upload, metadata, series/guards and navigation regressions. Real exports run
+sequentially with synthetic images/narration/BGM/captions and mocked Google endpoints.
+Never publish user media or call paid providers during regression checks. Official
+status.publishAt/insert/update docs were consulted; fixtures are not live authorization
+or proof of an actual scheduled public release.
+
 ## Typecast narration
 
 The user authorized in-app Typecast key configuration, voice catalog, Korean TTS
