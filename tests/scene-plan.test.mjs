@@ -108,21 +108,15 @@ try {({chromium} = createRequire(import.meta.url)('playwright'));} catch {}
 test('real IndexedDB autosave and independent library records retain confirmed plans and their media', {
   skip: !chromium || !existsSync('/usr/bin/chromium'), timeout: 30000,
 }, async () => {
-  const source = await readFile(new URL('../dist/project.js', import.meta.url));
-  const researchProtocol = await readFile(new URL('../dist/topic-research-protocol.js', import.meta.url));
-  const productionState = await readFile(new URL('../dist/production-state.js', import.meta.url));
-  const pronunciation = await readFile(new URL('../dist/pronunciation.js', import.meta.url));
-  const visualProtocol = await readFile(new URL('../dist/production-visual-protocol.js', import.meta.url));
-  const youtubeProtocol = await readFile(new URL('../dist/youtube-protocol.js', import.meta.url));
-  const server = createServer((req, res) => {
-    if (req.url === '/project.js') {res.setHeader('Content-Type', 'text/javascript');res.end(source);}
-    else if (req.url === '/topic-research-protocol.js') {res.setHeader('Content-Type', 'text/javascript');res.end(researchProtocol);}
-    else if (req.url === '/production-state.js') {res.setHeader('Content-Type', 'text/javascript');res.end(productionState);}
-    else if (req.url === '/pronunciation.js') {res.setHeader('Content-Type', 'text/javascript');res.end(pronunciation);}
-    else if (req.url === '/production-visual-protocol.js') {res.setHeader('Content-Type', 'text/javascript');res.end(visualProtocol);}
-    else if (req.url === '/youtube-protocol.js') {res.setHeader('Content-Type', 'text/javascript');res.end(youtubeProtocol);}
-    else if (req.url === '/') {res.setHeader('Content-Type', 'text/html');res.end('<!doctype html><title>Scene plan persistence</title>');}
-    else res.writeHead(404).end();
+  const server = createServer(async (req, res) => {
+    if (req.url === '/') {res.setHeader('Content-Type', 'text/html');res.end('<!doctype html><title>Scene plan persistence</title>');return;}
+    // Project validation imports browser-safe protocols transitively. Serve only
+    // plain JavaScript basenames so new dependencies work without traversal.
+    if (!/^\/[A-Za-z0-9][A-Za-z0-9_-]*\.js$/u.test(req.url || '')) {res.writeHead(404).end();return;}
+    try {
+      const source = await readFile(new URL(`../dist${req.url}`, import.meta.url));
+      res.setHeader('Content-Type', 'text/javascript');res.end(source);
+    } catch {res.writeHead(404).end();}
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({executablePath: '/usr/bin/chromium', headless: true}), page = await browser.newPage();

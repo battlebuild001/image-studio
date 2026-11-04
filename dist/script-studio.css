@@ -112,3 +112,5 @@
 .script-composition-fields .script-studio-help { margin: 0; }
 .script-source-budget-warning,.script-length-mismatch { margin: 10px 0 0; padding: 10px 12px; border: 1px solid #6c6241; border-radius: 5px; color: #d5c294; background: #2a281d; font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
 @media(max-width:600px) { .script-composition-fields { grid-template-columns: minmax(0,1fr); gap: 0; } .script-length-actions > button { flex: 1 1 120px; } }
+
+.script-dual-drafts{display:grid;gap:20px;min-width:0}.script-dual-drafts>section{min-width:0;padding:14px;border:1px solid #344c53;border-radius:7px;background:#122026}.script-dual-drafts .script-studio-field{margin-top:0}.script-dual-drafts #generatedScript,.script-dual-drafts #generatedDisplayScript{min-height:250px}.script-dual-drafts .script-result-tools{margin-top:10px}@media(max-width:500px){.script-dual-drafts{gap:14px}.script-dual-drafts>section{padding:11px}.script-dual-drafts #generatedScript,.script-dual-drafts #generatedDisplayScript{min-height:220px}}

@@ -3,7 +3,7 @@ import https from 'node:https';
 import {
   TYPECAST_MODELS, TYPECAST_DEFAULT_MODEL, TYPECAST_MAX_TEXT, TYPECAST_CHUNK_CHARACTERS,
   TYPECAST_MAX_CHUNK_AUDIO_BYTES, TYPECAST_MAX_AUDIO_BYTES,
-  normalizeTypecastVoices, validateTypecastVoiceRequest, splitTypecastText,
+  normalizeTypecastVoices, validateTypecastVoiceRequest, splitTypecastText, createTypecastSpeechPlan,
   buildTypecastTtsRequest, assertTypecastVoiceSupport, validateTypecastAudio, getTypecastConfig,
 } from '../dist/typecast-protocol.js';
 
@@ -146,10 +146,10 @@ export function createTypecastApi({env = process.env, requestProvider = createTy
     try {
       const settings = configuration();
       if (configRoute && !settings.apiKey) {send(res, 200, {...getTypecastConfig([], settings.model), configured: false, reason: '서버에 TYPECAST_API_KEY를 설정하거나 앱 설정에서 개인 타입캐스트 API 키를 연결해 주세요. 대본 작성에는 필요하지 않아요.'}, req.method === 'HEAD');return true;}
-      let request;
+      let request, plan;
       if (!configRoute) {
         const input = await readJson(req);
-        try {request = validateTypecastVoiceRequest(input, {model: settings.model});} catch (cause) {throw safeProtocolError(cause);}
+        try {request = validateTypecastVoiceRequest(input, {model: settings.model});plan = createTypecastSpeechPlan(request);} catch (cause) {throw safeProtocolError(cause);}
         if (request.model !== settings.model) throw invalid('연결된 타입캐스트 모델이 바뀌었어요. 목소리 목록을 다시 확인해 주세요.');
         if (!settings.apiKey) throw new TypecastApiError(503, 'TYPECAST_NOT_CONFIGURED', '서버에 TYPECAST_API_KEY를 설정해 주세요. 대본 작성에는 필요하지 않아요.');
         if (generating) throw new TypecastApiError(429, 'TYPECAST_BUSY', '다른 음성을 생성 중이에요. 완료하거나 취소한 뒤 다시 시도해 주세요.');
@@ -160,7 +160,7 @@ export function createTypecastApi({env = process.env, requestProvider = createTy
       const voices = await speakers(settings, controller.signal, configRoute);
       if (configRoute) {send(res, 200, {...getTypecastConfig(voices, settings.model), limits: {maxCharacters: TYPECAST_MAX_TEXT, chunkCharacters: TYPECAST_CHUNK_CHARACTERS, maxAudioBytes: AUDIO_LIMIT}}, req.method === 'HEAD');return true;}
       try {assertTypecastVoiceSupport(request, voices);} catch (cause) {throw safeProtocolError(cause);}
-      const texts = splitTypecastText(request.text), chunks = [];let totalBytes = 0;
+      const texts = plan.map(part => part.text), chunks = [];let totalBytes = 0;
       for (let index = 0; index < texts.length; index++) {
         if (controller.signal.aborted) throw abortError();
         const current = configuration();if (current.apiKey !== settings.apiKey || current.model !== settings.model) throw new TypecastApiError(503, 'TYPECAST_SETTINGS_CHANGED', '타입캐스트 서버 설정이 바뀌어 남은 음성을 생성하지 않았어요.');
@@ -169,7 +169,7 @@ export function createTypecastApi({env = process.env, requestProvider = createTy
         if (controller.signal.aborted) throw abortError();
         let audio;try {audio = validateTypecastAudio(result?.bytes, result?.contentType);} catch (cause) {throw safeProtocolError(cause);}
         totalBytes += audio.bytes.length;if (totalBytes > AUDIO_LIMIT) throw new TypecastApiError(502, 'TYPECAST_AUDIO_TOO_LARGE', `생성된 음성 합계가 ${Math.round(AUDIO_LIMIT / 1024 / 1024)}MiB를 넘었어요. 더 짧은 대본으로 생성해 주세요.`);
-        completedChunks++;chunks.push({mimeType: audio.mimeType, audio: Buffer.from(audio.bytes).toString('base64')});
+        completedChunks++;chunks.push({mimeType: audio.mimeType, audio: Buffer.from(audio.bytes).toString('base64'), ...(plan[index].pauseAfterSeconds ? {pauseAfterSeconds:plan[index].pauseAfterSeconds} : {})});
       }
       send(res, 200, {provider: 'typecast', model: request.model, speaker: request.speaker, characters: request.characters, chunks});
     } catch (cause) {

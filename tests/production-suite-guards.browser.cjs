@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const {chromium} = require('playwright');
-const {reveal} = require('./ui-navigation.browser.cjs');
+const {reveal,openProductionSection,closeStudioWorkbench} = require('./ui-navigation.browser.cjs');
 
 // Full application integration: synthetic keys and intercepted Responses only.
 // This exercises central budget bookkeeping and configuration cancellation across
@@ -28,8 +28,8 @@ const {reveal} = require('./ui-navigation.browser.cjs');
   });
   const project = () => page.evaluate(async () => (await (await import('./project.js')).loadProject())?.project);
   async function waitProject(predicate) {for (let n=0;n<250;n++) {const value=await project();if(value&&predicate(value))return value;await page.waitForTimeout(35);}assert.fail('Committed project did not reach expected state');}
-  async function section(name) {if(!await page.locator('#productionWorkbenchDialog').isVisible())await page.locator('#productionToolsBtn').click();await page.locator('#productionTab-'+name).click();}
-  async function closeWorkbench() {await page.locator('#closeProductionWorkbenchBtn').click();await page.locator('#productionWorkbenchDialog').waitFor({state:'hidden'});}
+  async function section(name) {await openProductionSection(page,name);}
+  async function closeWorkbench() {await closeStudioWorkbench(page);}
   async function budget(limit) {await section('budget');await page.locator('#productionBudgetEnabled').check();await page.locator('#productionBudgetLimit').fill(String(limit));await page.locator('#productionBudgetSave').click();await waitProject(p=>p.production?.budget?.enabled&&p.production.budget.limit===limit);}
   function held() {let release,entered;const promise=new Promise(resolve=>release=resolve),seen=new Promise(resolve=>entered=resolve);hold={promise,entered};return{release,seen};}
   try {

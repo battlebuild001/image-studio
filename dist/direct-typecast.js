@@ -1,6 +1,6 @@
 import {
   TYPECAST_DEFAULT_MODEL, TYPECAST_MODELS, TYPECAST_MAX_AUDIO_BYTES, TYPECAST_MAX_CHUNK_AUDIO_BYTES, validateTypecastVoiceRequest,
-  splitTypecastText, buildTypecastTtsRequest, assertTypecastVoiceSupport,
+  splitTypecastText, createTypecastSpeechPlan, buildTypecastTtsRequest, assertTypecastVoiceSupport,
   normalizeTypecastVoices, validateTypecastAudio, getTypecastConfig,
 } from './typecast-protocol.js';
 
@@ -169,6 +169,7 @@ export function createDirectTypecastClient({fetchImpl=(...args)=>globalThis.fetc
     if(!settings.enabled||!settings.apiKey)throw error(503,'TYPECAST_NOT_CONFIGURED','설정에서 Typecast API 연결을 먼저 사용 설정해 주세요.');
     if(active)throw error(429,'TYPECAST_BUSY','다른 Typecast 음성을 만들고 있어요. 완료하거나 취소한 뒤 실행해 주세요.');
     let value;try{value=validateTypecastVoiceRequest(inputBody(options),{model:settings.model});}catch(cause){throw safeProtocolError(cause);}
+    createTypecastSpeechPlan(value);
     const available=cached(settings.apiKey,value.model);if(available)try{assertTypecastVoiceSupport(value,available);}catch(cause){throw safeProtocolError(cause);}
     return value;
   }
@@ -186,14 +187,14 @@ export function createDirectTypecastClient({fetchImpl=(...args)=>globalThis.fetc
       if(options.signal?.aborted)throw abortError();
       const speakers=await voices({key:current.apiKey,model:input.model,signal:controller.signal,version});
       try{assertTypecastVoiceSupport(input,speakers);}catch(cause){throw safeProtocolError(cause);}
-      const texts=splitTypecastText(input.text),chunks=[];let total=0;
+      const plan=createTypecastSpeechPlan(input),texts=plan.map(part=>part.text),chunks=[];let total=0;
       for(let index=0;index<texts.length;index++){
         if(controller.signal.aborted||version!==settingsVersion)throw abortError();
         const body=buildTypecastTtsRequest(input,texts[index],{previousText:texts[index-1],nextText:texts[index+1]});
         const result=await provider('/v1/text-to-speech',{key:current.apiKey,body,signal:controller.signal,maxBytes:MAX_CHUNK_BYTES});
         let audio;try{audio=validateTypecastAudio(result.bytes,result.contentType);}catch(cause){throw safeProtocolError(cause,502);}
         total+=audio.bytes.length;if(total>MAX_AUDIO_BYTES)throw error(502,'TYPECAST_AUDIO_TOO_LARGE','만든 음성의 합계가 너무 커요. 대본을 나누어 생성해 주세요.');
-        chunks.push({mimeType:audio.mimeType,audio:asBase64(audio.bytes)});
+        chunks.push({mimeType:audio.mimeType,audio:asBase64(audio.bytes),...(plan[index].pauseAfterSeconds?{pauseAfterSeconds:plan[index].pauseAfterSeconds}:{})});
       }
       if(controller.signal.aborted||version!==settingsVersion)throw abortError();
       return json(200,{provider:'typecast',model:input.model,characters:Array.from(input.text).length,chunks});

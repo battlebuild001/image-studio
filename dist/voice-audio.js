@@ -30,7 +30,7 @@ function decodeBase64(chunk) {
 
 /** Decode every real provider chunk, then render continuous mono PCM. MP3 bytes
  * cannot simply be concatenated: decoder padding and headers are not a timeline. */
-export async function combineVoiceChunks(chunks, {signal, maxInputBytes = MAX_INPUT_BYTES} = {}) {
+export async function combineVoiceChunks(chunks, {signal, maxInputBytes = MAX_INPUT_BYTES, applyParagraphPauses = false} = {}) {
   checkAbort(signal);
   if (!Number.isSafeInteger(maxInputBytes) || maxInputBytes < 1 || maxInputBytes > MAX_PROVIDER_INPUT_BYTES) throw new Error('음성 입력 크기 제한을 확인해 주세요.');
   if (!Array.isArray(chunks) || !chunks.length || chunks.length > 100) throw new Error('생성된 음성 구간을 확인해 주세요.');
@@ -52,22 +52,24 @@ export async function combineVoiceChunks(chunks, {signal, maxInputBytes = MAX_IN
     if (!buffer?.length || buffer.numberOfChannels < 1 || buffer.numberOfChannels > 8 || buffer.sampleRate !== VOICE_SAMPLE_RATE) {
       throw new Error('생성된 음성의 채널·샘플 정보를 확인해 주세요.');
     }
-    frames += buffer.length;
+    const pause = applyParagraphPauses ? (chunk.pauseAfterSeconds ?? 0) : 0;
+    if(typeof pause!=='number'||!Number.isFinite(pause)||pause<0||pause>10)throw new Error('단락 뒤 추가 쉼은 0~10초로 지정해 주세요.');
+    const pauseFrames=Math.round(pause*VOICE_SAMPLE_RATE);frames += buffer.length+pauseFrames;
     if (frames / VOICE_SAMPLE_RATE > 3600 || 44 + frames * 2 > MAX_OUTPUT_BYTES) {
       throw new Error('음성은 최대 60분·180MiB까지 만들 수 있어요. 대본을 나누어 주세요.');
     }
-    buffers.push(buffer);
+    buffers.push({buffer,pauseFrames});
   }
   const context = new OfflineContext(1, frames, VOICE_SAMPLE_RATE);
   const nodes = [];let cursor = 0;
-  for (const buffer of buffers) {
+  for (const {buffer,pauseFrames} of buffers) {
     const source = context.createBufferSource(), splitter = context.createChannelSplitter(buffer.numberOfChannels);
     source.buffer = buffer;source.connect(splitter);nodes.push(source, splitter);
     for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
       const gain = context.createGain();gain.gain.value = 1 / buffer.numberOfChannels;
       splitter.connect(gain, channel);gain.connect(context.destination);nodes.push(gain);
     }
-    source.start(cursor / VOICE_SAMPLE_RATE);cursor += buffer.length;
+    source.start(cursor / VOICE_SAMPLE_RATE);cursor += buffer.length+pauseFrames;
   }
   let rendered;
   try {rendered = await abortable(context.startRendering(), signal);}

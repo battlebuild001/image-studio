@@ -8,7 +8,7 @@ export const TYPECAST_MAX_AUDIO_BYTES = 160 * 1024 * 1024;
 export const TYPECAST_EMOTIONS = Object.freeze(['normal', 'happy', 'sad', 'angry', 'whisper', 'toneup', 'tonedown']);
 const MODEL_SET = new Set(TYPECAST_MODELS), EMOTIONS = new Set(TYPECAST_EMOTIONS);
 const V21_EMOTIONS = TYPECAST_EMOTIONS.slice(0, 4);
-const FIELDS = new Set(['provider', 'text', 'speaker', 'model', 'tempo', 'pitch', 'volume', 'emotionType', 'emotion', 'emotionIntensity']);
+const FIELDS = new Set(['provider', 'text', 'speaker', 'model', 'tempo', 'pitch', 'volume', 'emotionType', 'emotion', 'emotionIntensity', 'paragraphPauseSeconds', 'paragraphPauses']);
 const VOICE_ID = /^(?:tc|uc)_[A-Za-z0-9_-]{1,180}$/u;
 const encoder = new TextEncoder();
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && [Object.prototype, null].includes(Object.getPrototypeOf(value));
@@ -92,8 +92,29 @@ export function validateTypecastVoiceRequest(input, {model, voiceId: defaultVoic
   if (!allowed.includes(emotion)) throw invalid('선택한 타입캐스트 모델에서 지원하는 감정을 선택해 주세요.');
   return {provider: 'typecast', text: input.text, characters, speaker: voiceId(input.speaker ?? defaultVoice), model: selectedModel,
     tempo: ranged(input.tempo, 1, .5, 2, '읽는 속도'), pitch: ranged(input.pitch, 0, -12, 12, '음높이', true), volume: ranged(input.volume, 100, 0, 200, '음량', true),
-    emotionType, emotion, emotionIntensity: ranged(input.emotionIntensity, 1, 0, 2, '감정 강도')};
+    emotionType, emotion, emotionIntensity: ranged(input.emotionIntensity, 1, 0, 2, '감정 강도'),
+    ...(input.paragraphPauseSeconds!==undefined?{paragraphPauseSeconds:ranged(input.paragraphPauseSeconds,0,0,10,'단락 뒤 추가 쉼')}:{}),
+    ...(input.paragraphPauses!==undefined?{paragraphPauses:normalizeParagraphPauses(input.paragraphPauses)}:{})};
 }
+/** Paragraph pauses are app-side PCM silence; no undocumented field goes to Typecast. */
+export function normalizeParagraphPauses(input) {
+  if(!Array.isArray(input)||input.length>1000)throw invalid('단락별 쉼은 최대 1,000개까지 지정할 수 있어요.');
+  const seen=new Set();return input.map(value=>{if(!plain(value)||Object.keys(value).some(key=>!['afterParagraph','seconds'].includes(key))||!Number.isInteger(value.afterParagraph)||value.afterParagraph<1||value.afterParagraph>1000||seen.has(value.afterParagraph)||value.seconds===undefined)throw invalid('단락별 쉼의 위치를 확인해 주세요.');seen.add(value.afterParagraph);return{afterParagraph:value.afterParagraph,seconds:ranged(value.seconds,undefined,0,10,'단락 뒤 추가 쉼')};}).sort((a,b)=>a.afterParagraph-b.afterParagraph);
+}
+export function typecastParagraphs(text) {
+  textValue(text,TYPECAST_MAX_TEXT);const result=[];let start=0,pending='';
+  for(const match of text.matchAll(/(?:\r?\n)[\t ]*(?:\r?\n)+/gu)){const end=match.index+match[0].length,piece=text.slice(start,end);start=end;if(piece.trim()){result.push(pending+piece);pending='';}else if(result.length)result[result.length-1]+=piece;else pending+=piece;}
+  const tail=text.slice(start);if(tail.trim())result.push(pending+tail);else if(result.length)result[result.length-1]+=pending+tail;else if(pending||tail)result.push(pending+tail);return result;
+}
+export function createTypecastSpeechPlan(input) {
+  const settings=canonicalSettings(input),globalPause=settings.paragraphPauseSeconds??0,overrides=new Map((settings.paragraphPauses??[]).map(value=>[value.afterParagraph,value.seconds]));
+  if(!globalPause&&![...overrides.values()].some(value=>value>0))return splitTypecastText(settings.text).map(text=>({text,pauseAfterSeconds:0}));
+  const paragraphs=typecastParagraphs(settings.text),result=[];
+  for(const key of overrides.keys())if(key>paragraphs.length)throw invalid('현재 대본에 없는 단락의 쉼 설정을 확인해 주세요.');
+  for(const [index,paragraph]of paragraphs.entries()){const pieces=splitTypecastText(paragraph);for(const text of pieces){if(!text.trim())throw invalid('공백만 있는 긴 구간을 줄여 주세요. 대본은 변경하지 않았어요.');result.push({text,pauseAfterSeconds:0});}result[result.length-1].pauseAfterSeconds=overrides.get(index+1)??(index<paragraphs.length-1?globalPause:0);}
+  if(result.length>100)throw invalid('단락과 합성 구간은 최대 100개로 줄여 주세요.');return result;
+}
+
 function canonicalSettings(input) {
   if (!plain(input)) throw invalid('타입캐스트 음성 설정을 확인해 주세요.');
   const {characters, ...rest} = input, settings = validateTypecastVoiceRequest(rest);

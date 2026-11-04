@@ -4,6 +4,8 @@ import {getCaptions} from './project.js';
 import {prepareReferenceImageRequest, decodeReferenceImageResult} from './image-studio.js';
 import {combineVoiceChunks, VOICE_SAMPLE_RATE} from './voice-audio.js';
 import {setupVoiceProviderControls} from './voice-provider-controls.js';
+import {voiceTextKey,voiceSettingsKey} from './voice-preferences-protocol.js';
+import {stripEnglishParentheticalGlosses} from './narration-text.js';
 import {applyPronunciations} from './production-speech.js';
 import {captureChangeBaseline, diffProductionChanges, markChangeBaselineApplied, changeTimeline, patchSourceRange,
   splicePcmSamples, encodePatchedPcmWav, retimeProjectForNarrationPatch, changedSceneDisplayText, synchronizePatchDraftText} from './production-changes-protocol.js';
@@ -33,7 +35,7 @@ const currentDisplay = project => project.scriptDraft?.displayScript ?? project.
 function sourceSignature(project, includeImages = true) {
   return JSON.stringify({projectId: project.id, title: project.title, scenes: project.scenes.map(scene => ({id: scene.id, caption: scene.caption, duration: scene.duration, ...(includeImages ? {imageId: scene.imageId} : {})})),
     narration: currentNarration(project), display: currentDisplay(project), audio: project.audio, captionMode: project.captionMode, captions: project.captions, captionAnalysis: project.captionAnalysis,
-    references: project.imageStudio, speech: project.production?.speech || null, visualBrief: project.scenePlan?.visualBrief || ''});
+    references: project.imageStudio, speech: {pronunciations:project.production?.speech?.pronunciations||[]}, visualBrief: project.scenePlan?.visualBrief || ''});
 }
 function imageSignature(project, sceneId) {
   const rows = changeTimeline(project), index = rows.findIndex(scene => scene.id === sceneId), scene = rows[index];
@@ -103,7 +105,7 @@ export function setupProductionChanges(api) {
   const currentScope = () => `${api.getWorkspaceId?.() || ''}:${api.getProject().id}`;
   const hasScope = expected => expected === currentScope();
   let voiceConfig=null,voiceConfigController=null,voiceConfigSequence=0,voiceConfigBusy=false,voiceEpoch=0;
-  const providerControls=setupVoiceProviderControls({container:voiceSettings,fields:{speaker,speed,pitch,volume},prefix:'changesVoice',openSettings:()=>api.openApiSettings?.({tab:'typecast'}),onChange:()=>{if(currentRun?.kind==='voice'&&!applying)stop('목소리 설정이 바뀌어 음성 재생성을 취소했어요.');voiceConsent.input.checked=false;refreshActions();}});
+  const providerControls=setupVoiceProviderControls({container:voiceSettings,fields:{speaker,speed,pitch,volume},prefix:'changesVoice',getPreferences:()=>api.getProject().production?.speech?.voicePreferences,onPreferenceChange:value=>{const mutate=api.mutateProductionMetadata||api.mutate;if(mutate)mutate(p=>{p.production||={version:1};p.production.speech||={};p.production.speech.voicePreferences=value;});},openSettings:()=>api.openApiSettings?.({tab:'typecast'}),onChange:()=>{if(currentRun?.kind==='voice'&&!applying)stop('목소리 설정이 바뀌어 음성 재생성을 취소했어요.');voiceConsent.input.checked=false;refreshActions();}});
   allControls.push(...providerControls.extraInputs);
   const voiceInputs=()=>JSON.stringify({sceneId:target.input.value,start:start.input.value,end:end.input.value,text:voiceText.input.value,display:displayText.input.value,voiceEpoch,...providerControls.snapshot()});
   function showError(cause) {error.textContent = cause?.message || String(cause || '');}
@@ -137,14 +139,14 @@ export function setupProductionChanges(api) {
   }
   function chooseTarget(id, force = false) {
     const project = api.getProject(), row = changeTimeline(project).find(scene => scene.id === id);if (!row) return;
-    const nextDisplay = changedSceneDisplayText(project, project.production?.changes?.baseline, id), key = JSON.stringify({id: row.id, start: row.start, end: row.end, caption: nextDisplay, speech: project.production?.speech, style: project.scriptDraft?.narrationStyle});
+    const nextDisplay = changedSceneDisplayText(project, project.production?.changes?.baseline, id), key = JSON.stringify({id: row.id, start: row.start, end: row.end, caption: nextDisplay, speech: {pronunciations:project.production?.speech?.pronunciations||[]}, style: project.scriptDraft?.narrationStyle});
     if (!force && targetId === id && targetFingerprint === key) return;targetId = id;targetFingerprint = key;target.input.value = id;start.input.value = row.start.toFixed(3);end.input.value = row.end.toFixed(3);displayText.input.value = nextDisplay || row.caption || '';
     try {voiceText.input.value = applyPronunciations(nextDisplay || row.caption || '', project.production?.speech?.pronunciations || [], project.scriptDraft?.narrationStyle || 'standard');} catch {voiceText.input.value = nextDisplay || row.caption || '';}
-    voiceConsent.input.checked = false;refreshActions();
+    voiceConsent.input.checked = false;providerControls.setText(voiceText.input.value);refreshActions();
   }
   function render() {
     const nextScope = currentScope();if (scope && scope !== nextScope) reset();scope = nextScope;
-    const project = api.getProject(), comparison = diffProductionChanges(project), signature = JSON.stringify({scenes: project.scenes.map(scene => ({id: scene.id, caption: scene.caption, duration: scene.duration, imageId: scene.imageId})), baseline: project.production?.changes?.baseline, display: currentDisplay(project), speech: project.production?.speech});
+    const project = api.getProject(), comparison = diffProductionChanges(project), signature = JSON.stringify({scenes: project.scenes.map(scene => ({id: scene.id, caption: scene.caption, duration: scene.duration, imageId: scene.imageId})), baseline: project.production?.changes?.baseline, display: currentDisplay(project), speech: {pronunciations:project.production?.speech?.pronunciations||[]}});
     if (currentRun && !applying && currentRun.signature !== sourceSignature(project)) stop('대본·장면·레퍼런스 또는 음성이 바뀌어 재생성을 취소했어요. 완료된 미리보기는 유지돼요.');
     const lastPatch = project.production?.changes?.lastVoicePatch;
     summary.textContent = (comparison.hasBaseline ? `기준 ${new Date(project.production.changes.baseline.capturedAt).toLocaleString('ko-KR')} · 이미지 미반영 ${comparison.changes.filter(row => row.needsImage).length}개 · 음성 미반영 ${comparison.changes.filter(row => row.needsVoice).length}개 · 삭제 ${comparison.removed.length}개${comparison.narrationChanged ? ' · 나레이션 대본 변경 감지' : ''}` : '아직 비교 기준이 없어요. 현재 상태를 기준으로 저장한 뒤 수정하면 바뀐 장면을 골라 보여드려요.') + (lastPatch ? ` · 최근 음성 교체 ${lastPatch.start.toFixed(2)}~${lastPatch.end.toFixed(2)}초 → ${lastPatch.replacementDuration.toFixed(2)}초` : '');
@@ -203,7 +205,7 @@ export function setupProductionChanges(api) {
   function cancelVoiceConfig(){voiceConfigSequence++;voiceConfigController?.abort();voiceConfigController=null;voiceConfigBusy=false;}
   async function checkVoiceConnection(){
     cancelVoiceConfig();const serial=voiceConfigSequence,owner=currentScope(),controller=new AbortController();voiceConfigController=controller;voiceConfigBusy=true;voiceConnection.textContent='음성 API와 실제 목소리 목록을 확인하고 있어요.';refreshActions();const timeout=setTimeout(()=>controller.abort(),60000);
-    try{const config=await request('/api/voice/config',{signal:controller.signal});if(serial!==voiceConfigSequence||!hasScope(owner))return null;voiceConfig=config;providerControls.applyConfig(config);voiceConnection.textContent=config.configured?config.provider==='typecast'?`Typecast · ${config.model} · 선택한 다국어 목소리로 한국어를 합성해요.`:'연결된 음성 API의 목소리를 선택하세요.':'음성 API 설정이 필요해요. 자료와 기존 음성은 유지돼요.';return config;}
+    try{providerControls.setText(voiceText.input.value);const config=await request('/api/voice/config',{signal:controller.signal});if(serial!==voiceConfigSequence||!hasScope(owner))return null;voiceConfig=config;providerControls.applyConfig(config);voiceConnection.textContent=config.configured?config.provider==='typecast'?`Typecast · ${config.model} · 선택한 다국어 목소리로 한국어를 합성해요.`:'연결된 음성 API의 목소리를 선택하세요.':'음성 API 설정이 필요해요. 자료와 기존 음성은 유지돼요.';return config;}
     catch(cause){if(serial===voiceConfigSequence&&hasScope(owner)){voiceConfig=null;voiceConnection.textContent=controller.signal.aborted?'목소리 목록 확인이 취소됐거나 시간이 초과됐어요.':cause.message||'음성 API 연결을 확인하지 못했어요.';}return null;}
     finally{clearTimeout(timeout);if(serial===voiceConfigSequence){voiceConfigBusy=false;voiceConfigController=null;refreshActions();}}
   }
@@ -211,6 +213,7 @@ export function setupProductionChanges(api) {
     if (currentRun || applying) return;error.textContent = '';const project = api.getProject(), asset = api.getAssets().get(project.audio?.narrationId), startSeconds = Number(start.input.value), endSeconds = Number(end.input.value);
     if (api.canMutate && !api.canMutate()) throw new Error('파일 처리나 영상 내보내기가 끝난 뒤 재생성해 주세요.');
     if (!voiceConsent.input.checked || !voiceText.input.value.trim() || !asset?.blob) throw new Error('원본 내레이션과 교체 구간·문장·사용료 확인을 준비해 주세요.');
+    if((project.production?.speech?.voiceSamples?.length||0)>=20)throw new Error('음성 샘플 보관함이 20개로 가득 찼어요. 필요한 샘플을 저장하고 일부를 삭제한 뒤 생성해 주세요.');
     if (Array.from(voiceText.input.value).length > 10000 || Array.from(displayText.input.value).length > 20000) throw new Error('부분 음성은 10,000자, 교체 자막은 20,000자 이하로 줄여 주세요.');
     const duration = Number(asset.duration || asset.audioBuffer?.duration);if (duration > 0) patchSourceRange(project, startSeconds, endSeconds, duration);
     const serial = ++sequence, controller = new AbortController(), owner = currentScope(), sourceBlob = asset.blob, signature = sourceSignature(project);
@@ -219,14 +222,15 @@ export function setupProductionChanges(api) {
     const valid = () => serial === sequence && hasScope(owner) && sourceSignature(api.getProject()) === signature && api.getAssets().get(api.getProject().audio.narrationId)?.blob === sourceBlob;
     try {
       await nextPaint();const config=voiceConfig;if(!valid())throw abortError();if(!config?.configured)throw new Error('음성 API 연결과 목소리 목록을 먼저 확인해 주세요. API 설정 또는 목록 다시 확인을 사용하세요.');
-      const inputKey = voiceInputs(), source = await decodeMono(sourceBlob, controller.signal), range = patchSourceRange(project, startSeconds, endSeconds, source.length / VOICE_SAMPLE_RATE);
+      voiceText.input.value=stripEnglishParentheticalGlosses(voiceText.input.value);providerControls.setText(voiceText.input.value);const inputKey = voiceInputs(), source = await decodeMono(sourceBlob, controller.signal), range = patchSourceRange(project, startSeconds, endSeconds, source.length / VOICE_SAMPLE_RATE);
       const captionCues = project.captionMode === 'auto' ? null : getCaptions(project);
       // Validate manual caption boundaries before the paid synthesis call.
       retimeProjectForNarrationPatch(project, {start: startSeconds, end: endSeconds, replacementDuration: endSeconds - startSeconds, displayText: displayText.input.value, timelineCaptions: captionCues});
       if (!valid()) throw abortError();task.update('선택한 구간의 새 음성을 생성하고 있어요. 기존 음성은 그대로 있어요.');
-      const body=providerControls.request(voiceText.input.value);
+      voiceText.input.value=stripEnglishParentheticalGlosses(voiceText.input.value);providerControls.setText(voiceText.input.value);const body=providerControls.request(voiceText.input.value);
       const response = await request('/api/voice/generate', {method: 'POST', headers: {'Content-Type': 'application/json'}, signal: controller.signal, body: JSON.stringify(body)});if (!valid() || inputKey !== voiceInputs()) throw abortError();
-      const replacementBlob = await combineVoiceChunks(response.chunks,{signal:controller.signal,...(config.provider==='typecast'?{maxInputBytes:160*1024*1024}:{})}), replacement = await decodeMono(replacementBlob, controller.signal);if (!valid()) throw abortError();
+      const replacementBlob = await combineVoiceChunks(response.chunks,{signal:controller.signal,...(config.provider==='typecast'?{maxInputBytes:160*1024*1024,applyParagraphPauses:true}:{})}), replacement = await decodeMono(replacementBlob, controller.signal);if (!valid()) throw abortError();
+      let archiveError=null;if(api.saveVoiceSample){task.update('생성한 부분 음성 샘플을 프로젝트에 보관하고 있어요.');try{const settings=providerControls.snapshot();await api.saveVoiceSample({blob:replacementBlob,name:`부분음성-${String(project.title||'내레이션').replace(/[^\p{L}\p{N} _.-]/gu,'_').slice(0,70)}.wav`,textKey:voiceTextKey(body.text),settingsKey:voiceSettingsKey(settings),settings:settings.provider==='typecast'?settings:{provider:'server',...settings},guard:()=>valid()&&inputKey===voiceInputs()});}catch(cause){if(cause.name==='AbortError'||!valid())throw cause;archiveError=cause;}}
       task.update('실제 음성 길이로 원본의 해당 구간만 이어 붙이고 있어요.');const pcm = splicePcmSamples(source, replacement, {start: range.start, end: range.end, sampleRate: VOICE_SAMPLE_RATE});
       const retimed = retimeProjectForNarrationPatch(project, {start: startSeconds, end: endSeconds, replacementDuration: pcm.replacementSeconds, displayText: displayText.input.value, timelineCaptions: captionCues});
       const selectedScene = project.scenes.find(scene => scene.id === target.input.value), previousScene = project.production?.changes?.baseline?.scenes?.find(scene => scene.sceneId === target.input.value);
@@ -239,7 +243,7 @@ export function setupProductionChanges(api) {
       revokeVoice();voiceResult = {blob, url: URL.createObjectURL(blob), scope: owner, signature, inputKey, sourceBlob, apiEpoch, originalNarrationId: project.audio.narrationId, project: synced.project, scriptSync: synced.sync,
         range: {start: startSeconds, end: endSeconds}, delta: retimed.delta, totalSeconds: retimed.totalSeconds, replacementDuration: pcm.replacementSeconds, affectedSceneIds: retimed.affectedSceneIds,
         spokenText: body.text, displayText: displayText.input.value, name: `${project.title || '내레이션'}-부분수정.wav`};
-      resultAudio.src = voiceResult.url;voiceResultNode.hidden = false;task.finish('부분 수정한 전체 내레이션을 미리 들어보세요. 적용 전에는 원본과 영상 시간이 그대로예요.');
+      resultAudio.src = voiceResult.url;voiceResultNode.hidden = false;if(archiveError)error.textContent=`부분 음성은 생성했지만 샘플 보관에 실패했어요. 아래 WAV 저장으로 결과를 보관하세요. ${archiveError.message||''}`;task.finish('부분 수정한 전체 내레이션을 미리 들어보세요. 적용 전에는 원본과 영상 시간이 그대로예요.');
     } catch (cause) {if (serial !== sequence) return;if (cause.name === 'AbortError') task.cancel(timedOut ? '응답 시간이 초과됐어요. 기존 음성과 이전 미리보기는 유지했어요.' : '음성 재생성을 취소했어요. 기존 음성과 이전 미리보기는 유지했어요.');else {showError(cause);task.fail(cause.message);}}
     finally {clearTimeout(timeout);if (serial === sequence) {currentRun = null;voiceConsent.input.checked = false;busy(false);}}
   }
@@ -269,7 +273,7 @@ export function setupProductionChanges(api) {
   reloadTarget.addEventListener('click', () => chooseTarget(target.input.value, true));
   openSpeech.addEventListener('click', () => api.openSection?.('speech'));
   for (const input of [imageConsent.input, voiceConsent.input, replacePreview.input]) input.addEventListener('change', refreshActions);
-  for (const input of [imageDirection.input, start.input, end.input, voiceText.input, displayText.input, speaker.input, speed.input, pitch.input, volume.input]) input.addEventListener('input', () => {if (currentRun && !applying) stop('입력이 바뀌어 재생성을 취소했어요. 기존 자료와 미리보기는 유지돼요.');if (input === imageDirection.input) imageConsent.input.checked = false;else voiceConsent.input.checked = false;refreshActions();});
+  for (const input of [imageDirection.input, start.input, end.input, voiceText.input, displayText.input, speaker.input, speed.input, pitch.input, volume.input]) input.addEventListener('input', () => {if (currentRun && !applying) stop('입력이 바뀌어 재생성을 취소했어요. 기존 자료와 미리보기는 유지돼요.');if (input === imageDirection.input) imageConsent.input.checked = false;else voiceConsent.input.checked = false;if(input===voiceText.input)providerControls.setText(voiceText.input.value);refreshActions();});
   window.addEventListener('studio-api-settings-change',()=>{apiEpoch++;voiceEpoch++;cancelVoiceConfig();voiceConfig=null;if(currentRun&&!applying)stop('API 설정이 바뀌어 재생성을 취소했어요. 기존 자료와 미리보기는 유지돼요.');if(container.isConnected&&!container.hidden&&(!container.closest('dialog')||container.closest('dialog').open))checkVoiceConnection();refreshActions();});
   window.addEventListener('studio-voice-settings-change',()=>{voiceEpoch++;cancelVoiceConfig();voiceConfig=null;providerControls.stopSample();if(currentRun?.kind==='voice'&&!applying)stop('음성 API 설정이 바뀌어 음성 재생성을 취소했어요. 기존 자료와 이미지 작업은 유지돼요.');voiceConsent.input.checked=false;if(container.isConnected&&!container.hidden&&(!container.closest('dialog')||container.closest('dialog').open))checkVoiceConnection();refreshActions();});
   function reset() {cancelVoiceConfig();voiceConfig=null;providerControls.reset();stop('프로젝트가 바뀌어 부분 재생성을 중단했어요.');sourceAudio.pause();resultAudio.pause();if (sourceOwnedUrl) URL.revokeObjectURL(sourceOwnedUrl);sourceOwnedUrl = null;sourceAssetId = null;revokeVoice();releaseImages();selected.clear();rowFingerprint = '';targetFingerprint = '';targetId = '';scope = currentScope();imageConsent.input.checked = voiceConsent.input.checked = false;error.textContent = '';progress.clear();}

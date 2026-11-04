@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const {chromium}=require('playwright');
-const {reveal}=require('./ui-navigation.browser.cjs');
+const {reveal,openProductionSection,closeStudioWorkbench}=require('./ui-navigation.browser.cjs');
 
 // Actual channel profiles, local PNG/ZIP delivery, mocked text-assistant outputs,
 // and real source-audio excerpting. No paid provider request is permitted.
@@ -19,8 +19,8 @@ const {reveal}=require('./ui-navigation.browser.cjs');
   async function ready(){await page.waitForFunction(()=>document.querySelector('#addWorkspaceBtn')&&!document.querySelector('#addWorkspaceBtn').disabled&&document.querySelector('#productionToolsBtn'));}
   async function project(){return page.evaluate(async()=>(await(await import('./project.js')).loadProject())?.project);}
   async function waitProject(predicate){for(let attempt=0;attempt<200;attempt++){const value=await project();if(value&&predicate(value))return value;await page.waitForTimeout(40);}assert.fail('Expected committed production project');}
-  async function close(){await page.locator('#closeProductionWorkbenchBtn').click();await page.locator('#productionWorkbenchDialog').waitFor({state:'hidden'});}
-  async function open(section){if(!await page.locator('#productionWorkbenchDialog').isVisible())await page.locator('#productionToolsBtn').click();await page.locator('#productionTab-'+section).click();}
+  async function close(){await closeStudioWorkbench(page);}
+  async function open(section){await openProductionSection(page,section);}
   async function change(id,value){await reveal(page,'#'+id);await page.locator('#'+id).fill(String(value));await page.locator('#'+id).dispatchEvent('change');await page.locator('#'+id).blur();}
   try{
     await page.goto(base,{waitUntil:'networkidle'});await ready();
@@ -41,7 +41,7 @@ const {reveal}=require('./ui-navigation.browser.cjs');
     console.log('PASS actual publishing AI request/edit/cancel preservation, three local PNG thumbnails, credential-free UTF-8 ZIP and shorter manual-title reset');
 
     await open('shorts');await page.locator('#productionShortsDuration').selectOption('30');await page.locator('#generateShortsPlanBtn').click();await page.waitForFunction(()=>document.querySelector('#shortsProjectTitle').value==='이주의 핵심 쇼츠'&&!document.querySelector('#createShortsProjectBtn').disabled);assert.equal(requests.at(-1).task,'shorts');assert.equal(requests.at(-1).options.targetSeconds,30);assert.equal(requests.at(-1).context.scenes.length,3);
-    await page.locator('#createShortsProjectBtn').click();await page.locator('#productionWorkbenchDialog').waitFor({state:'hidden'});state=await waitProject(value=>value.id!==originalId&&value.aspect==='9:16'&&value.title==='이주의 핵심 쇼츠');assert.ok(Math.abs(state.scenes.reduce((sum,scene)=>sum+scene.duration,0)-4)<.01);assert.notEqual(state.audio.narrationId,originalAudio);assert.equal(state.audio.bgmId,original.audio.bgmId);assert.ok(state.scenes.every(scene=>originalImages.includes(scene.imageId)));assert.equal(state.captionMode,'srt');assert.ok(state.captions.every(cue=>cue.start>=0&&cue.end<=4));
+    await page.locator('#createShortsProjectBtn').click();await page.locator('#videoUploadDialog').waitFor({state:'hidden'});state=await waitProject(value=>value.id!==originalId&&value.aspect==='9:16'&&value.title==='이주의 핵심 쇼츠');assert.ok(Math.abs(state.scenes.reduce((sum,scene)=>sum+scene.duration,0)-4)<.01);assert.notEqual(state.audio.narrationId,originalAudio);assert.equal(state.audio.bgmId,original.audio.bgmId);assert.ok(state.scenes.every(scene=>originalImages.includes(scene.imageId)));assert.equal(state.captionMode,'srt');assert.ok(state.captions.every(cue=>cue.start>=0&&cue.end<=4));
     const durable=await page.evaluate(async id=>{const api=await import('./project.js'),loaded=await api.loadProject(),entry=loaded.assets.get(loaded.project.audio.narrationId),bytes=new Uint8Array(await entry.blob.arrayBuffer()),view=new DataView(bytes.buffer),archives=await api.listLibraryProjects();return{rate:view.getUint32(24,true),dataBytes:view.getUint32(40,true),archived:archives.some(record=>record.id===id)};},originalId);assert.equal(durable.rate,24000);assert.equal(durable.dataBytes,4*24000*2);assert.equal(durable.archived,true);
     console.log('PASS source-timed 9:16 shorts preserve real image/BGM assets, actual 4-second PCM narration/cues, and archive the original project');
     await page.reload({waitUntil:'networkidle'});await ready();await open('channels');assert.equal(await page.locator('#productionChannelName').inputValue(),'내가 정한 새 채널');await page.setViewportSize({width:390,height:844});await open('publishing');assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.screenshot({path:'/tmp/production-delivery-mobile.png'});assert.deepEqual(errors,[]);assert.deepEqual(paid,[]);console.log('PASS delivery modules persist, fit mobile and make no live provider/YouTube requests');

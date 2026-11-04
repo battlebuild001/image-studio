@@ -9,7 +9,7 @@ captions, motion, and optional BGM. The primary navigation is 대본 → 타이�
 and either import images or explicitly request optional reference-based image generation.
 Keep the default workflow free from paid video-generation APIs and preserve the
 Korean interface. Manual draft editing and document extraction work without APIs.
-Optional researched script creation, CLOVA voice synthesis, fixed-reference image
+Optional researched script creation, configured-provider voice synthesis, fixed-reference image
 generation and narration transcription use providers only on explicit actions.
 Users choose an image-change interval, review and confirm the timeline, then explicitly authorize sequential image generation for its slots. Sentence count must not automatically determine new image slots.
 Users configure their own OpenAI key in the app Settings for browser-direct script, image and timestamped transcription requests; Render is optional.
@@ -35,24 +35,38 @@ For notice changes run npm run test:ai-notice-browser and npm test; verify reada
 landscape/portrait layouts, off-state pixel parity and a real short exported video
 with images, narration, BGM and captions. Do not replace this with a DOM overlay.
 
-## Production management
+## Project settings, saving and video delivery
 
-The header's 제작 관리 dialog contains the requested ten production features in
-nine tabs: speech/dictionary, partial changes, budget, history, image review,
-information cards, channel presets, shorts and publishing materials. Keep this
-secondary workbench separate from the four primary workflow steps.
+The header has separate 프로젝트 기본 설정, 프로젝트 저장 and 영상 업로드 buttons.
+Project settings contain basics, speech/dictionary, partial changes, budget,
+history, image review, information cards and channel presets. The separate upload
+dialog contains YouTube, shorts/drama, series uploads and publishing materials.
+Preserve the four primary workflow steps and route legacy section openers to the
+correct dialog; never put delivery tools back inside project settings.
 
 - `dist/production-workbench.js` / `.css` composes feature modules through toolsApi.
   Flush dirty speech fields before switching sections, projects or workspaces;
   closing cancels active jobs without deleting completed results or manual fields.
+- `dist/project-defaults.js` / `.css` edits actual per-project title, aspect,
+  subtitles/title visibility, AI notice/position, transition and font size. These
+  mirror the editor values, never API secrets or defaults for unrelated projects.
+- `dist/video-upload-workbench.js` / `.css` owns delivery navigation. Preserve
+  reviewed one-shot upload arming through closing and the next actual export.
+- Root `saveCurrentProject`, the visible save button and Ctrl/Cmd+S strictly flush
+  editors, save the actual project/media to the named IndexedDB library and request
+  a portable `.bth.json` download. Empty configured projects are valid. Preserve
+  ordinary workspace autosave; never serialize keys, tokens or upload session URLs.
 - `dist/production-state.js` validates optional production version1 metadata.
   Legacy projects omit it. Keep the 2MiB bound, typed domains, credential/raw-body
-  exclusions and asset retention for image/voice version entries.
+  exclusions and asset retention for image/voice versions and stored voice samples.
 - `dist/production-speech.js` and `dist/pronunciation.js` separate optional
   scriptDraft.displayScript from spoken draftScript. Equal/missing display scripts
   retain legacy coupling until an explicit separate edit. Timing/subtitles use
   display text; voice generation uses spoken text. Pronunciation rules are local
-  project data and explicit prompt context, never provider configuration.
+  project data and explicit prompt context, never provider configuration. Always
+  show 자막용 대본 and 보이스용 대본 with separate copy/TXT actions. Use the shared
+  conservative English-gloss cleaner for outputs and voice handoff: remove
+  헤드리스(Headless), preserve Korean/factual numeric parentheses and source input.
 - `dist/production-changes.js` / `.css` and `production-changes-protocol.js` compare
   stable baselines, stage selected image replacements and splice actual decoded
   PCM into a user-reviewed source-audio interval. Image and voice baselines are
@@ -70,19 +84,49 @@ secondary workbench separate from the four primary workflow steps.
   BGM unchanged when restoring narration. Do not nest version histories.
 - `dist/production-assistant-protocol.js`, `production-visual-protocol.js` and
   `production-api.mjs` share strict bounded task schemas for actual image review,
-  diagrams, shorts and publishing. Use the fixed Responses provider, current
-  script model, explicit calls, cancellation and the existing shared paid-job lock.
+  diagrams, shorts, publishing, separate upload-title/upload-description and music
+  style recommendations. Use the fixed Responses provider, current script model,
+  explicit calls, cancellation and the existing shared paid-job lock.
 - `dist/production-visual.js`, `production-diagrams.js`,
   `production-diagram-renderer.js` and `production-visual-utils.js` send resized
   actual images/references, detect stale inputs and render editable real Canvas
   cards. Maps are schematic and must retain their disclaimer. Never invent data
   measurements or claim a text-only check inspected image pixels.
-- `dist/production-channels.js`, `production-shorts.js`,
-  `production-publishing.js` and `production-delivery-utils.js` provide allowlisted
-  presets, title cards, source-timed 9:16 variants and real PNG/ZIP downloads.
-  Archive the original before installing a shorts project. Cut/concatenate actual
-  narration and cues, preserve image/BGM assets and start its cost ledger empty.
-  Publishing creates downloadable materials; it does not upload to a channel.
+- `dist/production-channels.js` and `outro-design.js` provide allowlisted presets,
+  title cards and a dedicated fixed10-second Canvas outro: preview, PNG download
+  and explicit append as a real image scene. Match landscape/portrait, use the
+  user's text/channel name and preserve the exact optional AI notice. Its next
+  video region is a graphic, not an interactive YouTube end-screen registration.
+- `dist/production-shorts.js` and `short-series-protocol.js` preserve traditional
+  쇼츠형식 30/60-second highlights and add 드라마형식 covering the entire original
+  source chronologically. Review natural caption/scene boundaries, soft targets
+  30/60/90/120/180 seconds, <=120 parts and hard180-second part limits. No gaps,
+  overlaps or dropped ending. Archive the source; derive actual9:16 images/cues/
+  narration and correctly phased BGM, with a fresh ledger and no inherited uploads.
+- `dist/upload-series.js` / `.css` lazily saves actual derived projects and renders
+  then uploads one part at a time, leaving the working original unchanged. One
+  explicit Run authorizes the reviewed numbered titles/descriptions/privacy and
+  destination. Preserve progress/stop/completed parts and same-session resume
+  probes. Persist only source queue status/project IDs; receipts belong to derived
+  projects. Reloaded unresolved uploading must immediately block fresh uploads and
+  show needs-check, never create a duplicate POST while async recovery is pending.
+  Recheck the reviewed destination after rendering; guard source/workspace changes
+  and block editing during the queue. No hidden Google calls or playlist scopes.
+- `dist/production-publishing.js` and `production-delivery-utils.js` create real
+  PNG/ZIP materials; users can import those drafts into the separate upload form.
+
+`dist/media-search-protocol.js`, `media-search-client.js`, `reference-media.js` and
+`music-recommendations.js` use actual Wikimedia Commons public catalog metadata
+and media, fixed HTTPS destinations, no credentials and bounded validation. Topic
+research can explicitly search images alongside text; preserve independent progress,
+source/license gallery, checkbox selection and explicit reference/scene import.
+Download/import only selected real image files; never label a catalog result as AI
+generation or guaranteed usable copyrighted material. Fixed references retain the
+existing five-image/20MiB aggregate limits. AI music suggestions are style/mood/
+instrument/tempo directions, not invented real tracks. Search actual audio, play
+only on explicit preview, apply only the chosen verified file as BGM, and retain
+source attribution in project state/backups with copy controls. Empty results must
+remain honest; search/recommendation must not replace existing media automatically.
 
 Run npm test and the six test:production-*-browser scripts after suite changes.
 Browser suites use synthetic media and mocked providers, with actual IndexedDB,
@@ -119,6 +163,13 @@ publish user media as a regression check or claim authenticated upload success.
   closing the setup dialog; cancel on content/project/workspace/channel changes.
   Root delivers an actual exported Blob only after exportController is cleared.
   Closing active upload cancels transmission, not remote video deletion.
+- `dist/upload-metadata.js`: explicit separate title/description AI actions based
+  on actual project display script, timed scenes/cues and research sources. Update
+  only the clicked field and preserve manual siblings/tags/privacy. External files
+  require user content notes; never claim raw-video analysis or send their bytes.
+  Validate100 Unicode title/5000UTF8 description limits and only supplied source
+  URLs. Settings/source/workspace changes and cancellation reject late responses;
+  opening the dialog must never incur a paid request.
 - `dist/youtube-storage.js`: atomic receipt cleanup across saved current projects,
   workspace projects and library records. Preserve draft text/media/timestamps.
   Root serializes saves and clears live Undo/Redo copies as well. Disconnect
@@ -138,6 +189,9 @@ exclusion, receipt Undo retention/deletion, mobile and an actual short local
 image+narration+BGM+caption export followed by a mocked upload. Run real exports
 sequentially. Current official Google docs are linked in README; avoid hardcoding
 outdated quota numbers or blanket project private-only restrictions.
+Also run test:project-upload-browser, test:upload-metadata-browser and
+test:upload-series-browser (plus the focused series guard suite) for delivery
+changes. Synthetic/mocked transport checks are not live Google account publishing.
 
 ## Typecast narration
 
@@ -189,12 +243,33 @@ and previous audio/preview after errors, cancellation or stale responses. Typeca
 Studio subscriptions and API plans are separate; link official API pricing and
 commercial-use terms rather than guaranteeing free commercial audio rights.
 
+- `dist/voice-preferences-protocol.js` validates per-project
+  production.speech.voicePreferences and voiceSamples. Keep the selected model,
+  speaker, tempo, pitch, volume, emotions and pause settings through refresh,
+  reopen, workspaces and backups. Missing catalog voices/emotions stay visible
+  and require explicit replacement; never silently select the first voice.
+- Global and per-paragraph additional pauses are0..10 seconds; default0 preserves
+  legacy behavior. Paragraph-aligned chunks preserve original text/separators and
+  <=2000Unicode provider limits/context. Insert actual zero PCM after the designated
+  chunk and count it toward duration/60min bounds. Never forward invented pause or
+  SSML fields to Typecast. Additional-pause requests allow at most100chunks.
+- Generated samples retain actual audio assets in the project, <=20 with a preflight
+  capacity guard before paid synthesis. Root saveVoiceSample/applyVoiceSample/
+  removeVoiceSample own storage and media mutations. Preserve preview, picker and
+  WAV download through closing/reload/new generation/workspace/archive/backup;
+  stale samples remain playable/downloadable, with guarded explicit Apply.
+  Delete only on explicit user action and clear matching Undo references. If local
+  archiving fails, preserve the actual result and offer WAV download with an honest
+  error. Official catalog previews and user-generated stored samples are distinct.
+
 Run npm test, test:typecast-settings-browser, test:typecast-voice-browser, existing
 voice and production-changes browser suites plus direct API/key retention/layout/
 speech regressions. Use synthetic keys and intercepted providers. Verify actual
 binary audio/PCM, preview/Apply, distinct display/spoken scripts, partial timing,
 budget accounting once, credential-free backups and mobile. Keep real short video
 exports sequential and distinguish mocked feature checks from live speech quality.
+Use test:voice-durable-browser for actual persisted sample/pause/preferences
+regressions and test:dual-scripts-browser for visible subtitle/voice separation.
 
 ## Architecture
 
@@ -241,10 +316,10 @@ exports sequential and distinguish mocked feature checks from live speech qualit
   actual Responses web_search, no fallback to unsearched model recollection.
 - `dist/script-local-files.js` and `dist/vendor/`: local TXT/MD/PDF/DOCX extraction
   using pinned browser libraries; never upload originals or fetch external CDN code.
-- `dist/voice-studio.js` / `.css`: CLOVA narration generation, preview, download and
-  explicit application to the editor.
+- `dist/voice-studio.js` / `.css`: configured-provider narration generation,
+  persisted sample preview/download and explicit application to the editor.
 - `dist/voice-audio.js`: Unicode-preserving script chunking, actual MP3 decoding
-  and mono 24kHz WAV merging with measured audio duration.
+  and mono24kHz WAV merging with measured duration and explicit paragraph silence.
 - `dist/image-studio.js` / `.css`: fixed reference images/background settings,
   image generation preview, downloads and explicit scene application.
 - `dist/transcript-studio.js` / `.css`: narration transcription, staged timed cues,
@@ -292,6 +367,14 @@ extraction need no API key. Image generation and transcription add no package de
   browser suites use `tests/ui-navigation.browser.cjs` to open real details summaries
   before interacting with their controls; never force clicks on hidden controls.
 - Operation feedback browser regression: `npm run test:operation-browser`.
+- Project settings/save/upload navigation: `npm run test:project-upload-browser`.
+- Upload AI fields: `npm run test:upload-metadata-browser`.
+- Chronological drama queue: `npm run test:upload-series-browser`.
+- Commons image/audio gallery: `npm run test:reference-media-browser`.
+- Durable voice settings/samples/pauses: `npm run test:voice-durable-browser`.
+- Dual subtitle/voice outputs: `npm run test:dual-scripts-browser`.
+- Fixed10-second outro: `npm run test:outro-browser`; run
+  `npm run test:outro-export-browser` sequentially with other real exports.
 - Local operation feedback regression: `npm run test:local-operations-browser`;
   delayed real IndexedDB calls verify loading, success/error and retained content.
 - Reference-image browser regression: `npm run test:image-browser`. Fixture-based

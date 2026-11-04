@@ -15,3 +15,24 @@ async function reveal(page, selector) {
 }
 
 module.exports = {reveal};
+
+/** Delivery tools live outside the per-project settings dialog. */
+async function closeStudioWorkbench(page) {
+  if (await page.locator('#videoUploadDialog').isVisible()) {
+    await page.locator('#closeVideoUploadBtn').click();
+    await page.locator('#videoUploadDialog').waitFor({state:'hidden'});
+  } else if (await page.locator('#productionWorkbenchDialog').isVisible()) {
+    await page.locator('#closeProductionWorkbenchBtn').click();
+    await page.locator('#productionWorkbenchDialog').waitFor({state:'hidden'});
+  }
+}
+async function openProductionSection(page, section) {
+  const delivery=['shorts','publishing','youtube','series'].includes(section);
+  const target=delivery?'#videoUploadDialog':'#productionWorkbenchDialog';
+  const other=delivery?'#productionWorkbenchDialog':'#videoUploadDialog';
+  if (await page.locator(other).isVisible()) await closeStudioWorkbench(page);
+  if (!await page.locator(target).isVisible()) await page.locator(delivery?'#videoUploadBtn':'#productionToolsBtn').click();
+  await page.locator((delivery?'#uploadTab-':'#productionTab-')+section).click();
+}
+module.exports.openProductionSection=openProductionSection;
+module.exports.closeStudioWorkbench=closeStudioWorkbench;

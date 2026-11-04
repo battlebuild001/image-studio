@@ -46,7 +46,16 @@
     "test:production-guards-browser": "node tests/production-suite-guards.browser.cjs",
     "test:youtube-browser": "node tests/youtube-studio.browser.cjs",
     "test:typecast-settings-browser": "node tests/typecast-settings.browser.cjs",
-    "test:typecast-voice-browser": "node tests/typecast-voice.browser.cjs"
+    "test:typecast-voice-browser": "node tests/typecast-voice.browser.cjs",
+    "test:project-upload-browser": "node tests/project-upload-navigation.browser.cjs",
+    "test:upload-series-browser": "node tests/upload-series.browser.cjs",
+    "test:upload-metadata-browser": "node tests/upload-metadata.browser.cjs",
+    "test:reference-media-browser": "node tests/reference-media-music.browser.cjs",
+    "test:voice-durable-browser": "node tests/voice-durable.browser.cjs",
+    "test:dual-scripts-browser": "node tests/dual-scripts.browser.cjs",
+    "test:outro-browser": "node tests/outro-design.browser.cjs",
+    "test:outro-export-browser": "node tests/outro-export.browser.cjs",
+    "test:upload-series-guards-browser": "node tests/upload-series-guards.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",
