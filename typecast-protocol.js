@@ -72,7 +72,7 @@ export function normalizeTypecastVoices(input, {model} = {}) {
       models.push({version: candidate.version, emotions});
     }
     if (!models.length || (model && !models.some(value => value.version === model))) continue;
-    const speaker = {id: item.voice_id, name: item.voice_name.kor.trim() || item.voice_name.eng.trim(), language: 'multi', models};
+    const speaker = {id: item.voice_id, name: item.voice_name.kor.trim() || item.voice_name.eng.trim(), localizedNames: {kor: item.voice_name.kor.trim(), eng: item.voice_name.eng.trim()}, language: 'multi', models};
     const preview = previewUrl(item.preview_url);if (preview) speaker.previewUrl = preview;
     for (const key of ['gender', 'age']) if (labelValue(item[key], 80)) speaker[key] = item[key];
     result.push(speaker);
