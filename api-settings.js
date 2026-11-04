@@ -1,6 +1,8 @@
 import {candidateApiFetch, getApiSettings, setApiSettings, clearApiSettings, normalizeApiBaseUrl, ApiConnectionError} from './api-client.js';
 import {getDirectSettings, setDirectSettings, clearDirectSettings, setDirectEnabled, checkDirectKey} from './direct-openai.js';
 import {createOperationStatus, nextPaint} from './operation-status.js';
+import {setupTypecastSettings} from './typecast-settings.js';
+import {getTypecastSettings} from './direct-typecast.js';
 
 function node(tag, className = '', text) {
   const element = document.createElement(tag);if (className) element.className = className;
@@ -37,12 +39,12 @@ export function setupApiSettings(api = {}) {
   const title = node('h2', '', '설정 · API 연결');title.id = 'apiSettingsTitle';titles.append(title);
   const close = button('closeApiSettingsHeaderBtn', '×', 'icon-button');close.setAttribute('aria-label', 'API 설정 닫기');heading.append(titles, close);dialog.append(heading);
   const body = node('div', 'dialog-body');dialog.append(body);
-  body.append(node('p', 'api-settings-intro', 'OpenAI API 키를 입력하면 별도 서버 없이 대본 작성·레퍼런스 이미지 생성·음성 분석을 사용할 수 있어요. 음성 생성은 별도의 음성 API 연결이 필요해요.'));
+  body.append(node('p', 'api-settings-intro', 'OpenAI API로 대본·이미지 생성과 음성 분석을, Typecast API로 한국어 음성 생성을 연결해요. 각 키는 별도로 설정하며, 음성 API 없이도 대본 작성과 영상 편집을 계속할 수 있어요.'));
   const tabs = node('div', 'api-settings-tabs');tabs.setAttribute('role', 'tablist');tabs.setAttribute('aria-label', 'API 연결 방식');
-  const directTab = button('openAiSettingsTab', 'OpenAI API', 'api-settings-tab'), serverTab = button('serverConnectionTab', '서버 연결 (선택)', 'api-settings-tab');
-  const directPanel = node('section', 'api-settings-panel'), serverPanel = node('section', 'api-settings-panel');directPanel.id = 'openAiSettingsPanel';serverPanel.id = 'serverConnectionPanel';
-  for (const [tab, panel] of [[directTab, directPanel], [serverTab, serverPanel]]) {tab.setAttribute('role', 'tab');tab.setAttribute('aria-controls', panel.id);panel.setAttribute('role', 'tabpanel');panel.setAttribute('aria-labelledby', tab.id);tabs.append(tab);}
-  body.append(tabs, directPanel, serverPanel);
+  const directTab = button('openAiSettingsTab', 'OpenAI API', 'api-settings-tab'), typecastTab = button('typecastSettingsTab', 'Typecast 음성', 'api-settings-tab'), serverTab = button('serverConnectionTab', '서버 연결 (선택)', 'api-settings-tab');
+  const directPanel = node('section', 'api-settings-panel'), typecastPanel = node('section', 'api-settings-panel'), serverPanel = node('section', 'api-settings-panel');directPanel.id = 'openAiSettingsPanel';typecastPanel.id = 'typecastSettingsPanel';serverPanel.id = 'serverConnectionPanel';
+  for (const [tab, panel] of [[directTab, directPanel], [typecastTab, typecastPanel], [serverTab, serverPanel]]) {tab.setAttribute('role', 'tab');tab.setAttribute('aria-controls', panel.id);panel.setAttribute('role', 'tabpanel');panel.setAttribute('aria-labelledby', tab.id);tabs.append(tab);}
+  body.append(tabs, directPanel, typecastPanel, serverPanel);
 
   directPanel.append(node('p', 'api-settings-help', '본인 OpenAI 계정의 키로 api.openai.com에 직접 요청해요. ChatGPT 구독과 API 사용료는 별도예요. 키 입력·연결 확인만으로 대본이나 이미지를 생성하지 않아요.'));
   const directCurrent = node('p', 'api-settings-current');directCurrent.id = 'openAiSettingsCurrent';directPanel.append(directCurrent);
@@ -81,29 +83,32 @@ export function setupApiSettings(api = {}) {
   const footer = node('div', 'dialog-footer'), done = button('closeApiSettingsBtn', '닫기', 'ghost');footer.append(done);dialog.append(footer);document.body.append(dialog);
 
   let controller = null, operation = 0, busy = false, timeout = null, selectedTab = 'openai', applyingSettings = false;
+  const typecastSettings=setupTypecastSettings({...api,container:typecastPanel,canMutate:()=>!busy&&(!api.canMutate||api.canMutate())});
   function applySettings(action) {applyingSettings = true;try {return action();} finally {applyingSettings = false;}}
-  const allControls = [key.input, browserInput, rememberInput, memoryInput, scriptModel.input, imageModel.input, verify, save, clearKey, url.input, code.input, connect, clear, directTab, serverTab];
+  const allControls = [key.input, browserInput, rememberInput, memoryInput, scriptModel.input, imageModel.input, verify, save, clearKey, url.input, code.input, connect, clear, directTab, typecastTab, serverTab];
   function selectTab(name, focus = false) {
-    selectedTab = name === 'server' ? 'server' : 'openai';
-    for (const [tab, panel, name] of [[directTab, directPanel, 'openai'], [serverTab, serverPanel, 'server']]) {const active = name === selectedTab;tab.setAttribute('aria-selected', String(active));tab.tabIndex = active ? 0 : -1;panel.hidden = !active;}
-    if (focus) (selectedTab === 'openai' ? directTab : serverTab).focus();
+    if(selectedTab==='typecast'&&name!=='typecast')typecastSettings.onClose();
+    selectedTab = ['server','typecast'].includes(name) ? name : 'openai';
+    for (const [tab, panel, name] of [[directTab, directPanel, 'openai'], [typecastTab, typecastPanel, 'typecast'], [serverTab, serverPanel, 'server']]) {const active = name === selectedTab;tab.setAttribute('aria-selected', String(active));tab.tabIndex = active ? 0 : -1;panel.hidden = !active;}
+    if (focus) (selectedTab === 'openai' ? directTab : selectedTab==='typecast'?typecastTab:serverTab).focus();
   }
   function render() {
-    const settings = getApiSettings(), direct = getDirectSettings();
-    launcher.dataset.connected = String(Boolean((direct.enabled && direct.hasKey) || settings.baseUrl));launcher.title = 'API 키·모델·서버 연결 설정';
+    const settings = getApiSettings(), direct = getDirectSettings(), typecast = getTypecastSettings();
+    launcher.dataset.connected = String(Boolean((direct.enabled && direct.hasKey) || (typecast.enabled && typecast.hasKey) || settings.baseUrl));launcher.title = 'API 키·모델·서버 연결 설정';
     current.textContent = settings.baseUrl ? `저장된 서버: ${settings.baseUrl} · ${settings.hasToken ? '현재 탭에 앱 접속코드 저장됨' : '앱 접속코드 없음'}` : '별도 서버가 연결되지 않았어요. 필요하면 이 앱을 실행하는 서버의 API를 사용할 수 있어요.';
     code.input.placeholder = settings.hasToken ? '저장된 접속코드 유지 (변경하려면 입력)' : '서버에서 받은 앱 접속코드';
     directCurrent.textContent = direct.hasKey ? `${direct.enabled ? 'OpenAI 직접 연결 사용 중' : 'OpenAI 키 설정됨 · 현재 서버 연결 사용'} · ${direct.rememberInBrowser ? '이 브라우저에 키 저장됨 · 다시 접속해도 유지' : direct.rememberForTab ? '현재 탭에 키 저장됨 · 탭을 닫으면 보관 종료' : '메모리에만 키 보관 · 새로고침하면 다시 입력'} · 키는 보안을 위해 입력란에 표시하지 않아요.` : '저장된 OpenAI API 키가 없어요. 키를 입력하고 보관 방식을 선택한 뒤 저장해 주세요.';
-    key.input.placeholder = direct.hasKey ? '키 저장됨 · 변경할 때만 새 키 입력' : 'sk-…';
+    key.input.placeholder = direct.hasKey ? '키 저장됨 · 변경할 때만 새 키 입력' : 'sk-…';typecastSettings.render();
   }
-  function hydrate() {const direct = getDirectSettings();key.input.value = '';code.input.value = '';url.input.value = getApiSettings().baseUrl;scriptModel.input.value = direct.scriptModel || 'gpt-5-mini';imageModel.input.value = direct.imageModel || 'gpt-image-2';browserInput.checked = direct.rememberInBrowser === true;rememberInput.checked = !browserInput.checked && direct.rememberForTab === true;memoryInput.checked = !browserInput.checked && !rememberInput.checked;}
-  function setBusy(value) {busy = value;dialog.setAttribute('aria-busy', String(value));for (const control of allControls) control.disabled = value;verify.textContent = value && selectedTab === 'openai' ? '연결 확인 중…' : '연결 확인·저장';connect.textContent = value && selectedTab === 'server' ? '연결 확인 중…' : '연결 확인·저장';}
+  function hydrate() {const direct = getDirectSettings();key.input.value = '';code.input.value = '';url.input.value = getApiSettings().baseUrl;scriptModel.input.value = direct.scriptModel || 'gpt-5-mini';imageModel.input.value = direct.imageModel || 'gpt-image-2';browserInput.checked = direct.rememberInBrowser === true;rememberInput.checked = !browserInput.checked && direct.rememberForTab === true;memoryInput.checked = !browserInput.checked && !rememberInput.checked;typecastSettings.hydrate();}
+  function setBusy(value) {busy = value;dialog.setAttribute('aria-busy', String(value));for (const control of allControls) control.disabled = value;verify.textContent = value && selectedTab === 'openai' ? '연결 확인 중…' : '연결 확인·저장';connect.textContent = value && selectedTab === 'server' ? '연결 확인 중…' : '연결 확인·저장';typecastSettings.render();}
   function stop() {operation++;controller?.abort();controller = null;if (timeout) clearTimeout(timeout);timeout = null;directActivity.cancel('연결 확인을 취소했어요. 기존 설정은 유지했어요.');serverActivity.cancel('연결 확인을 취소했어요. 기존 설정은 유지했어요.');setBusy(false);}
-  function dismiss() {stop();key.input.value = '';code.input.value = '';dialog.close();}
+  function dismiss() {typecastSettings.onClose();stop();key.input.value = '';code.input.value = '';dialog.close();}
   function open(options = {}) {
-    const name = options?.tab === 'server' ? 'server' : 'openai';
-    if (dialog.open) {if (!busy) {selectTab(name);(name === 'server' ? url.input : key.input).focus();}return;}
-    stop();directActivity.clear();serverActivity.clear();render();hydrate();status.textContent = '';error.textContent = '';directStatus.textContent = '';directErrorText.textContent = '';selectTab(name);dialog.showModal();(name === 'server' ? url.input : key.input).focus();
+    const name = ['server','typecast'].includes(options?.tab) ? options.tab : 'openai';
+    const focusInput=()=>name==='typecast'?document.getElementById('typecastApiKey'):name==='server'?url.input:key.input;
+    if (dialog.open) {if (!busy) {selectTab(name);focusInput()?.focus();}return;}
+    stop();directActivity.clear();serverActivity.clear();render();hydrate();status.textContent = '';error.textContent = '';directStatus.textContent = '';directErrorText.textContent = '';selectTab(name);dialog.showModal();focusInput()?.focus();
   }
   function captureDirect() {
     const value = key.input.value.trim(), existing = getDirectSettings();
@@ -166,14 +171,15 @@ export function setupApiSettings(api = {}) {
   launcher.addEventListener('click', () => open());connect.addEventListener('click', checkAndSaveServer);save.addEventListener('click', () => saveDirect(false));verify.addEventListener('click', () => saveDirect(true));
   clearKey.addEventListener('click', () => {if (busy) return;try {clearDirectSettings();key.input.value = '';directErrorText.textContent = '';directStatus.textContent = 'OpenAI 키를 삭제했어요. 대본과 프로젝트 자료는 그대로 있어요.';hydrate();render();} catch {directErrorText.textContent = '키 설정을 지우지 못했어요. 브라우저 저장 공간 설정을 확인해 주세요.';}});
   clear.addEventListener('click', () => {if (busy) return;try {clearApiSettings();url.input.value = '';code.input.value = '';error.textContent = '';status.textContent = '별도 AI 서버 연결을 해제했어요. 대본과 프로젝트 자료는 그대로 있어요.';render();} catch {error.textContent = '연결 설정을 지우지 못했어요. 브라우저 저장 공간 설정을 확인해 주세요.';}});
-  for (const [tab, name] of [[directTab, 'openai'], [serverTab, 'server']]) {tab.addEventListener('click', () => {if (!busy) selectTab(name);});tab.addEventListener('keydown', event => {if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) || busy) return;event.preventDefault();selectTab(event.key === 'Home' ? 'openai' : event.key === 'End' ? 'server' : selectedTab === 'openai' ? 'server' : 'openai', true);});}
+  const tabOrder=['openai','typecast','server'];
+  for (const [tab,name] of [[directTab,'openai'],[typecastTab,'typecast'],[serverTab,'server']]){tab.addEventListener('click',()=>{if(!busy)selectTab(name);});tab.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)||busy)return;event.preventDefault();const index=tabOrder.indexOf(selectedTab);selectTab(event.key==='Home'?tabOrder[0]:event.key==='End'?tabOrder.at(-1):tabOrder[(index+(event.key==='ArrowRight'?1:-1)+tabOrder.length)%tabOrder.length],true);});}
   for (const element of [close, done]) element.addEventListener('click', dismiss);
-  dialog.addEventListener('cancel', event => {event.preventDefault();dismiss();});dialog.addEventListener('close', () => {stop();key.input.value = '';code.input.value = '';});
+  dialog.addEventListener('cancel', event => {event.preventDefault();dismiss();});dialog.addEventListener('close', () => {typecastSettings.onClose();stop();key.input.value = '';code.input.value = '';});
   window.addEventListener('studio-api-settings-change', () => {
     if (busy && !applyingSettings) {
       stop();key.input.value = '';code.input.value = '';hydrate();
       (selectedTab === 'openai' ? directStatus : status).textContent = '다른 설정 변경으로 연결 확인을 취소했어요. 현재 저장 상태를 확인해 주세요.';
     }
     render();
-  });selectTab('openai');render();return {open, render};
+  });window.addEventListener('studio-voice-settings-change',render);selectTab('openai');render();return {open, render};
 }

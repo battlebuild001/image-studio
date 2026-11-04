@@ -1,5 +1,6 @@
 export const VOICE_SAMPLE_RATE = 24000;
 const MAX_INPUT_BYTES = 32 * 1024 * 1024;
+const MAX_PROVIDER_INPUT_BYTES = 160 * 1024 * 1024;
 const MAX_OUTPUT_BYTES = 180 * 1024 * 1024;
 
 function checkAbort(signal) {
@@ -29,8 +30,9 @@ function decodeBase64(chunk) {
 
 /** Decode every real provider chunk, then render continuous mono PCM. MP3 bytes
  * cannot simply be concatenated: decoder padding and headers are not a timeline. */
-export async function combineVoiceChunks(chunks, {signal} = {}) {
+export async function combineVoiceChunks(chunks, {signal, maxInputBytes = MAX_INPUT_BYTES} = {}) {
   checkAbort(signal);
+  if (!Number.isSafeInteger(maxInputBytes) || maxInputBytes < 1 || maxInputBytes > MAX_PROVIDER_INPUT_BYTES) throw new Error('음성 입력 크기 제한을 확인해 주세요.');
   if (!Array.isArray(chunks) || !chunks.length || chunks.length > 100) throw new Error('생성된 음성 구간을 확인해 주세요.');
   const OfflineContext = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
   if (!OfflineContext) throw new Error('이 브라우저에서는 음성 파일을 합칠 수 없어요. 최신 Chrome을 사용해 주세요.');
@@ -39,7 +41,7 @@ export async function combineVoiceChunks(chunks, {signal} = {}) {
   for (const chunk of chunks) {
     checkAbort(signal);
     const bytes = decodeBase64(chunk);inputBytes += bytes.length;
-    if (inputBytes > MAX_INPUT_BYTES) throw new Error('생성된 음성 데이터가 너무 큽니다. 대본을 나누어 만들어 주세요.');
+    if (inputBytes > maxInputBytes) throw new Error('생성된 음성 데이터가 너무 큽니다. 대본을 나누어 만들어 주세요.');
     let buffer;
     try {buffer = await abortable(decoder.decodeAudioData(bytes.buffer), signal);}
     catch (error) {
