@@ -1,4 +1,5 @@
 import {YOUTUBE_SCOPES, normalizeYouTubeClientId, normalizeYouTubeMetadata, buildYouTubeVideoResource, normalizeYouTubeUploadRecord, validateYouTubeVideoFile, validateYouTubeThumbnailFile} from './youtube-protocol.js';
+import {assertYouTubeScheduleFuture, normalizePublishAt, YOUTUBE_SCHEDULE_TRANSFER_LEAD_MS} from './youtube-schedule.js';
 
 const SETTINGS_KEY = 'content-studio-youtube-client-id-v1';
 const CHUNK_UNIT = 256 * 1024;
@@ -204,7 +205,14 @@ export function createYouTubeClient(options = {}) {
     const body = await json(response, 1024 * 1024, controller.signal, requestTimeout);check(state, controller, expected);
     if (body?.snippet?.channelId && body.snippet.channelId !== state.channelId) throw failure('YOUTUBE_CHANNEL_CHANGED', 'Google 응답의 채널이 연결한 업로드 채널과 달라요. 유튜브에서 결과를 확인해 주세요.');
     const privacyStatus = ['public', 'unlisted', 'private'].includes(body?.status?.privacyStatus) ? body.status.privacyStatus : state.metadata.privacyStatus;
-    const result = normalizeYouTubeUploadRecord({videoId: body?.id, title: body?.snippet?.title || state.metadata.title, privacyStatus, channelId: state.channelId, channelTitle: state.channelTitle, uploadedAt: new Date(now()).toISOString(), fileName: state.fileName, bytes: state.blob.size});
+    let schedule = {};
+    if (state.metadata.publishAt !== undefined) {
+      let scheduleConfirmed = false;
+      try {scheduleConfirmed = body?.status?.privacyStatus === 'private' && normalizePublishAt(body?.status?.publishAt) === state.metadata.publishAt;} catch {}
+      // A missing/mismatched echo never erases a known uploaded video or starts another upload.
+      schedule = {publishAt: state.metadata.publishAt, ...(state.metadata.scheduleTimeZone !== undefined ? {scheduleTimeZone: state.metadata.scheduleTimeZone} : {}), scheduleConfirmed};
+    }
+    const result = normalizeYouTubeUploadRecord({videoId: body?.id, title: body?.snippet?.title || state.metadata.title, privacyStatus, channelId: state.channelId, channelTitle: state.channelTitle, uploadedAt: new Date(now()).toISOString(), fileName: state.fileName, bytes: state.blob.size, ...schedule});
     state.uploadedBytes = state.blob.size;state.complete = true;state.uncertain = false;state.record = result;progress(state, onProgress, 'complete', '유튜브 전송을 마쳤어요. 유튜브에서 영상 처리와 공개 상태를 확인해 주세요.');return result;
   }
   async function probe(state, controller, expected, onProgress) {
@@ -218,7 +226,7 @@ export function createYouTubeClient(options = {}) {
   }
   async function transfer(state, controller, expected, onProgress) {
     while (state.uploadedBytes < state.blob.size) {
-      check(state, controller, expected);const start = state.uploadedBytes, end = Math.min(start + chunkSize, state.blob.size), auth = requireAuth(state.channelId);
+      check(state, controller, expected);assertYouTubeScheduleFuture(state.metadata, {now: now(), minLeadMs: YOUTUBE_SCHEDULE_TRANSFER_LEAD_MS});const start = state.uploadedBytes, end = Math.min(start + chunkSize, state.blob.size), auth = requireAuth(state.channelId);
       state.uncertain = true;progress(state, onProgress, 'uploading', '유튜브로 영상을 전송하고 있어요. 확인된 전송량이 진행률에 표시돼요.');
       const response = await send(state.location, {method: 'PUT', headers: {Authorization: `Bearer ${auth.token}`, 'Content-Type': state.mimeType, 'Content-Range': `bytes ${start}-${end - 1}/${state.blob.size}`}, body: state.blob.slice(start, end, state.mimeType)}, controller.signal);
       check(state, controller, expected);
@@ -241,13 +249,14 @@ export function createYouTubeClient(options = {}) {
   }
   function uploadVideo({blob, fileName, metadata, signal, onProgress, onSession} = {}) {
     let mimeType, normalized, auth;
-    try {mimeType = validateYouTubeVideoFile(blob);normalized = normalizeYouTubeMetadata(metadata);auth = requireAuth();if (job || connecting) throw failure('YOUTUBE_BUSY', '이미 진행 중인 유튜브 작업이 있어요.');if (upload?.location && !upload.complete) throw failure('YOUTUBE_UPLOAD_PENDING', '이어 올릴 영상이 남아 있어요. 상태 확인 후 이어 올리거나, 기존 전송 정보를 비운 뒤 새 업로드를 시작해 주세요.');}
+    try {mimeType = validateYouTubeVideoFile(blob);normalized = normalizeYouTubeMetadata(metadata);assertYouTubeScheduleFuture(normalized, {now: now()});auth = requireAuth();if (job || connecting) throw failure('YOUTUBE_BUSY', '이미 진행 중인 유튜브 작업이 있어요.');if (upload?.location && !upload.complete) throw failure('YOUTUBE_UPLOAD_PENDING', '이어 올릴 영상이 남아 있어요. 상태 확인 후 이어 올리거나, 기존 전송 정보를 비운 뒤 새 업로드를 시작해 주세요.');}
     catch (cause) {return Promise.reject(cause);}
     const name = typeof fileName === 'string' && fileName.trim() ? fileName.trim() : typeof blob.name === 'string' ? blob.name : mimeType === 'video/mp4' ? '영상.mp4' : '영상.webm';
     if (Array.from(name).length > 180 || /[\x00-\x1f\x7f<>\\/]/u.test(name) || name === '.' || name === '..') return Promise.reject(failure('YOUTUBE_FILE_NAME', '영상 파일 이름은 폴더 경로·꺾쇠·제어 문자 없이 180자 이하로 정해 주세요.'));
     const state = {blob, fileName: name, mimeType, metadata: normalized, channelId: auth.channelId, channelTitle: auth.channelTitle, clientId, location: '', uploadedBytes: 0, uncertain: false, complete: false, expired: false};upload = state;
     return run(state, {signal, onProgress}, async (controller, expected) => {
       progress(state, onProgress, 'preparing', '영상 제목·설명과 이어 올리기 세션을 준비하고 있어요.');
+      assertYouTubeScheduleFuture(state.metadata, {now: now()});
       const response = await send(UPLOAD_ENDPOINT, {method: 'POST', headers: {Authorization: `Bearer ${requireAuth(state.channelId).token}`, 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Length': String(blob.size), 'X-Upload-Content-Type': mimeType}, body: JSON.stringify(buildYouTubeVideoResource(normalized))}, controller.signal);
       check(state, controller, expected);if (!response.ok) throw await uploadResponseError(response, controller.signal);
       state.location = sessionAddress(response.headers.get('Location'));try {onSession?.(getUploadState());} catch {}emit('upload-ready');

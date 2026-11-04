@@ -1,3 +1,5 @@
+import {normalizePublishAt, normalizeScheduleTimeZone} from './youtube-schedule.js';
+
 /** Browser-safe YouTube upload data. OAuth tokens and upload-session URLs never belong here. */
 export const YOUTUBE_UPLOAD_SCOPE = 'https://www.googleapis.com/auth/youtube.upload';
 export const YOUTUBE_READONLY_SCOPE = 'https://www.googleapis.com/auth/youtube.readonly';
@@ -9,9 +11,9 @@ export const YOUTUBE_MAX_THUMBNAIL_BYTES = 5 * 1024 ** 2;
 
 const encoder = new TextEncoder();
 const PRIVACY = new Set(['private', 'unlisted', 'public']);
-const DRAFT_FIELDS = new Set(['title', 'description', 'tags', 'privacyStatus', 'selfDeclaredMadeForKids', 'containsSyntheticMedia']);
+const DRAFT_FIELDS = new Set(['title', 'description', 'tags', 'privacyStatus', 'selfDeclaredMadeForKids', 'containsSyntheticMedia', 'publishAt', 'scheduleTimeZone']);
 const METADATA_FIELDS = new Set([...DRAFT_FIELDS, 'categoryId', 'defaultLanguage']);
-const RECORD_FIELDS = new Set(['videoId', 'videoUrl', 'title', 'privacyStatus', 'channelId', 'channelTitle', 'uploadedAt', 'fileName', 'bytes']);
+const RECORD_FIELDS = new Set(['videoId', 'videoUrl', 'title', 'privacyStatus', 'channelId', 'channelTitle', 'uploadedAt', 'fileName', 'bytes', 'publishAt', 'scheduleTimeZone', 'scheduleConfirmed']);
 const VIDEO_MIME = new Set(['video/mp4', 'video/webm', 'video/x-matroska', 'video/quicktime', 'video/mpeg', 'video/mp2t', 'video/x-msvideo', 'video/avi', 'video/x-flv', 'video/x-ms-wmv', 'video/3gpp', 'video/3gpp2', 'video/ogg']);
 const FILE_MIME = new Map([['mp4', 'video/mp4'], ['m4v', 'video/mp4'], ['webm', 'video/webm'], ['mkv', 'video/x-matroska'], ['mov', 'video/quicktime'], ['mpeg', 'video/mpeg'], ['mpg', 'video/mpeg'], ['ts', 'video/mp2t'], ['avi', 'video/x-msvideo'], ['flv', 'video/x-flv'], ['wmv', 'video/x-ms-wmv'], ['3gp', 'video/3gpp'], ['3g2', 'video/3gpp2'], ['ogv', 'video/ogg']]);
 const CREDENTIAL = /\b(?:ya29\.[A-Za-z0-9_-]{16,}|sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,})\b/u;
@@ -70,6 +72,11 @@ export function normalizeYouTubeUploadDraft(input) {
     selfDeclaredMadeForKids: bool(value.selfDeclaredMadeForKids ?? false, '아동용 여부'),
     containsSyntheticMedia: bool(value.containsSyntheticMedia ?? true, 'AI·합성 콘텐츠 여부'),
   };
+  if (value.scheduleTimeZone !== undefined) result.scheduleTimeZone = normalizeScheduleTimeZone(value.scheduleTimeZone);
+  if (value.publishAt !== undefined) {
+    result.publishAt = normalizePublishAt(value.publishAt);
+    if (result.privacyStatus !== 'private') fail('예약 공개 영상은 비공개로 먼저 전송해야 해요.');
+  }
   if (encoder.encode(result.description).byteLength > YOUTUBE_MAX_DESCRIPTION_BYTES) fail('영상 설명은 UTF-8 기준 5,000바이트 이하여야 해요. 한국어는 보통 한 글자에 3바이트예요.');
   return result;
 }
@@ -89,7 +96,7 @@ export function buildYouTubeVideoResource(input) {
   const value = normalizeYouTubeMetadata(input);
   return {
     snippet: {title: value.title, description: value.description, tags: [...value.tags], categoryId: value.categoryId, defaultLanguage: value.defaultLanguage},
-    status: {privacyStatus: value.privacyStatus, selfDeclaredMadeForKids: value.selfDeclaredMadeForKids, containsSyntheticMedia: value.containsSyntheticMedia},
+    status: {privacyStatus: value.privacyStatus, selfDeclaredMadeForKids: value.selfDeclaredMadeForKids, containsSyntheticMedia: value.containsSyntheticMedia, ...(value.publishAt !== undefined ? {publishAt: value.publishAt} : {})},
   };
 }
 
@@ -106,7 +113,11 @@ export function normalizeYouTubeUploadRecord(input) {
   if (!Number.isSafeInteger(input.bytes) || input.bytes <= 0 || input.bytes > YOUTUBE_MAX_VIDEO_BYTES) fail('업로드한 영상 크기를 확인해 주세요.');
   const fileName = displayText(input.fileName, 180, '영상 파일 이름').trim();
   if (/[\\/]/u.test(fileName) || fileName === '.' || fileName === '..') fail('영상 파일 이름에 폴더 경로를 넣을 수 없어요.');
-  return {videoId: input.videoId, videoUrl, title: string(input.title, 100, '업로드 제목', {blank: false, trim: true}), privacyStatus: privacy(input.privacyStatus), channelId: input.channelId, channelTitle: displayText(input.channelTitle, 150, '업로드 채널 이름'), uploadedAt, fileName, bytes: input.bytes};
+  const result = {videoId: input.videoId, videoUrl, title: string(input.title, 100, '업로드 제목', {blank: false, trim: true}), privacyStatus: privacy(input.privacyStatus), channelId: input.channelId, channelTitle: displayText(input.channelTitle, 150, '업로드 채널 이름'), uploadedAt, fileName, bytes: input.bytes};
+  if (input.scheduleTimeZone !== undefined) result.scheduleTimeZone = normalizeScheduleTimeZone(input.scheduleTimeZone);
+  if (input.publishAt !== undefined) {result.publishAt = normalizePublishAt(input.publishAt);result.scheduleConfirmed = bool(input.scheduleConfirmed ?? false, '예약 공개 확인 여부');if (result.scheduleConfirmed && result.privacyStatus !== 'private') fail('예약 확인 기록의 공개 상태를 확인해 주세요.');}
+  else if (input.scheduleConfirmed !== undefined) fail('예약 확인 기록에는 요청한 공개 시각이 필요해요.');
+  return result;
 }
 
 function chapterTimestamp(value) {
