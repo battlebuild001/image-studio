@@ -6,6 +6,7 @@ import {captureChannelPreset,applyChannelPreset,normalizeChannelPreset,renderCha
 import {validateShortSegments,parseShortSegments,extractShortScenes,extractShortCaptions,cutNarrationSamples,buildShortsVariant} from '../dist/production-shorts.js';
 import {parsePublishingChapters,manualPublishingDraft,publishingText,renderPublishingThumbnail} from '../dist/production-publishing.js';
 import {createDeliveryZip,crc32,deliverySourceKey} from '../dist/production-delivery-utils.js';
+import {selectTitleBackdrop} from '../dist/title-design.js';
 
 const imageBytes=await readFile(new URL('./fixtures/image-test-1.png',import.meta.url));
 const image={blob:new Blob([imageBytes],{type:'image/png'}),type:'image/png',name:'합성 이미지.png'};
@@ -51,7 +52,51 @@ test('manual publishing metadata derives real source times and remains clearly a
   assert.deepEqual(parsePublishingChapters('00:00 도입\n00:10 본론\n00:30 마무리',40).map(item=>item.start),[0,10,30]);assert.throws(()=>parsePublishingChapters('00:50 범위 초과',40));assert.throws(()=>parsePublishingChapters('00:10 두 번\n00:10 중복',40));const short=source();short.scenes=[createScene({imageId:'image-one',duration:4,caption:'짧은 영상'})];assert.deepEqual(manualPublishingDraft(short).chapters,[]);
 });
 
-function traceCanvas(width=1280,height=720){const calls=[],ctx={canvas:null,fillStyle:'',strokeStyle:'',globalAlpha:1,lineWidth:1,font:'20px sans-serif',textAlign:'left',createLinearGradient:()=>({addColorStop(){}}),fillRect(...args){calls.push(['rect',...args]);},strokeRect(){},drawImage(...args){calls.push(['image',...args]);},measureText(value){const size=Number(/([\d.]+)px/u.exec(this.font)?.[1]||20);return{width:Array.from(value).length*size*.7};},fillText(text,x,y){calls.push(['text',text,x,y]);},strokeText(){}};const canvas={width,height,getContext:()=>ctx};ctx.canvas=canvas;return{canvas,calls};}
+function traceCanvas(width=1280,height=720){
+  const calls=[],stack=[],stateKeys=['fillStyle','strokeStyle','globalAlpha','lineWidth','font','textAlign','textBaseline','filter'];
+  const gradient=()=>({addColorStop(){}}),ctx={canvas:null,fillStyle:'',strokeStyle:'',globalAlpha:1,lineWidth:1,font:'20px sans-serif',textAlign:'left',textBaseline:'alphabetic',filter:'none',
+    createLinearGradient:gradient,createRadialGradient:gradient,
+    save(){stack.push(Object.fromEntries(stateKeys.map(key=>[key,this[key]])));},
+    restore(){const previous=stack.pop();if(previous)Object.assign(this,previous);},
+    setTransform(...args){calls.push(['transform',...args]);},scale(...args){calls.push(['scale',...args]);},
+    clearRect(...args){calls.push(['clear',...args]);},fillRect(...args){calls.push(['rect',...args]);},strokeRect(){},
+    beginPath(){},moveTo(){},lineTo(){},stroke(){},
+    drawImage(...args){calls.push(['image',...args]);},
+    measureText(value){const size=Number(/([\d.]+)px/u.exec(this.font)?.[1]||20);return{width:Array.from(value).length*size*.7};},
+    fillText(text,x,y){calls.push(['text',text,x,y]);},strokeText(){}};
+  const canvas={width,height,getContext:()=>ctx};ctx.canvas=canvas;return{canvas,calls};
+}
+
+test('title backdrop uses the first/last real scene and skips already rendered title assets without changing source order',()=>{
+  const first={width:1600,height:900,scene:'first'},last={width:1600,height:900,scene:'last'};
+  const project={scenes:[{imageId:'intro'},{imageId:'undecoded'},{imageId:'first'},{imageId:'chapter'},{imageId:'last'},{imageId:'outro'}],imageStudio:{references:[]}};
+  const assets=new Map([
+    ['intro',{name:'인트로-이야기의 시작.png',image:{width:1280,height:720}}],
+    ['undecoded',{name:'아직 불러오지 않은 자료.png',blob:image.blob}],
+    ['first',{name:'첫 장면.png',image:first}],
+    ['chapter',{name:'chapter-overview.png',image:{width:1280,height:720}}],
+    ['last',{name:'마지막 장면.png',image:last}],
+    ['outro',{name:'아웃트로-10초.png',image:{width:1280,height:720}}],
+  ]),before=structuredClone(project),api={getProject:()=>project,getAssets:()=>assets};
+  assert.equal(selectTitleBackdrop(api,'intro'),first);
+  assert.equal(selectTitleBackdrop(api,'chapter'),first);
+  assert.equal(selectTitleBackdrop(api,'outro'),last);
+  assert.deepEqual(project,before);
+});
+
+test('title backdrop falls back to a decoded reference and remains empty when only title artwork or undecoded bytes exist',()=>{
+  const reference={width:900,height:1600,reference:true},project={scenes:[{imageId:'title'}],imageStudio:{references:[{assetId:'missing'},{assetId:'title-reference'},{assetId:'real-reference'}]}};
+  const assets=new Map([
+    ['title',{name:'story-intro.png',image:{width:1280,height:720}}],
+    ['title-reference',{name:'챕터-요약.png',image:{width:1280,height:720}}],
+    ['real-reference',{name:'배경 컨셉.png',image:reference}],
+  ]),api={getProject:()=>project,getAssets:()=>assets};
+  assert.equal(selectTitleBackdrop(api,'intro'),reference);
+  assert.equal(selectTitleBackdrop(api,'outro'),reference);
+  assets.set('real-reference',{name:'배경 컨셉.png',blob:image.blob});
+  assert.equal(selectTitleBackdrop(api),null);
+  assert.equal(selectTitleBackdrop({getProject:()=>project}),null);
+});
 test('thumbnail and channel titlecard render actual scene pixels and user text without a fixed channel mark',async()=>{
   const project=source(),canvas=traceCanvas(),assets=new Map([['image-one',{...image,image:{width:1600,height:900}}]]);await renderPublishingThumbnail(project,assets,{sceneId:project.scenes[0].id,headline:'우주 이주의 시작'},{canvas:canvas.canvas});assert.equal(canvas.calls.filter(call=>call[0]==='image').length,1);assert.ok(canvas.calls.some(call=>call[0]==='text'&&call[1].includes('우주')));assert.equal(canvas.calls.some(call=>/BTH|BATTLE TABLE HOBBY/iu.test(String(call[1]))),false);
   const title=traceCanvas();renderChannelTitleCard(title.canvas,{title:'내가 정한 제목',subtitle:'내가 정한 보조 문구',channelName:'직접 입력한 채널'});const words=title.calls.filter(call=>call[0]==='text').map(call=>call[1]);assert.ok(words.includes('직접 입력한 채널'));assert.ok(words.includes('내가 정한 제목'));assert.equal(words.some(word=>/BTH|BATTLE TABLE HOBBY/iu.test(word)),false);

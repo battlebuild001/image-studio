@@ -1,4 +1,5 @@
 import {createOperationStatus, nextPaint} from './operation-status.js';
+import {renderTitleDesign, selectTitleBackdrop} from './title-design.js';
 import {
   createId, createScene, getTimeline, saveLibraryProject, listLibraryProjects,
   loadLibraryProject, deleteLibraryProject,
@@ -67,19 +68,6 @@ function writePresets(entries) {
   try { localStorage.setItem(PRESET_KEY, JSON.stringify(entries)); }
   catch { throw new Error('템플릿 설정을 저장하지 못했어요. 브라우저 저장 공간을 확인해 주세요.'); }
 }
-function wrap(ctx, value, maxWidth) {
-  const lines = [];
-  for (const paragraph of String(value).split('\n')) {
-    let line = '';
-    for (const character of Array.from(paragraph)) {
-      if (line && ctx.measureText(line + character).width > maxWidth) { lines.push(line.trim()); line = ''; }
-      line += character;
-    }
-    if (line.trim()) lines.push(line.trim());
-  }
-  return lines;
-}
-
 /** Local project shelf, reusable title cards and current-frame PNG downloads. */
 export function setupLibraryTools(api) {
   if (!$('libraryToolsStyles')) {
@@ -226,7 +214,7 @@ export function setupLibraryTools(api) {
   }));
 
   const templates = dialog('templatesDialog', '인트로 · 아웃트로', 'REUSABLE TITLE CARDS');
-  templates.body.append(node('p', 'library-description', '제목과 로고로 시작·마무리 화면을 만들어요. 추가한 화면은 일반 이미지 장면처럼 편집할 수 있어요.'));
+  templates.body.append(node('p', 'library-description', '영상 이미지와 제목으로 시작·마무리 화면을 만들어요. 로고를 더할 수 있고, 추가한 화면은 일반 이미지 장면처럼 편집할 수 있어요.'));
   const templateProgressHost = node('div'); templates.body.append(templateProgressHost);
   const templateProgress = createOperationStatus({container: templateProgressHost, region: templates.body, id: 'templateOperation'});
   const grid = node('div', 'template-fields');
@@ -240,10 +228,16 @@ export function setupLibraryTools(api) {
   const logoClear = button('clearTemplateLogoBtn', '로고 빼기', 'ghost small'); logoClear.disabled = true; logoField.wrapper.append(logoClear);
   grid.append(style.wrapper, position.wrapper, title.wrapper, subtitle.wrapper, color.wrapper, duration.wrapper, logoField.wrapper);
   templates.body.append(grid);
+  const backgroundControl = node('label', 'template-background-control'), background = node('input');
+  background.type = 'checkbox'; background.id = 'templateImageBackground'; background.checked = true;
+  backgroundControl.htmlFor = background.id; backgroundControl.append(background, node('span', '', '영상 이미지 배경'));
+  const backgroundHelp = node('span', 'template-background-help', '인트로는 첫 장면, 아웃트로는 마지막 장면의 이미지를 사용해요.');
+  backgroundHelp.id = 'templateImageBackgroundHelp'; background.setAttribute('aria-describedby', backgroundHelp.id);
+  const previewOptions = node('div', 'template-preview-options'); previewOptions.append(backgroundControl, backgroundHelp); templates.body.append(previewOptions);
   const preview = node('canvas', 'template-preview'); preview.id = 'templatePreview'; preview.setAttribute('aria-label', '제목 화면 미리보기'); templates.body.append(preview);
   const presetsRow = node('div', 'template-presets');
   const presetSelect = selectField('templatePreset', '저장한 템플릿', [['', '템플릿 선택']]);
-  const presetName = field('templatePresetName', '템플릿 이름'); presetName.input.maxLength = 50; presetName.input.placeholder = '예: BLKOUT 소개';
+  const presetName = field('templatePresetName', '템플릿 이름'); presetName.input.maxLength = 50; presetName.input.placeholder = '예: 채널 인트로';
   const savePreset = button('saveTemplatePresetBtn', '템플릿 저장');
   const deletePreset = button('deleteTemplatePresetBtn', '선택 템플릿 삭제', 'ghost small');
   const presetNote = node('p', 'library-description', '디자인·문구·색상을 저장해요. 로고 이미지는 장면 추가 시 포함되며, 템플릿 설정에는 저장되지 않아요.');
@@ -251,6 +245,14 @@ export function setupLibraryTools(api) {
   const footer = node('div', 'dialog-footer');
   const cancel = button('cancelTemplateBtn', '취소', 'ghost'); cancel.addEventListener('click', () => templates.dialog.close());
   const insert = button('insertTemplateBtn', '장면 추가', 'primary'); footer.append(cancel, insert); templates.dialog.append(footer);
+  let durationEdited = false, suggestedTitle = '';
+  const defaultTitle = () => style.input.value === 'outro' ? '시청해 주셔서 감사합니다' : api.getProject().title.slice(0, 120);
+  function updateSuggestedTitle() {
+    if (!title.input.value || title.input.value === suggestedTitle) {suggestedTitle = defaultTitle(); title.input.value = suggestedTitle;}
+  }
+  function updateDefaultDuration() {if (!durationEdited) duration.input.value = style.input.value === 'outro' ? '10' : '4';}
+  duration.input.addEventListener('input', () => {durationEdited = true;});
+  duration.input.addEventListener('change', () => {durationEdited = true;});
   function currentTemplate() {
     return {style: style.input.value, title: title.input.value, subtitle: subtitle.input.value, color: color.input.value};
   }
@@ -265,42 +267,11 @@ export function setupLibraryTools(api) {
     deletePreset.disabled = presetSelect.input.value === '';
   }
   function paintTemplate() {
-    const portrait = api.getProject().aspect === '9:16';
+    const project = api.getProject(), portrait = project.aspect === '9:16';
     preview.width = portrait ? 720 : 1280; preview.height = portrait ? 1280 : 720;
-    const ctx = preview.getContext('2d'), w = preview.width, h = preview.height;
-    const accent = color.input.value || '#dfbb84', variant = style.input.value;
-    const gradient = ctx.createLinearGradient(0, 0, w, h); gradient.addColorStop(0, '#102027'); gradient.addColorStop(1, variant === 'outro' ? '#24201e' : '#091217');
-    ctx.fillStyle = gradient; ctx.fillRect(0, 0, w, h);
-    ctx.strokeStyle = `${accent}22`; ctx.lineWidth = 1;
-    for (let x = 0; x < w; x += 64) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
-    for (let y = 0; y < h; y += 64) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
-    const pad = w * .09, centered = variant !== 'chapter';
-    ctx.fillStyle = accent; ctx.fillRect(pad, h * .22, centered ? w * .12 : 7, centered ? 5 : h * .5);
-    ctx.strokeStyle = `${accent}55`; ctx.strokeRect(pad * .6, h * .08, w - pad * 1.2, h * .84);
-    const logoMax = Math.min(w * .21, h * .17);
-    if (logo) {
-      const scale = Math.min(logoMax / logo.naturalWidth, logoMax / logo.naturalHeight);
-      const lw = logo.naturalWidth * scale, lh = logo.naturalHeight * scale;
-      ctx.drawImage(logo, centered ? (w - lw) / 2 : pad + 30, h * .12, lw, lh);
-    }
-    const x = centered ? w / 2 : pad + 35;
-    ctx.textAlign = centered ? 'center' : 'left'; ctx.textBaseline = 'middle';
-    const maxWidth = w - pad * 2 - (centered ? 0 : 35);
-    let size = portrait ? 58 : 82, titleLines;
-    do { ctx.font = `700 ${size}px "Noto Sans KR", "Malgun Gothic", sans-serif`; titleLines = wrap(ctx, title.input.value, maxWidth); if (titleLines.length * size * 1.25 < h * .29 || size <= 26) break; size -= 2; } while (true);
-    ctx.fillStyle = '#f3f4ed';
-    const titleY = h * (variant === 'outro' ? .42 : .43), titleHeight = titleLines.length * size * 1.25;
-    titleLines.forEach((line, index) => ctx.fillText(line, x, titleY - titleHeight / 2 + (index + .5) * size * 1.25));
-    let subSize = portrait ? 27 : 31, subtitles;
-    const subtitleTop = titleY + titleHeight / 2 + h * .035;
-    do {
-      ctx.font = `400 ${subSize}px "Noto Sans KR", "Malgun Gothic", sans-serif`;
-      subtitles = wrap(ctx, subtitle.input.value, maxWidth);
-      if (subtitles.length * subSize * 1.5 <= h * .78 - subtitleTop || subSize <= 14) break;
-      subSize--;
-    } while (true);
-    ctx.fillStyle = '#acbec2';
-    subtitles.forEach((line, index) => ctx.fillText(line, x, subtitleTop + (index + .5) * subSize * 1.5));
+    renderTitleDesign(preview, {kind: style.input.value, title: title.input.value, subtitle: subtitle.input.value,
+      channelName: project.production?.channel?.name || '', color: color.input.value || '#dfbb84',
+      backgroundImage: background.checked ? selectTitleBackdrop(api, style.input.value) : null, logo});
   }
   function releaseLogo() {
     logo = null;
@@ -321,15 +292,16 @@ export function setupLibraryTools(api) {
     }, '로고 이미지를 불러왔어요.');
   }));
   for (const input of [title.input, subtitle.input, style.input, color.input]) input.addEventListener('input', () => {
-    if (input === style.input) position.input.value = style.input.value === 'outro' ? 'end' : 'start';
+    if (input === style.input) {position.input.value = style.input.value === 'outro' ? 'end' : 'start'; updateSuggestedTitle(); updateDefaultDuration();}
     paintTemplate();
   });
+  background.addEventListener('change', paintTemplate);
   presetSelect.input.addEventListener('change', () => {
     const preset = presetSelect.input.value === '' ? null : presets[Number(presetSelect.input.value)];
     deletePreset.disabled = !preset;
     if (!preset) return;
     style.input.value = preset.style; title.input.value = preset.title; subtitle.input.value = preset.subtitle; color.input.value = preset.color; presetName.input.value = preset.name;
-    position.input.value = preset.style === 'outro' ? 'end' : 'start'; paintTemplate();
+    suggestedTitle = ''; position.input.value = preset.style === 'outro' ? 'end' : 'start'; updateDefaultDuration(); paintTemplate();
   });
   savePreset.addEventListener('click', run(() => {
     const name = presetName.input.value.trim(); if (!name) throw new Error('저장할 템플릿 이름을 입력해 주세요.');
@@ -349,8 +321,7 @@ export function setupLibraryTools(api) {
   }));
   templatesBtn.addEventListener('click', run(async () => {
     api.pause();
-    if (!title.input.value) title.input.value = api.getProject().title.slice(0, 120);
-    if (!subtitle.input.value) subtitle.input.value = '이미지로 전하는 이야기';
+    updateSuggestedTitle(); updateDefaultDuration();
     if (templateBusy) return;
     templateBusy = true; insert.disabled = true; templates.dialog.showModal();
     try { await tracked(templateProgress, '제목 화면의 글꼴과 미리보기를 준비하고 있어요', async () => {

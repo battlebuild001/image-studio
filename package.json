@@ -55,7 +55,9 @@
     "test:dual-scripts-browser": "node tests/dual-scripts.browser.cjs",
     "test:outro-browser": "node tests/outro-design.browser.cjs",
     "test:outro-export-browser": "node tests/outro-export.browser.cjs",
-    "test:upload-series-guards-browser": "node tests/upload-series-guards.browser.cjs"
+    "test:upload-series-guards-browser": "node tests/upload-series-guards.browser.cjs",
+    "test:library-title-design-browser": "node tests/library-title-design.browser.cjs",
+    "test:voice-search-browser": "node tests/voice-search.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

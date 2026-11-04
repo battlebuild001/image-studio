@@ -92,11 +92,16 @@ correct dialog; never put delivery tools back inside project settings.
   actual images/references, detect stale inputs and render editable real Canvas
   cards. Maps are schematic and must retain their disclaimer. Never invent data
   measurements or claim a text-only check inspected image pixels.
-- `dist/production-channels.js` and `outro-design.js` provide allowlisted presets,
-  title cards and a dedicated fixed10-second Canvas outro: preview, PNG download
-  and explicit append as a real image scene. Match landscape/portrait, use the
-  user's text/channel name and preserve the exact optional AI notice. Its next
-  video region is a graphic, not an interactive YouTube end-screen registration.
+- `dist/title-design.js` is the shared Canvas renderer for generic templates,
+  channel cards and the fixed10-second outro. Use actual decoded first/last scene
+  imagery, skip existing rendered title assets and fall back to a decoded reference
+  or restrained dark artwork. Never fetch images or invoke paid generation while
+  drawing. Preserve readable large Korean type, landscape/portrait recomposition,
+  the user's text/channel name and space for the exact optional AI notice. Do not
+  reintroduce fake clickable pills/play rectangles or recommendation cards.
+  `dist/production-channels.js` and `outro-design.js` provide explicit preview,
+  PNG download and append as a real10-second image scene. Interactive YouTube end
+  screens still require separate YouTube Studio configuration.
 - `dist/production-shorts.js` and `short-series-protocol.js` preserve traditional
   쇼츠형식 30/60-second highlights and add 드라마형식 covering the entire original
   source chronologically. Review natural caption/scene boundaries, soft targets
@@ -248,6 +253,14 @@ commercial-use terms rather than guaranteeing free commercial audio rights.
   speaker, tempo, pitch, volume, emotions and pause settings through refresh,
   reopen, workspaces and backups. Missing catalog voices/emotions stay visible
   and require explicit replacement; never silently select the first voice.
+- Shared full/partial 목소리 검색 filters the already loaded real catalog by name,
+  Korean/English localized names and ID with Unicode normalization. Search/clear
+  never calls a provider, changes the selected voice/preferences, resets consent/
+  pauses or invalidates completed samples. Pin the current unmatched real voice;
+  preserve a missing saved voice as disabled and block generation until an explicit
+  valid selection. Show accurate counts/empty results and a clear control. Retain
+  the query on same-provider refresh, clear on provider/workspace reset; keep this
+  ephemeral search text out of project backups and credentials.
 - Global and per-paragraph additional pauses are0..10 seconds; default0 preserves
   legacy behavior. Paragraph-aligned chunks preserve original text/separators and
   <=2000Unicode provider limits/context. Insert actual zero PCM after the designated
