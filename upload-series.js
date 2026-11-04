@@ -6,12 +6,29 @@ import {normalizeYouTubeMetadata,normalizeYouTubeUploadRecord,youtubeExportSourc
 import {normalizeDramaPlan,normalizeUploadSeriesState,numberedEpisodeTitle} from './short-series-protocol.js';
 import {buildShortsVariant} from './production-shorts.js';
 import {element,action,inputField,ensureProduction,clone,safeFilename} from './production-delivery-utils.js';
+import {cleanGeneratedVideoDescription} from './video-description.js';
 
 const LABELS={planned:'준비 전',ready:'프로젝트 준비됨',rendering:'영상 만드는 중',uploading:'전송 중',uploaded:'업로드 완료','needs-check':'전송 상태 확인 필요',error:'다시 확인 필요'};
 const abort=()=>new DOMException('시리즈 작업을 중지했어요.','AbortError');
 const timestamp=value=>{const n=Math.floor(value);return`${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;};
-function limitedDescription(value){let result='';for(const character of String(value).replace(/[<>]/gu,'')){if(new TextEncoder().encode(result+character).byteLength>4600)return result+'\n…';result+=character;}return result;}
-function partDescription(project,part,index,total){const text=getCaptions(project).filter(cue=>cue.end>part.start&&cue.start<part.end).map(cue=>cue.text).join(' ');return limitedDescription(`${project.title} · 제${index+1}화 / 총 ${total}화\n\n${text}\n\n원본 구간 ${timestamp(part.start)}–${timestamp(part.end)}`);}
+/** A local factual overview for a new queue; never rewrites an existing episode. */
+export function partDescription(project,part){
+ const timeline=getTimeline(project);
+ if(!part||!Number.isFinite(part.start)||!Number.isFinite(part.end)||part.start<0||part.end<=part.start||part.end>timeline.duration+.001)throw new Error('회차 설명을 만들 영상 구간을 확인해 주세요.');
+ const overlaps=cue=>cue.end>part.start&&cue.start<part.end;
+ let source=getCaptions(project).filter(overlaps).map(cue=>cue.text).filter(text=>text.trim()).join(' ');
+ if(!source.trim())source=timeline.scenes.filter(overlaps).map(scene=>scene.caption||'').filter(text=>text.trim()).join(' ');
+ if(!source.trim()&&part.start<=.001&&part.end>=timeline.duration-.001){const draft=project.scriptDraft;source=draft?.displayScript||draft?.result?.displayScript||draft?.draftScript||draft?.result?.script||'';}
+ if(!source.trim())return '';
+ // Keep whole source sentences in timeline order. Four representative facts
+ // give a short overview without inventing a rewrite or making an AI request.
+ const segments=typeof Intl.Segmenter==='function'?[...new Intl.Segmenter('ko',{granularity:'sentence'}).segment(source)].map(value=>value.segment):source.split(/(?<=[.!?。！？])\s+/u);
+ const facts=[...new Set(segments.map(value=>cleanGeneratedVideoDescription(value,{titles:[project.title],sourceText:source}).replace(/\s+/gu,' ').trim()).filter(Boolean))];
+ const chosen=facts.length<=4?facts:[0,Math.floor((facts.length-1)/3),Math.floor((facts.length-1)*2/3),facts.length-1].map(index=>facts[index]);
+ const description=chosen.join(' ');
+ if(new TextEncoder().encode(description).byteLength>5000)throw new Error('회차의 내용 요약이 YouTube 설명 한도인 5,000바이트를 넘어요. 회차 길이를 줄이거나 원본 문장을 짧게 정리한 뒤 다시 준비해 주세요.');
+ return description;
+}
 function link(text,url){const value=element('a',text);value.href=url;value.target='_blank';value.rel='noopener noreferrer';return value;}
 
 /** Sequential, explicitly started series rendering and uploads; never changes the source editor. */

@@ -6,7 +6,23 @@ const UPLOAD_ENDPOINT = 'https://www.googleapis.com/upload/youtube/v3/videos?upl
 const CHANNEL_ENDPOINT = 'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true&maxResults=50';
 const IDENTITY_URL = 'https://accounts.google.com/gsi/client';
 
-function failure(code, message, status) {const error = new Error(message);error.code = code;if (status) error.status = status;return error;}
+function failure(code, message, status, reason, phase) {const error = new Error(message);error.code = code;if (status) error.status = status;if (reason) error.reason = reason;if (phase) error.phase = phase;return error;}
+// Keep only recognized public reason codes. Google messages, metadata, credentials
+// and capability URLs must never become a displayed error or persisted state.
+const GOOGLE_REASONS = new Set(['accessNotConfigured','serviceDisabled','SERVICE_DISABLED','insufficientPermissions','ACCESS_TOKEN_SCOPE_INSUFFICIENT','quotaExceeded','dailyLimitExceeded','dailyLimitExceededUnreg','userRateLimitExceeded','rateLimitExceeded','RATE_LIMIT_EXCEEDED','uploadLimitExceeded','youtubeSignupRequired','channelNotFound','channelClosed','channelSuspended','authenticatedUserAccountClosed','authenticatedUserAccountSuspended','accountDelegationForbidden','forbidden']);
+function googleReason(body) {
+  const errors=Array.isArray(body?.error?.errors)?body.error.errors.slice(0,20):[],details=Array.isArray(body?.error?.details)?body.error.details.slice(0,20):[];
+  return [...errors,...details].map(item=>item?.reason).find(value=>typeof value==='string'&&GOOGLE_REASONS.has(value))||'';
+}
+function oauthFailure(response) {
+  const denied=response?.error==='access_denied',known=new Set(['access_denied','admin_policy_enforced','org_internal','disallowed_useragent','origin_mismatch','redirect_uri_mismatch','invalid_client','invalid_scope']),reason=known.has(response?.error)?response.error:'';
+  let message='Google 인증을 완료하지 못했어요. OAuth 클라이언트 설정과 승인한 권한을 확인해 주세요.';
+  if(denied)message='Google 인증이 거부됐어요. 권한 동의를 취소했는지 확인하세요. OAuth 앱이 테스트 상태라면 현재 Google 계정을 테스트 사용자에 추가해야 해요. 조직 계정은 관리자 정책도 확인해 주세요.';
+  else if(['admin_policy_enforced','org_internal'].includes(reason))message='Google 조직 계정 정책으로 인증이 제한됐어요. OAuth 앱의 사용자 대상과 조직 관리자의 앱 접근 정책을 확인해 주세요.';
+  else if(['origin_mismatch','redirect_uri_mismatch','invalid_client'].includes(reason))message='Google OAuth 클라이언트 설정이 현재 웹 주소와 맞지 않아요. 저장한 웹 클라이언트 ID와 Google Cloud의 승인된 JavaScript 원본을 확인해 주세요.';
+  else if(reason==='disallowed_useragent')message='Google이 현재 로그인 창 환경을 허용하지 않았어요. 일반 브라우저에서 앱을 열어 연결해 주세요.';
+  return failure(denied?'YOUTUBE_OAUTH_DENIED':'YOUTUBE_OAUTH_FAILED',message+(reason?` (Google: ${reason})`:''),undefined,reason,'oauth');
+}
 function cancelled() {return new DOMException('유튜브 작업을 중지했어요. 이미 전송한 영상은 유튜브에서 삭제되지 않아요.', 'AbortError');}
 function copy(value) {return value == null ? value : JSON.parse(JSON.stringify(value));}
 function identityApi(value) {const api = value?.accounts?.oauth2 || value?.google?.accounts?.oauth2 || value;if (typeof api?.initTokenClient !== 'function') throw failure('YOUTUBE_IDENTITY_UNAVAILABLE', 'Google 연결 도구를 불러오지 못했어요. 네트워크를 확인한 뒤 다시 연결해 주세요.');return api;}
@@ -43,13 +59,20 @@ async function json(response, max = 1024 * 1024, signal, timeout = 120000) {
   catch (cause) {if (cause?.code || cause?.name === 'AbortError') throw cause;throw failure('YOUTUBE_BAD_RESPONSE', 'Google 응답을 읽지 못했어요. 업로드 상태를 확인해 주세요.');}
   finally {clearTimeout(timer);signal?.removeEventListener('abort', onAbort);}
 }
-async function responseFailure(response, signal, timeout) {
-  let reason = '';try {const body = await json(response, 32000, signal, timeout);reason = body?.error?.errors?.[0]?.reason || '';} catch (cause) {if (cause?.name === 'AbortError') throw cause;}
+async function responseFailure(response, signal, timeout, phase='upload') {
+  let reason = '';try {reason=googleReason(await json(response, 32000, signal, timeout));} catch (cause) {if (cause?.name === 'AbortError') throw cause;}
   const status = Number(response.status);
+  const prefix=phase==='channel'?'YouTube 채널 확인 중':'YouTube 업로드 요청 중',make=(code,message)=>failure(code,`${prefix} ${message}${reason?` (Google: ${reason}, HTTP ${status})`:''}`,status,reason,phase);
+  if(['accessNotConfigured','serviceDisabled','SERVICE_DISABLED'].includes(reason))return make('YOUTUBE_API_DISABLED','YouTube Data API 사용이 차단됐어요. 앱에 저장한 OAuth 클라이언트 ID와 같은 Google Cloud 프로젝트에서 YouTube Data API v3를 사용 설정하고, 방금 설정했다면 반영 후 다시 연결해 주세요.');
+  if(['insufficientPermissions','ACCESS_TOKEN_SCOPE_INSUFFICIENT'].includes(reason))return make('YOUTUBE_SCOPE_REQUIRED','Google이 필요한 권한이 부족하다고 응답했어요. Google 계정으로 다시 연결해 YouTube 업로드와 내 채널 확인 권한을 모두 허용해 주세요.');
+  if(['youtubeSignupRequired','channelNotFound'].includes(reason))return make('YOUTUBE_CHANNEL_REQUIRED','연결한 Google 계정에서 사용할 YouTube 채널을 찾지 못했어요. YouTube에서 채널을 만들거나 기존 채널이 있는 계정·채널을 선택해 다시 연결해 주세요.');
+  if(['channelClosed','channelSuspended','authenticatedUserAccountClosed','authenticatedUserAccountSuspended','accountDelegationForbidden'].includes(reason))return make('YOUTUBE_ACCOUNT_RESTRICTED','Google이 계정·채널 또는 위임 접근 제한을 알렸어요. 해당 계정의 YouTube Studio에서 채널 상태와 관리 권한을 확인해 주세요.');
+  if(reason==='uploadLimitExceeded')return make('YOUTUBE_UPLOAD_LIMIT','채널의 영상 업로드 한도에 도달했어요. YouTube Studio에서 채널 업로드 제한을 확인하고 제한이 해제된 뒤 다시 시도해 주세요.');
+  if(['quotaExceeded','dailyLimitExceeded','dailyLimitExceededUnreg'].includes(reason))return make('YOUTUBE_QUOTA','Google Cloud API 프로젝트의 사용 한도에 도달했어요. 해당 프로젝트의 YouTube Data API 할당량을 확인해 주세요. 다시 로그인해도 할당량은 늘어나지 않아요.');
+  if(['userRateLimitExceeded','rateLimitExceeded','RATE_LIMIT_EXCEEDED'].includes(reason))return make('YOUTUBE_RATE_LIMIT','사용자 또는 프로젝트의 요청 빈도 한도에 도달했어요. 잠시 뒤 상태를 확인하고 이어 올려 주세요. 요청을 자동 재시도하지 않았어요.');
   if (status === 401) return failure('YOUTUBE_AUTH_EXPIRED', '유튜브 연결이 만료됐어요. 같은 채널로 다시 연결한 뒤 이어 올려 주세요.', status);
   if (status === 404 || status === 410) return failure('YOUTUBE_UPLOAD_EXPIRED', '이어 올리기 세션이 만료됐거나 없어졌어요. 채널에 영상이 있는지 확인한 뒤 새 업로드를 시작해 주세요.', status);
-  if (status === 403 && ['quotaExceeded', 'dailyLimitExceeded', 'uploadLimitExceeded', 'rateLimitExceeded'].includes(reason)) return failure('YOUTUBE_QUOTA', '유튜브 API 또는 채널의 업로드 한도에 도달했어요. Google Cloud와 유튜브의 사용 한도를 확인해 주세요.', status);
-  if (status === 403) return failure('YOUTUBE_PERMISSION', '이 계정 또는 API 프로젝트에서 업로드를 허용하지 않았어요. YouTube Data API 활성화와 Google 연결 권한을 확인해 주세요.', status);
+  if (status === 403) return make('YOUTUBE_PERMISSION','Google이 접근을 허용하지 않았지만 이 응답만으로 API 비활성화·권한 부족·계정 제한 중 어느 원인인지 확정할 수 없어요. 저장한 OAuth 클라이언트의 프로젝트 설정과 해당 계정의 채널 접근 권한을 확인해 주세요.');
   if (status === 429) return failure('YOUTUBE_RATE_LIMIT', '유튜브 요청이 잠시 제한됐어요. 잠시 뒤 상태를 확인하고 이어 올려 주세요.', status);
   if (status >= 500) return failure('YOUTUBE_SERVER', '유튜브 서버가 응답하지 못했어요. 새 업로드 대신 상태 확인 후 이어 올리기를 사용해 주세요.', status);
   return failure('YOUTUBE_REQUEST_FAILED', `유튜브 요청을 처리하지 못했어요 (HTTP ${status || '오류'}). 제목·설명·파일과 연결 권한을 확인해 주세요.`, status);
@@ -131,7 +154,7 @@ export function createYouTubeClient(options = {}) {
       try {
         const tokenClient = api.initTokenClient({client_id: clientId, scope: YOUTUBE_SCOPES, include_granted_scopes: false,
           callback: response => {
-            if (response?.error) {finish(failure(response.error === 'access_denied' ? 'YOUTUBE_OAUTH_DENIED' : 'YOUTUBE_OAUTH_FAILED', 'Google 연결을 승인하지 않았거나 연결을 완료하지 못했어요. 필요한 권한을 확인한 뒤 다시 연결해 주세요.'));return;}
+            if (response?.error) {finish(oauthFailure(response));return;}
             finish(null, response);
           },
           error_callback: response => finish(failure('YOUTUBE_OAUTH_POPUP', response?.type === 'popup_closed' ? 'Google 연결 창이 닫혔어요. 연결을 원하면 다시 눌러 주세요.' : 'Google 연결 창을 열지 못했어요. 팝업을 허용한 뒤 연결 버튼을 다시 눌러 주세요.'))});
@@ -153,7 +176,7 @@ export function createYouTubeClient(options = {}) {
       if (typeof response.access_token !== 'string' || !response.access_token || response.access_token.length > 8192 || /[\r\n]/u.test(response.access_token)) throw failure('YOUTUBE_OAUTH_RESPONSE', 'Google 연결 정보를 확인하지 못했어요. 다시 연결해 주세요.');
       const expiresAt = now() + expirySeconds(response.expires_in) * 1000;
       const channelResponse = await send(CHANNEL_ENDPOINT, {method: 'GET', headers: {Authorization: `Bearer ${response.access_token}`}}, controller.signal);
-      if (!channelResponse.ok) throw await responseFailure(channelResponse, controller.signal, requestTimeout);
+      if (!channelResponse.ok) throw await responseFailure(channelResponse, controller.signal, requestTimeout,'channel');
       const body = await json(channelResponse, 1024 * 1024, controller.signal, requestTimeout), items = body?.items;
       if (!Array.isArray(items) || !items.length) throw failure('YOUTUBE_CHANNEL_REQUIRED', '이 Google 연결에서 유튜브 채널을 찾지 못했어요. 유튜브 채널을 만든 뒤 연결해 주세요.');
       if (items.length !== 1) throw failure('YOUTUBE_CHANNEL_AMBIGUOUS', '업로드할 채널을 하나로 확인하지 못했어요. Google 연결에서 사용할 유튜브 채널을 선택해 다시 연결해 주세요.');

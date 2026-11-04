@@ -113,7 +113,7 @@ function chapterTimestamp(value) {
   return `${hours ? `${String(hours).padStart(2, '0')}:` : ''}${String(hours ? minutes : Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
-/** Explicit import only: keep the supplied description and add actual chapter lines. */
+/** Explicit import only: preserve the description verbatim; chapters stay separate. */
 export function publishingToYouTubeMetadata(project) {
   if (!plain(project)) fail('게시 자료를 가져올 프로젝트를 확인해 주세요.');
   const result = project.production?.publishing?.result;
@@ -123,11 +123,11 @@ export function publishingToYouTubeMetadata(project) {
   const title = result.titles[selected] ?? result.titles[0];
   const description = result.description ?? '';
   if (typeof description !== 'string') fail('게시 설명을 확인해 주세요.');
-  const chapters = result.chapters.map(chapter => {
+  for (const chapter of result.chapters) {
     if (!plain(chapter)) fail('게시 챕터를 확인해 주세요.');
-    return `${chapterTimestamp(chapter.start)} ${string(chapter.title, 200, '챕터 제목', {blank: false, trim: true})}`;
-  });
-  return normalizeYouTubeUploadDraft({title, description: `${description}${chapters.length ? `${description ? '\n\n' : ''}챕터\n${chapters.join('\n')}` : ''}`, tags: result.tags ?? []});
+    chapterTimestamp(chapter.start);string(chapter.title, 200, '챕터 제목', {blank: false, trim: true});
+  }
+  return normalizeYouTubeUploadDraft({title, description, tags: result.tags ?? []});
 }
 
 /** Deterministic canonicalization: unrelated metadata or key insertion order cannot stale an export. */

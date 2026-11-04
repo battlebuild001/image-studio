@@ -92,7 +92,8 @@ function validateChannel(value) {
   if (value.updatedAt !== undefined) stamp(value.updatedAt);
   for (const key of ['intro', 'outro']) if (value[key] !== undefined) {
     const card = value[key];if (!plain(card) || typeof card.enabled !== 'boolean') fail('인트로·아웃트로 설정을 확인해 주세요.');
-    optionalText(card, 'title', 200);optionalText(card, 'subtitle', 500);
+    optionalText(card, 'title', 200);optionalText(card, 'subtitle', 500);optionalText(card, 'overline', 80);
+    if (card.overline !== undefined && /[\u0000-\u001f\u007f]/u.test(card.overline)) fail('상단 작은 문구에는 제어 문자를 넣을 수 없어요.');
     if (card.duration !== undefined) finite(card.duration, 1, 15, '제목 화면 길이');
   }
 }
@@ -117,6 +118,7 @@ function validateShorts(value) {
 function validatePublishing(value) {
   optionalText(value, 'sourceKey', 250000);
   if (value.selectedTitle !== undefined && (!Number.isInteger(value.selectedTitle) || value.selectedTitle < 0 || value.selectedTitle > 4)) fail('게시 제목 선택을 확인해 주세요.');
+  if(value.thumbnail!==undefined){const thumbnail=value.thumbnail;if(!plain(thumbnail)||Object.keys(thumbnail).some(key=>!['version','items'].includes(key))||thumbnail.version!==1)fail('썸네일 편집 자료를 확인해 주세요.');const seen=new Set();list(thumbnail.items,3,'썸네일 편집',item=>{if(!plain(item)||Object.keys(item).some(key=>!['index','title','layout','titlePosition'].includes(key))||!Number.isInteger(item.index)||item.index<0||item.index>2||seen.has(item.index))fail('썸네일 편집 대상을 확인해 주세요.');seen.add(item.index);text(item.title,120,'썸네일 문구');if(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(item.title)||!['overlay','split','band'].includes(item.layout)||!['top','center','bottom'].includes(item.titlePosition))fail('썸네일 문구와 배치를 확인해 주세요.');});}
   if (value.result === undefined || value.result === null) return;
   const result = value.result;if (!plain(result)) fail('게시 자료를 확인해 주세요.');
   list(result.titles, 5, '게시 제목', item => text(item, 200, '게시 제목'));
@@ -127,6 +129,7 @@ function validatePublishing(value) {
   list(result.chapters, 60, '챕터', chapter => {if (!plain(chapter)) fail();finite(chapter.start, 0, 3600, '챕터 시간');text(chapter.title, 200, '챕터 제목');if (chapter.start <= previous) fail('챕터는 시간순으로 정해 주세요.');previous = chapter.start;});
   // A local draft may have no image yet; it still has editable publishing text.
   list(result.thumbnailConcepts, 3, '썸네일 후보', concept => {if (!plain(concept)) fail();text(concept.headline, 120, '썸네일 문구');text(concept.prompt, 2000, '썸네일 구성');if (concept.sceneId !== '') identifier(concept.sceneId);});
+  if(value.thumbnail?.items.some(item=>item.index>=result.thumbnailConcepts.length))fail('썸네일 편집 대상이 현재 후보를 벗어나요.');
 }
 function validateChanges(value) {
   if (value.updatedAt !== undefined) stamp(value.updatedAt);
