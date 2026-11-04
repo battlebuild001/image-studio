@@ -1,7 +1,7 @@
 import {extractReferenceFiles} from './script-local-files.js';
 import {apiFetch} from './api-client.js';
 import {validateProject} from './project.js';
-import {normalizeNarrationStyle, cleanNarrationText, formatNarrationText} from './narration-text.js';
+import {normalizeNarrationStyle, cleanNarrationText, formatNarrationText, stripEnglishParentheticalGlosses} from './narration-text.js';
 import {createOperationStatus, nextPaint} from './operation-status.js';
 import {normalizeSourceFidelity as normalizedFidelity, normalizeDetailLevel as normalizedDetail} from './script-protocol.js';
 import {validateTopicResearchRequest, normalizeTopicResearchResult, topicResearchSourceText} from './topic-research-protocol.js';
@@ -70,6 +70,9 @@ async function request(path, options = {}) {
 }
 function projectDraft(project) {
   const value = clone(project.scriptDraft || defaults());
+  if (typeof value.draftScript === 'string') value.draftScript=stripEnglishParentheticalGlosses(value.draftScript);
+  if (typeof value.displayScript === 'string') value.displayScript=stripEnglishParentheticalGlosses(value.displayScript);
+  if(value.result)value.result={...value.result,script:stripEnglishParentheticalGlosses(value.result.script),...(typeof value.result.displayScript==='string'?{displayScript:stripEnglishParentheticalGlosses(value.result.displayScript)}:{})};
   return {...defaults(), ...value, narrationStyle: project.scriptDraft ? normalizeNarrationStyle(value.narrationStyle) : 'korean-digits',
     sourceFidelity: project.scriptDraft ? normalizedFidelity(value.sourceFidelity) : 'faithful', detailLevel: project.scriptDraft ? normalizedDetail(value.detailLevel) : 'expanded',
     draftScript: value.draftScript ?? value.result?.script ?? ''};
@@ -161,12 +164,12 @@ export function setupScriptStudio(api) {
   const privacy = node('p', 'script-privacy-note', '파일은 이 브라우저에서 텍스트로 읽어요. 자료 찾기와 AI 대본 작성 버튼을 누를 때만 주제·참고 텍스트·정리 방향을 연결한 AI 서비스에 보내요. 원본 파일과 영상·음성은 보내지 않아요. 검색과 작성에는 사용 요금이 발생할 수 있어요.'); sourcePanel.append(privacy);
   const controls = node('div', 'script-generation-controls');
   const generate = button('generateScriptBtn', 'AI 연결 설정', 'primary');
-  const useSource = button('useSourceAsDraftBtn', '원문을 그대로 넣기 (수동)', 'outline');
+  const useSource = button('useSourceAsDraftBtn', '원문을 초안으로 가져오기 (수동)', 'outline');
   const cancel = button('cancelScriptGenerationBtn', '작업 취소', 'ghost'); cancel.hidden = true;
   const prompt = button('copyResearchPromptBtn', '제작 요청문 복사', 'outline'); controls.append(generate, cancel); sourcePanel.append(controls);
   const manualTools = node('details', 'script-manual-tools'); manualTools.id = 'scriptManualTools';
   manualTools.append(node('summary', '', '수동 작업 · 제작 요청문'));
-  manualTools.append(node('p', 'script-studio-help', '원문 넣기는 자료를 그대로 복사하는 수동 작업이에요. AI 요약·번역·대본 작성은 실행하지 않아요.'));
+  manualTools.append(node('p', 'script-studio-help', '원문 넣기는 자료를 초안으로 가져오는 수동 작업이에요. 한국어 이름의 영문 괄호 병기만 정리하며 AI 요약·번역·대본 작성은 실행하지 않아요.'));
   const manualControls = node('div', 'script-generation-controls'); manualControls.append(useSource, prompt); manualTools.append(manualControls); sourcePanel.append(manualTools);
   const status = node('p', 'script-generation-status'); status.id = 'scriptGenerationStatus'; status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); sourcePanel.append(status);
   const error = node('p', 'script-studio-error'); error.id = 'scriptStudioError'; error.setAttribute('role', 'alert'); sourcePanel.append(error);
@@ -181,29 +184,29 @@ export function setupScriptStudio(api) {
   const topicNotes = node('ul', 'script-research-notes');topicNotes.id = 'topicResearchNotes';topicResults.append(topicNotes);
   topicResults.append(node('strong', 'script-result-label', '참고한 웹 출처'));
   const topicSources = node('ol', 'script-research-sources');topicSources.id = 'topicResearchSources';topicResults.append(topicSources);resultPanel.append(topicResults);
-  resultPanel.append(node('h3', '', '내레이션 대본'));
+  resultPanel.append(node('h3', '', '자막용 대본 / 보이스용 대본'));
   const empty = node('p', 'script-manual-notice', '아직 AI로 작성한 대본이 없어요. 왼쪽에서 ‘AI로 대본 작성’을 실행해 주세요. 아래에 수동으로 입력하거나 원문을 붙여넣은 내용은 AI가 정리한 결과가 아니며, 그대로 저장·수정할 수 있어요.'); resultPanel.append(empty);
   const results = node('div', 'script-result-content'); resultPanel.append(results);
   const resultTitle = node('h4'); resultTitle.id = 'generatedScriptTitle'; results.append(resultTitle);
   const summaryLabel = node('strong', 'script-result-label', '자료 정리');
   const summary = node('p', 'script-summary'); summary.id = 'researchSummary';
-  const resultField = field('generatedScript', '내레이션 대본', 'textarea'); resultField.input.rows = 17; resultField.input.maxLength = LIMIT * 2;
+  const resultField = field('generatedScript', '보이스용 대본', 'textarea'); resultField.input.rows = 12; resultField.input.maxLength = LIMIT * 2;
   resultField.input.placeholder = '참고 자료와 정리 방향을 입력하고 ‘AI로 대본 작성’을 누르면 새 한국어 대본이 여기에 표시돼요.\n\n직접 작성한 대본도 이곳에서 편집하고 저장할 수 있어요.';
   const resultStats = node('p', 'script-result-metrics'); resultStats.id = 'generatedScriptStats'; resultStats.setAttribute('aria-live', 'polite');
   const lengthMismatch = node('p', 'script-length-mismatch'); lengthMismatch.id = 'scriptLengthMismatch'; lengthMismatch.hidden = true;
-  const displayDetails = node('details', 'script-display-draft');displayDetails.id = 'displayScriptDetails';displayDetails.append(node('summary', '', '화면 자막용 대본 · 숫자와 고유명사 원래 표기'));
-  const displayField = field('generatedDisplayScript', '화면용 대본 · 음성 대본과 별도로 저장', 'textarea');displayField.input.rows = 9;displayField.input.maxLength = LIMIT * 2;displayField.input.placeholder = '1991년, ABOL처럼 화면에 보여 줄 표기예요. 읽는 대본과 사건·문단 순서를 맞춰 주세요.';
-  const displayTools = node('div','script-result-tools'), displayCopy = button('copyDisplayScriptBtn','화면 대본 복사'), displayTxt = button('downloadDisplayScriptTxtBtn','화면 대본 TXT');displayTools.append(displayCopy,displayTxt);displayDetails.append(displayField.wrapper,displayTools);
-  results.append(resultField.wrapper, resultStats, lengthMismatch, displayDetails);
+  const displayDetails = node('section', 'script-display-draft');displayDetails.id = 'displayScriptDetails';displayDetails.setAttribute('aria-label','자막용 대본');
+  const displayField = field('generatedDisplayScript', '자막용 대본', 'textarea');displayField.input.rows = 12;displayField.input.maxLength = LIMIT * 2;displayField.input.placeholder = '1991년처럼 화면에 보여 줄 숫자 표기예요. 헤드리스(Headless) 같은 영문 병기는 넣지 않고 보이스용 대본과 사건·문단 순서를 맞춰 주세요.';
+  const displayTools = node('div','script-result-tools'), displayCopy = button('copyDisplayScriptBtn','자막용 대본 복사'), displayTxt = button('downloadDisplayScriptTxtBtn','자막용 대본 TXT');displayTools.append(displayCopy,displayTxt);displayDetails.append(displayField.wrapper,displayTools);
+  const dualDrafts=node('div','script-dual-drafts'),spokenSection=node('section','script-spoken-draft');spokenSection.setAttribute('aria-label','보이스용 대본');spokenSection.append(resultField.wrapper,resultStats,lengthMismatch);dualDrafts.append(displayDetails,spokenSection);results.append(dualDrafts);
   const stale = node('p', 'script-studio-help script-stale-goal'); stale.id = 'scriptGoalChanged'; results.append(stale);
   const notes = node('ul', 'script-research-notes'); notes.id = 'scriptResearchNotes';
   const sourcesLabel = node('strong', 'script-result-label', '웹에서 확인한 출처');
   const sources = node('ol', 'script-research-sources'); sources.id = 'scriptResearchSources';
   const resultTools = node('div', 'script-result-tools');
-  const copy = button('copyGeneratedScriptBtn', '대본 복사');
-  const txt = button('downloadScriptTxtBtn', 'TXT 저장');
+  const copy = button('copyGeneratedScriptBtn', '보이스용 대본 복사');
+  const txt = button('downloadScriptTxtBtn', '보이스용 대본 TXT');
   const markdown = button('downloadScriptMarkdownBtn', '조사 기록 저장');
-  resultTools.append(copy, txt); results.append(resultTools);
+  resultTools.append(copy, txt); spokenSection.append(resultTools);
   const evidence = node('details', 'script-research-evidence'); evidence.id = 'researchEvidence';
   evidence.append(node('summary', '', '조사 메모·출처 (읽는 대본과 별도)'), summaryLabel, summary, notes, sourcesLabel, sources, markdown); results.append(evidence);
   const footer = node('div', 'dialog-footer');
@@ -216,7 +219,8 @@ export function setupScriptStudio(api) {
   let draft = projectDraft(api.getProject());
   let fingerprint = JSON.stringify(api.getProject().scriptDraft || null);
   let timer = 0, saving = false, busy = false, operation = 0, controller = null, configSequence = 0, configController = null, activeOperation = '', displayTouched = false;
-  let configured = false, connectionChecked = false;
+  let configured = false, connectionChecked = false, activeResearchRequest=null;
+  function cancelResearchMedia(){if(!activeResearchRequest)return;window.dispatchEvent(new CustomEvent('studio-topic-research-cancel',{detail:activeResearchRequest}));activeResearchRequest=null;}
   const progress = createOperationStatus({container: operationHost, region: columns, id: 'scriptOperation', slowAfterMs: 30000});
   const connectionProgress = createOperationStatus({container: connectionProgressHost, region: connectionActions, id: 'scriptConnectionOperation', slowAfterMs: 10000});
   let progressHandle = null, connectionProgressHandle = null;
@@ -225,8 +229,8 @@ export function setupScriptStudio(api) {
   function showError(value, notify = true) { error.textContent = value || ''; if (value && notify) api.toast(value, true); }
   function run(task) { return event => { event?.preventDefault(); Promise.resolve().then(task).catch(cause => showError(cause.message || '작업을 마치지 못했어요.')); }; }
   function snapshot() {
-    return {...draft, sourceText: source.input.value, instructions: instructions.input.value, draftScript: resultField.input.value,
-      ...((Object.hasOwn(draft,'displayScript') || displayTouched || typeof draft.result?.displayScript === 'string') ? {displayScript:displayField.input.value} : {}),
+    return {...draft, sourceText: source.input.value, instructions: instructions.input.value, draftScript: stripEnglishParentheticalGlosses(resultField.input.value),
+      ...((Object.hasOwn(draft,'displayScript') || displayTouched || typeof draft.result?.displayScript === 'string') ? {displayScript:stripEnglishParentheticalGlosses(displayField.input.value)} : {}),
       targetMinutes: Number(minutes.input.value), charsPerMinute: Number(pace.input.value), narrationStyle: normalizeNarrationStyle(narrationStyle.input.value), sourceFidelity: sourceFidelity.input.value, detailLevel: detailLevel.input.value,
       ...((draft.topicResearch || topic.input.value) ? {topicResearch: {topic: topic.input.value, instructions: draft.topicResearch?.result ? draft.topicResearch.instructions : instructions.input.value, result: draft.topicResearch?.result || null}} : {})};
   }
@@ -244,7 +248,7 @@ export function setupScriptStudio(api) {
   function capture() {
     const value = validateSettings();
     if (draft.result) {
-      const script = resultField.input.value;
+      const script = stripEnglishParentheticalGlosses(resultField.input.value);
       if (length(script) > LIMIT) throw new Error('대본은 100,000자 이하로 줄여 주세요.');
       value.result = {...draft.result, script, ...(value.displayScript === undefined ? {} : {displayScript:value.displayScript}), characters: count(script), estimatedMinutes: count(script) / draft.result.charsPerMinute};
     }
@@ -390,7 +394,7 @@ export function setupScriptStudio(api) {
     resultField.input.value = draft.draftScript ?? draft.result?.script ?? '';displayField.input.value = getDisplayScript({scriptDraft:draft});displayTouched = false; renderTopicResearch(true);renderResults();
   }
   function stop(message = '작업을 취소했어요. 기존 자료와 대본은 그대로 있어요.') {
-    operation++; controller?.abort(); controller = null; activeOperation = '';
+    cancelResearchMedia();operation++; controller?.abort(); controller = null; activeOperation = '';
     if (busy) setBusy(false, message, 'cancel');
   }
   function cancelConnectionCheck() {
@@ -493,6 +497,7 @@ export function setupScriptStudio(api) {
     controller = new AbortController();const abort = controller;let timedOut = false;
     let timeout = setTimeout(() => {timedOut = true;abort.abort();}, 190000);
     activeOperation = 'research';setBusy(true, '웹 자료 수집 중 · 검색과 정리 응답을 기다리고 있어요.');
+    cancelResearchMedia();activeResearchRequest={topic:researchInput.topic,instructions:researchInput.instructions,projectId:startedProject,workspaceId:api.getWorkspaceId?.()??null,requestId:`research-${startedProject}-${seq}-${Date.now()}`};window.dispatchEvent(new CustomEvent('studio-topic-research-start',{detail:activeResearchRequest}));
     operationHost.scrollIntoView({block: 'nearest', behavior: 'instant'});
     try {
       await nextPaint();if (seq !== operation || api.getProject().id !== startedProject) return;
@@ -592,14 +597,14 @@ export function setupScriptStudio(api) {
     flush();
     const value = validateSettings();
     if (!value.sourceText.trim()) throw new Error('대본 초안으로 가져올 자료를 먼저 넣어 주세요.');
-    draft.result = null; draft.draftScript = value.sourceText.trim();draft.displayScript = draft.draftScript;resultField.input.value = draft.draftScript;displayField.input.value = draft.displayScript;
+    draft.result = null; draft.draftScript = stripEnglishParentheticalGlosses(value.sourceText.trim());draft.displayScript = draft.draftScript;resultField.input.value = draft.draftScript;displayField.input.value = draft.displayScript;
     showError('', false); renderResults(); flush();
-    status.textContent = '원문을 수동으로 그대로 복사했어요. AI 대본 작성·요약·번역·웹 검색은 실행하지 않았어요.';
+    status.textContent = '원문을 수동 초안으로 가져오고 한국어 이름의 영문 병기를 정리했어요. AI 대본 작성·요약·번역·웹 검색은 실행하지 않았어요.';
   }));
-  copy.addEventListener('click', run(async () => { const value = capture(), script = cleanNarrationText(value.draftScript); if (!script.trim()) return; await shortOperation('내레이션 대본 복사 중', () => copyText(script), '내레이션 대본만 복사했어요.'); api.toast('내레이션 대본만 복사했어요.'); }));
-  displayCopy.addEventListener('click',run(async()=>{const text = cleanNarrationText(displayField.input.value);if (!text) return;await shortOperation('화면용 대본 복사 중',()=>copyText(text),'화면용 대본만 복사했어요.');}));
-  displayTxt.addEventListener('click',run(async()=>{const text = cleanNarrationText(displayField.input.value);if (!text) return;await shortOperation('화면용 TXT 준비 중',()=>downloadText(text,`${filename(draft.result?.title)}-화면용.txt`,'text/plain;charset=utf-8'),'화면용 대본 TXT를 준비했어요.');}));
-  txt.addEventListener('click', run(async () => { const text = documentText(false), name = `${filename(draft.result?.title)}.txt`; await shortOperation('내레이션 TXT 준비 중', () => downloadText(text, name, 'text/plain;charset=utf-8'), '내레이션 TXT를 브라우저 다운로드로 보냈어요.'); }));
+  copy.addEventListener('click', run(async () => { const value = capture(), script = cleanNarrationText(value.draftScript); if (!script.trim()) return; await shortOperation('보이스용 대본 복사 중', () => copyText(script), '보이스용 대본만 복사했어요.'); api.toast('보이스용 대본만 복사했어요.'); }));
+  displayCopy.addEventListener('click',run(async()=>{const text = cleanNarrationText(displayField.input.value);if (!text) return;await shortOperation('자막용 대본 복사 중',()=>copyText(text),'자막용 대본만 복사했어요.');}));
+  displayTxt.addEventListener('click',run(async()=>{const text = cleanNarrationText(displayField.input.value);if (!text) return;await shortOperation('자막용 TXT 준비 중',()=>downloadText(text,`${filename(draft.result?.title)}-자막용.txt`,'text/plain;charset=utf-8'),'자막용 대본 TXT를 준비했어요.');}));
+  txt.addEventListener('click', run(async () => { const text = documentText(false), name = `${filename(draft.result?.title)}.txt`; await shortOperation('보이스용 TXT 준비 중', () => downloadText(text, name, 'text/plain;charset=utf-8'), '보이스용 TXT를 브라우저 다운로드로 보냈어요.'); }));
   markdown.addEventListener('click', run(async () => { const text = documentText(true), name = `${filename(draft.result?.title)}.md`; await shortOperation('별도 조사 기록 준비 중', () => downloadText(text, name, 'text/markdown;charset=utf-8'), '별도 조사 기록을 브라우저 다운로드로 보냈어요.'); }));
   apply.addEventListener('click', run(() => {
     flush(); const value = capture(), script = cleanNarrationText(value.draftScript); if (!script.trim()) throw new Error('장면으로 가져올 읽는 대본이 없어요.');
@@ -658,6 +663,7 @@ export function setupScriptStudio(api) {
       if (input === displayField.input) {displayTouched = true;draft.displayScript = input.value;if (draft.result) draft.result.displayScript = input.value;}
       showError('', false); updateMetrics(); queueSave();
     });
+    if(input===resultField.input||input===displayField.input)input.addEventListener('blur',()=>{const cleaned=stripEnglishParentheticalGlosses(input.value);if(cleaned!==input.value){input.value=cleaned;if(input===resultField.input)draft.draftScript=cleaned;else{draft.displayScript=cleaned;displayTouched=true;}updateMetrics();queueSave();}});
     input.addEventListener('change', () => { try { flush(); } catch (cause) { showError(cause.message, false); } });
   }
   function render() {

@@ -1,18 +1,18 @@
-import {cleanNarrationText, formatNarrationText} from './script-protocol.js';
+import {cleanNarrationText, formatNarrationText, stripEnglishParentheticalGlosses} from './script-protocol.js';
 import {normalizePronunciations, applyPronunciationDictionary, parsePronunciationLines, pronunciationLines} from './pronunciation.js';
 import {createOperationStatus, nextPaint} from './operation-status.js';
 export {normalizePronunciations, applyPronunciationDictionary, parsePronunciationLines, pronunciationLines};
 
 export function getNarrationScript(project) {
   const draft = project?.scriptDraft;
-  if (typeof draft?.draftScript === 'string') return draft.draftScript;
-  if (typeof draft?.result?.script === 'string') return draft.result.script;
-  return (project?.scenes || []).map(scene => scene.caption || '').filter(Boolean).join('\n\n');
+  if (typeof draft?.draftScript === 'string') return stripEnglishParentheticalGlosses(draft.draftScript);
+  if (typeof draft?.result?.script === 'string') return stripEnglishParentheticalGlosses(draft.result.script);
+  return stripEnglishParentheticalGlosses((project?.scenes || []).map(scene => scene.caption || '').filter(Boolean).join('\n\n'));
 }
 export function getDisplayScript(project) {
   const draft = project?.scriptDraft;
-  if (typeof draft?.displayScript === 'string') return draft.displayScript;
-  if (typeof draft?.result?.displayScript === 'string') return draft.result.displayScript;
+  if (typeof draft?.displayScript === 'string') return stripEnglishParentheticalGlosses(draft.displayScript);
+  if (typeof draft?.result?.displayScript === 'string') return stripEnglishParentheticalGlosses(draft.result.displayScript);
   return getNarrationScript(project);
 }
 export function applyPronunciations(text, entries = [], style = 'standard') {
@@ -23,26 +23,26 @@ function element(tag, className = '', text) {const value = document.createElemen
 function field(id, label, rows = 8) {const wrapper = element('label', 'production-field');wrapper.htmlFor = id;wrapper.append(element('span', '', label));const input = element('textarea');input.id = id;input.rows = rows;input.maxLength = 100000;wrapper.append(input);return {wrapper, input};}
 function button(id, text, className = 'outline') {const value = element('button', className, text);value.type = 'button';value.id = id;return value;}
 const defaults = () => ({sourceText:'', instructions:'', targetMinutes:8, charsPerMinute:330, narrationStyle:'korean-digits', sourceFidelity:'faithful', detailLevel:'expanded', draftScript:'', result:null});
-const fingerprint = project => JSON.stringify({id:project.id, draft:project.scriptDraft, speech:project.production?.speech || null});
+const fingerprint = project => JSON.stringify({id:project.id, draft:project.scriptDraft, pronunciations:project.production?.speech?.pronunciations || []});
 
 /** Project-local display/spoken editing and explicit dictionary application. */
 export function setupProductionSpeech(api) {
   const container = api.container;if (!container) throw new Error('대본 관리 화면을 찾지 못했어요.');
   if (!document.getElementById('productionSpeechStyles')) {const link = element('link');link.id = 'productionSpeechStyles';link.rel = 'stylesheet';link.href = new URL('./production-speech.css', import.meta.url).href;document.head.append(link);}
-  container.append(element('h3', '', '화면 자막과 읽는 대본'), element('p', 'production-help', '자막에는 1991년·ABOL처럼 원래 표기를, 음성에는 일구구일년·아볼처럼 읽는 발음을 따로 보관해요. 기존 대본은 그대로 시작합니다.'));
-  const grid = element('div', 'production-speech-grid'), screen = field('productionDisplayScript', '화면용 대본 · 자막'), spoken = field('productionNarrationScript', '나레이션용 대본');grid.append(screen.wrapper, spoken.wrapper);container.append(grid);
+  container.append(element('h3', '', '자막용 대본과 보이스용 대본'), element('p', 'production-help', '자막에는 1991년 같은 숫자 표기를, 보이스에는 일구구일년처럼 읽는 발음을 따로 보관해요. 헤드리스(Headless) 같은 영문 병기는 헤드리스로 정리해 두 번 읽지 않게 해요.'));
+  const grid = element('div', 'production-speech-grid'), screen = field('productionDisplayScript', '자막용 대본'), spoken = field('productionNarrationScript', '보이스용 대본');grid.append(screen.wrapper, spoken.wrapper);container.append(grid);
   const dictionary = field('productionPronunciations', '발음 사전 · 한 줄에 용어 = 읽는 발음', 5);dictionary.input.placeholder = 'ABOL = 아볼\nUN = 유엔';dictionary.input.maxLength = 65000;container.append(dictionary.wrapper, element('p', 'production-help', '최대 200개. 긴 용어를 먼저 적용하고 영문 대소문자는 구분하지 않아요. ABOL은 바꾸지만 ABOLITE 같은 다른 영단어는 바꾸지 않아요. 사전이나 화면용 대본을 바꿔도 나레이션은 적용하기 전까지 유지해요.'));
   const actions = element('div', 'production-actions'), save = button('saveSpeechScriptsBtn', '두 대본·사전 저장', 'primary'), preview = button('previewPronunciationsBtn', '발음 적용 미리보기'), apply = button('applyPronunciationsBtn', '미리본 발음 적용·저장'), reload = button('reloadSpeechScriptsBtn', '저장된 대본 다시 가져오기', 'ghost');actions.append(save, preview, apply, reload);container.append(actions);
-  const staged = field('pronunciationPreview', '적용할 나레이션 미리보기', 5);staged.input.readOnly = true;staged.wrapper.hidden = true;container.append(staged.wrapper);
+  const staged = field('pronunciationPreview', '적용할 보이스용 대본 미리보기', 5);staged.input.readOnly = true;staged.wrapper.hidden = true;container.append(staged.wrapper);
   const downloads = element('div', 'production-actions');
-  for (const [id, label, target, name] of [['downloadDisplayScriptBtn','자막용 TXT 저장',screen.input,'화면용-대본.txt'],['downloadNarrationScriptBtn','나레이션 TXT 저장',spoken.input,'나레이션-대본.txt']]) {const item = button(id,label,'ghost');item.addEventListener('click', () => {const url = URL.createObjectURL(new Blob([target.value], {type:'text/plain;charset=utf-8'})), link = element('a');link.href = url;link.download = name;document.body.append(link);link.click();link.remove();setTimeout(() => URL.revokeObjectURL(url),30000);});downloads.append(item);}container.append(downloads);
+  for (const [id, label, target, name] of [['downloadDisplayScriptBtn','자막용 대본 TXT 저장',screen.input,'자막용-대본.txt'],['downloadNarrationScriptBtn','보이스용 대본 TXT 저장',spoken.input,'보이스용-대본.txt']]) {const item = button(id,label,'ghost');item.addEventListener('click', () => {const url = URL.createObjectURL(new Blob([stripEnglishParentheticalGlosses(target.value)], {type:'text/plain;charset=utf-8'})), link = element('a');link.href = url;link.download = name;document.body.append(link);link.click();link.remove();setTimeout(() => URL.revokeObjectURL(url),30000);});downloads.append(item);}container.append(downloads);
   const status = element('p','production-status'), error = element('p','production-error');status.id = 'productionSpeechStatus';status.setAttribute('role','status');status.setAttribute('aria-live','polite');error.id = 'productionSpeechError';error.setAttribute('role','alert');container.append(status,error);
   const progress = createOperationStatus({container,region:container,id:'productionSpeechOperation'});
   let projectId = api.getProject().id, last = '', dirty = false, saving = false, stale = false, timer = 0, stagedKey = '', busy = false;
   function inputKey() {return JSON.stringify({screen:screen.input.value,dictionary:dictionary.input.value,style:api.getProject().scriptDraft?.narrationStyle || 'korean-digits'});}
   function refreshApply() {apply.disabled = busy || !stagedKey || stagedKey !== inputKey();}
   function hydrate() {const project = api.getProject();screen.input.value = getDisplayScript(project);spoken.input.value = getNarrationScript(project);dictionary.input.value = pronunciationLines(project.production?.speech?.pronunciations || []);last = fingerprint(project);projectId = project.id;dirty = false;stale = false;stagedKey = '';staged.wrapper.hidden = true;refreshApply();}
-  function capture() {if (Array.from(screen.input.value).length > 100000 || Array.from(spoken.input.value).length > 100000) throw new Error('각 대본은 100,000자 이하로 입력해 주세요.');return {displayScript:screen.input.value,draftScript:spoken.input.value,pronunciations:parsePronunciationLines(dictionary.input.value)};}
+  function capture() {if (Array.from(screen.input.value).length > 100000 || Array.from(spoken.input.value).length > 100000) throw new Error('각 대본은 100,000자 이하로 입력해 주세요.');return {displayScript:stripEnglishParentheticalGlosses(screen.input.value),draftScript:stripEnglishParentheticalGlosses(spoken.input.value),pronunciations:parsePronunciationLines(dictionary.input.value)};}
   function commit({strict = true, explicit = false} = {}) {
     clearTimeout(timer);timer = 0;if (projectId !== api.getProject().id || !dirty) return true;
     if (stale && !explicit) {if (strict) throw new Error('다른 화면에서 대본이 바뀌었어요. 저장된 대본을 다시 가져오거나 이 화면의 저장 버튼으로 수정본을 저장해 주세요.');return false;}
@@ -56,7 +56,7 @@ export function setupProductionSpeech(api) {
     try {capture();await nextPaint();if (owner !== api.getProject().id) {task.cancel('다른 프로젝트로 이동해 저장을 중단했어요.');return;}
       if (dirty && (getNarrationScript(api.getProject()) || getDisplayScript(api.getProject()))) await api.captureProductionVersion?.('script',{label:'두 대본 수정 전'});
       if (owner !== api.getProject().id) {task.cancel('다른 프로젝트로 이동해 저장을 중단했어요.');return;}
-      commit({explicit:true});await api.persist?.();if (owner !== api.getProject().id) return;status.textContent = '화면용·나레이션용 대본과 발음 사전을 저장했어요.';task.finish('대본과 발음 사전 저장 완료');
+      commit({explicit:true});screen.input.value=getDisplayScript(api.getProject());spoken.input.value=getNarrationScript(api.getProject());await api.persist?.();if (owner !== api.getProject().id) return;status.textContent = '자막용·보이스용 대본과 발음 사전을 저장했어요.';task.finish('대본과 발음 사전 저장 완료');
     } catch (cause) {error.textContent = cause.message;task.fail(cause.message);}
     finally {busy = false;for (const control of controls) control.disabled = false;refreshApply();}
   }

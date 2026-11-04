@@ -1,0 +1,1 @@
+.video-upload-workbench .video-upload-tabs{gap:8px}.video-upload-workbench .video-upload-tabs>.production-workbench-tab{min-width:120px}.video-upload-workbench #videoUploadError:empty{display:none}@media(max-width:650px){.video-upload-workbench .video-upload-tabs>.production-workbench-tab{min-width:0;flex-basis:130px}.video-upload-workbench .video-upload-tabs{gap:6px}}

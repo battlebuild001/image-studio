@@ -1,10 +1,13 @@
 import {normalizePronunciations} from './pronunciation.js';
 import {normalizeDiagramCard, normalizeVisualReview, DIAGRAM_TYPES} from './production-visual-protocol.js';
 import {normalizeYouTubeUploadDraft, normalizeYouTubeUploadRecord} from './youtube-protocol.js';
+import {normalizeDramaPlan, normalizeUploadSeriesState} from './short-series-protocol.js';
+import {normalizeVoicePreferences, normalizeVoiceSample} from './voice-preferences-protocol.js';
+import {normalizeReferenceMediaState, normalizeMusicState} from './media-search-protocol.js';
 
 /** Credential-free, schema-one production tools state shared by backups and workspaces. */
 export const MAX_PRODUCTION_BYTES = 2 * 1024 * 1024;
-const DOMAINS = new Set(['version', 'speech', 'changes', 'budget', 'versions', 'visual', 'diagrams', 'channel', 'shorts', 'publishing', 'youtube']);
+const DOMAINS = new Set(['version', 'speech', 'changes', 'budget', 'versions', 'visual', 'diagrams', 'channel', 'shorts', 'publishing', 'youtube', 'uploadSeries', 'referenceMedia', 'music']);
 const ID = /^[a-zA-Z0-9_-]{1,180}$/u;
 const DENIED = /(?:api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|credentials?|private[_-]?key)|^(?:__proto__|prototype|constructor|token|secret|raw[_-]?provider(?:response)?|provider[_-]?response|base64|b64_json)$/iu;
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && [Object.prototype, null].includes(Object.getPrototypeOf(value));
@@ -45,6 +48,16 @@ function validateSpeech(value) {
   if (!plain(value)) fail();
   if (value.pronunciations !== undefined) value.pronunciations = normalizePronunciations(value.pronunciations);
   if (value.updatedAt !== undefined) stamp(value.updatedAt);
+  if (value.voicePreferences !== undefined) value.voicePreferences = normalizeVoicePreferences(value.voicePreferences);
+  if (value.voiceSamples !== undefined) {
+    if (!Array.isArray(value.voiceSamples) || value.voiceSamples.length > 20) fail('보관할 음성 샘플은 최대 20개예요. 기존 샘플을 파일로 저장하고 정리해 주세요.');
+    value.voiceSamples = value.voiceSamples.map(normalizeVoiceSample);
+    if (new Set(value.voiceSamples.map(sample => sample.assetId)).size !== value.voiceSamples.length) fail('음성 샘플 식별자가 중복돼요.');
+  }
+  if (value.voiceDraft !== undefined) {
+    if (!plain(value.voiceDraft) || Object.keys(value.voiceDraft).some(key => !['text','baseScriptKey'].includes(key))) fail('보이스용 대본의 보관 형식을 확인해 주세요.');
+    text(value.voiceDraft.text, 30000, '보이스용 대본');text(value.voiceDraft.baseScriptKey, 1000, '보이스용 대본 기준');
+  }
 }
 
 function list(value, max, label, each) {
@@ -85,7 +98,10 @@ function validateChannel(value) {
 }
 function validateShorts(value) {
   optionalText(value, 'sourceKey', 250000);
-  if (value.targetSeconds !== undefined && ![30, 60].includes(value.targetSeconds)) fail('쇼츠 길이는 30초 또는 60초로 정해 주세요.');
+  if (value.mode !== undefined && !['shorts', 'drama'].includes(value.mode)) fail('쇼츠 형식을 확인해 주세요.');
+  if (value.dramaTargetSeconds !== undefined && ![30,60,90,120,180].includes(value.dramaTargetSeconds)) fail('드라마 회차 길이를 확인해 주세요.');
+  if (value.targetSeconds !== undefined && !(value.mode === 'drama' ? [30,60,90,120,180] : [30,60]).includes(value.targetSeconds)) fail('선택한 형식의 영상 길이를 확인해 주세요.');
+  if (value.dramaPlan !== undefined) value.dramaPlan = normalizeDramaPlan(value.dramaPlan);
   if (value.result === undefined || value.result === null) return;
   const result = value.result;if (!plain(result)) fail('쇼츠 구간 자료를 확인해 주세요.');
   text(result.title, 200, '쇼츠 제목');text(result.hook, 300, '쇼츠 도입');notes(result.notes);metadata(result);
@@ -170,7 +186,8 @@ function validateVersions(value) {
 }
 
 function validateYouTube(value) {
-  if (Object.keys(value).some(key => !['draft', 'uploads'].includes(key))) fail('유튜브 설정에는 대본과 업로드 기록만 보관할 수 있어요.');
+  if (Object.keys(value).some(key => !['draft', 'uploads', 'sourceNotes'].includes(key))) fail('유튜브 설정에는 대본과 업로드 기록만 보관할 수 있어요.');
+  optionalText(value, 'sourceNotes', 100000);
   if (value.draft !== undefined) value.draft = normalizeYouTubeUploadDraft(value.draft);
   if (value.uploads !== undefined) {
     if (!Array.isArray(value.uploads) || value.uploads.length > 10) fail('유튜브 업로드 기록은 최근 10개까지 보관할 수 있어요.');
@@ -198,12 +215,15 @@ export function normalizeProductionState(input) {
   if (result.publishing) validatePublishing(result.publishing);
   if (result.changes) validateChanges(result.changes);
   if (result.youtube) validateYouTube(result.youtube);
+  if (result.uploadSeries) result.uploadSeries = normalizeUploadSeriesState(result.uploadSeries);
+  if (result.referenceMedia) result.referenceMedia = normalizeReferenceMediaState(result.referenceMedia);
+  if (result.music) result.music = normalizeMusicState(result.music);
   return result;
 }
 
 export function referencedProductionAssetIds(projectOrState) {
   const state = projectOrState?.production ?? projectOrState;
-  return new Set((state?.versions || []).filter(entry => ['image', 'voice'].includes(entry.kind)).map(entry => entry.assetId).filter(Boolean));
+  return new Set([...(state?.versions || []).filter(entry => ['image', 'voice'].includes(entry.kind)).map(entry => entry.assetId), ...(state?.speech?.voiceSamples || []).map(sample => sample.assetId)].filter(Boolean));
 }
 export function referencedProductionImageIds(projectOrState) {
   const state = projectOrState?.production ?? projectOrState;

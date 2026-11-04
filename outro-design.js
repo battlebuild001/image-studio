@@ -1,0 +1,56 @@
+import {createOperationStatus,nextPaint} from './operation-status.js';
+import {canvasBlob,taskScope,matchesScope} from './production-delivery-utils.js';
+
+export const DESIGNED_OUTRO_SECONDS=10;
+export const OUTRO_DEFAULT_TITLE='함께해 주셔서 감사합니다';
+export const OUTRO_DEFAULT_SUBTITLE='다음 이야기에서도 함께해 주세요.';
+function clean(value,max,label){if(typeof value!=='string'||Array.from(value).length>max||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value))throw new Error(`${label}을 확인해 주세요.`);return value.trim();}
+function content(value={}){if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('아웃트로 문구를 확인해 주세요.');return{title:clean(value.title??'',200,'아웃트로 제목')||OUTRO_DEFAULT_TITLE,subtitle:clean(value.subtitle??'',500,'아웃트로 보조 문구')||OUTRO_DEFAULT_SUBTITLE,channelName:clean(value.channelName??'',120,'채널 이름')};}
+function linesFor(ctx,text,width){const lines=[];for(const paragraph of text.split(/\r?\n/u)){if(!paragraph.trim()){lines.push('');continue;}let line='';for(const word of paragraph.trim().split(/\s+/u)){const candidate=line?`${line} ${word}`:word;if(ctx.measureText(candidate).width<=width){line=candidate;continue;}if(line){lines.push(line);line='';}for(const character of word){if(line&&ctx.measureText(line+character).width>width){lines.push(line);line=character;}else line+=character;}}if(line)lines.push(line);}return lines;}
+function textBlock(ctx,text,box,{size,minSize=18,maxLines=3,color='#f2f4ee',weight=500,align='left'}={}){let font=size,lines;do{ctx.font=`${weight} ${font}px "Noto Sans KR",system-ui,sans-serif`;lines=linesFor(ctx,text,box.w);if(lines.length<=maxLines&&lines.length*font*1.24<=box.h)break;font-=1;}while(font>minSize);if(lines.length>maxLines){lines=lines.slice(0,maxLines);let final=lines.at(-1);while(final&&ctx.measureText(final+'…').width>box.w)final=final.slice(0,-1);lines[lines.length-1]=final+'…';}ctx.fillStyle=color;ctx.textAlign=align;ctx.textBaseline='top';const x=align==='center'?box.x+box.w/2:box.x;lines.forEach((line,index)=>ctx.fillText(line,x,box.y+index*font*1.24));return{lines,font};}
+function rounded(ctx,x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r);}
+
+/** A real frame graphic. Video timing belongs to the explicit 10-second scene. */
+export function renderOutroDesign(canvas,value={}){
+ const settings=content(value),ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height;if(!ctx||!Number.isFinite(w)||!Number.isFinite(h)||w<320||h<240)throw new Error('아웃트로 미리보기 크기를 확인해 주세요.');
+ const portrait=h>w,scale=portrait?w/720:w/1280;
+ const gradient=ctx.createLinearGradient(0,0,w,h);gradient.addColorStop(0,'#07151c');gradient.addColorStop(.56,'#0b2830');gradient.addColorStop(1,'#101f29');ctx.fillStyle=gradient;ctx.fillRect(0,0,w,h);
+ const glow=ctx.createRadialGradient(w*.2,h*.28,0,w*.2,h*.28,w*.88);glow.addColorStop(0,'#2b7b713b');glow.addColorStop(.55,'#1a645519');glow.addColorStop(1,'#0b232900');ctx.fillStyle=glow;ctx.fillRect(0,0,w,h);
+ ctx.save();ctx.lineWidth=Math.max(.5,scale);ctx.strokeStyle='#b5d3ca';ctx.globalAlpha=.035;const step=portrait?80*scale:90*scale;for(let x=-h;x<w+h;x+=step){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x+h*.45,h);ctx.stroke();}ctx.restore();
+ const pad=portrait?64*scale:88*scale;
+ ctx.save();ctx.strokeStyle='#b3d1c8';ctx.globalAlpha=.16;ctx.lineWidth=scale;ctx.strokeRect(pad*.45,h*.055,w-pad*.9,h*.86);ctx.restore();
+ const headline=portrait?{x:pad,y:244*scale,w:w-pad*2,h:228*scale}:{x:pad,y:190*scale,w:550*scale,h:230*scale};
+ const eyebrow=portrait?{x:pad,y:188*scale,w:w-pad*2,h:36*scale}:{x:pad,y:136*scale,w:550*scale,h:34*scale};
+ ctx.fillStyle='#ddb981';ctx.fillRect(pad,eyebrow.y-24*scale,66*scale,3*scale);textBlock(ctx,'이야기는 계속됩니다',eyebrow,{size:17*scale,minSize:15*scale,maxLines:1,color:'#d6b983',weight:600});
+ textBlock(ctx,settings.title,headline,{size:(portrait?58:72)*scale,minSize:26*scale,maxLines:3,color:'#f1f4ed',weight:700});
+ const subtitle=portrait?{x:pad,y:482*scale,w:w-pad*2,h:102*scale}:{x:pad,y:424*scale,w:550*scale,h:91*scale};textBlock(ctx,settings.subtitle,subtitle,{size:(portrait?25:26)*scale,minSize:17*scale,maxLines:3,color:'#b4c9c5',weight:400});
+ const pill=portrait?{x:pad,y:604*scale,w:w-pad*2,h:60*scale}:{x:pad,y:530*scale,w:520*scale,h:56*scale};
+ ctx.save();rounded(ctx,pill.x,pill.y,pill.w,pill.h,7*scale);ctx.fillStyle='#d8b47e';ctx.fill();textBlock(ctx,'구독하고 다음 이야기도 함께해요',{x:pill.x+16*scale,y:pill.y+17*scale,w:pill.w-32*scale,h:32*scale},{size:20*scale,minSize:16*scale,maxLines:1,color:'#13232a',weight:700,align:'center'});ctx.restore();
+ const frame=portrait?{x:pad,y:748*scale,w:w-pad*2,h:(w-pad*2)*9/16}:{x:742*scale,y:214*scale,w:450*scale,h:450*scale*9/16};
+ textBlock(ctx,'추천 영상',{x:frame.x,y:frame.y-40*scale,w:frame.w,h:29*scale},{size:18*scale,minSize:15*scale,maxLines:1,color:'#d6ba89',weight:600});
+ ctx.save();ctx.shadowColor='#58c8b334';ctx.shadowBlur=26*scale;rounded(ctx,frame.x,frame.y,frame.w,frame.h,12*scale);const cardGradient=ctx.createLinearGradient(frame.x,frame.y,frame.x+frame.w,frame.y+frame.h);cardGradient.addColorStop(0,'#16383f');cardGradient.addColorStop(1,'#0c222d');ctx.fillStyle=cardGradient;ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='#d6b782';ctx.lineWidth=1.4*scale;ctx.stroke();ctx.restore();
+ ctx.save();ctx.strokeStyle='#6ca99d';ctx.globalAlpha=.18;ctx.lineWidth=scale;for(let n=1;n<=4;n++){ctx.beginPath();ctx.moveTo(frame.x+frame.w*.15*n,frame.y+frame.h);ctx.lineTo(frame.x+frame.w*.15*n+frame.h*.6,frame.y);ctx.stroke();}ctx.restore();
+ const cx=frame.x+frame.w*.5,cy=frame.y+frame.h*.40,r=31*scale;ctx.save();ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fillStyle='#78bdab16';ctx.fill();ctx.strokeStyle='#abc6ac';ctx.lineWidth=1.2*scale;ctx.stroke();ctx.beginPath();ctx.moveTo(cx-6*scale,cy-11*scale);ctx.lineTo(cx+12*scale,cy);ctx.lineTo(cx-6*scale,cy+11*scale);ctx.closePath();ctx.fillStyle='#dfbd85';ctx.fill();ctx.restore();
+ textBlock(ctx,'다음 영상으로 이어 보기',{x:frame.x+24*scale,y:frame.y+frame.h*.67,w:frame.w-48*scale,h:54*scale},{size:(portrait?25:24)*scale,minSize:18*scale,maxLines:1,color:'#e4ede6',weight:600,align:'center'});
+ const beneath=portrait?{x:pad,y:frame.y+frame.h+24*scale,w:w-pad*2,h:54*scale}:{x:frame.x,y:frame.y+frame.h+24*scale,w:frame.w,h:64*scale};textBlock(ctx,'채널에서 더 많은 이야기를 만나보세요',beneath,{size:17*scale,minSize:13*scale,maxLines:2,color:'#88a8a3',weight:400});
+ const footer=portrait?{x:pad,y:1148*scale,w:w-pad*2,h:34*scale}:{x:pad,y:622*scale,w:w-pad*2,h:35*scale};textBlock(ctx,settings.channelName||'다음 이야기에서 만나요',footer,{size:20*scale,minSize:14*scale,maxLines:1,color:settings.channelName?'#d5bd94':'#91ada5',weight:500});
+ // Keep the last ~6% clear for the app's optional exact AI-image notice.
+ return canvas;
+}
+
+function node(tag,className='',text){const value=document.createElement(tag);if(className)value.className=className;if(text!==undefined)value.textContent=text;return value;}
+function download(blob,name){const url=URL.createObjectURL(blob),anchor=node('a');anchor.href=url;anchor.download=name;document.body.append(anchor);anchor.click();anchor.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+export function setupOutroDesign(api){
+ const container=api.container;if(!document.getElementById('outroDesignStyles')){const sheet=node('link');sheet.id='outroDesignStyles';sheet.rel='stylesheet';sheet.href=new URL('./outro-design.css',import.meta.url).href;document.head.append(sheet);}
+ const card=node('section','production-card outro-design-card');card.append(node('h4','','10초 아웃트로 디자인'),node('p','production-help','짙은 청록색과 골드 톤의 감사 인사·다음 영상 안내를 영상 끝에 넣어요. 위 아웃트로 제목과 보조 문구를 사용하며, 빈칸이면 기본 감사 문구를 사용해요.'));
+ const actions=node('div','production-actions'),previewButton=node('button','outline','10초 아웃트로 미리보기'),saveButton=node('button','outline','아웃트로 PNG 저장'),addButton=node('button','primary','영상 끝에 10초 아웃트로 추가');previewButton.id='previewDesignedOutroBtn';saveButton.id='downloadDesignedOutroBtn';addButton.id='addDesignedOutroBtn';for(const button of[previewButton,saveButton,addButton])button.type='button';actions.append(previewButton,saveButton,addButton);card.append(actions);
+ const canvas=node('canvas','production-preview outro-design-preview');canvas.id='designedOutroPreview';canvas.width=1280;canvas.height=720;canvas.hidden=true;card.append(canvas,node('p','production-help','영상에 포함되는 실제 그래픽이에요. 클릭 가능한 YouTube 종료 화면은 YouTube Studio에서 따로 설정할 수 있어요.'));
+ const status=node('p','production-status'),error=node('p','production-error');status.id='designedOutroStatus';status.setAttribute('role','status');status.setAttribute('aria-live','polite');error.id='designedOutroError';error.setAttribute('role','alert');card.append(status,error);container.append(card);const operation=createOperationStatus({container:card,region:card,id:'designedOutroOperation'});
+ let busy=false,serial=0,owner='';const ownerKey=()=>JSON.stringify([api.getWorkspaceId?.()??null,api.getProject().id]);
+ function draw(){const value=content(api.getDesignContent?.()||{}),portrait=api.getProject().aspect==='9:16';canvas.width=portrait?720:1280;canvas.height=portrait?1280:720;renderOutroDesign(canvas,value);canvas.hidden=false;return value;}
+ function refresh(){const disabled=busy||Boolean(api.canMutate&&!api.canMutate());previewButton.disabled=saveButton.disabled=addButton.disabled=disabled;}
+ async function perform(kind){if(busy)return;const scope=taskScope(api),key=ownerKey(),seq=++serial;error.textContent='';busy=true;refresh();const task=operation.start(kind==='add'?'10초 아웃트로를 영상 끝에 추가하고 있어요.':kind==='save'?'아웃트로 이미지를 저장하고 있어요.':'아웃트로 디자인을 준비하고 있어요.');try{await nextPaint();const value=draw();if(kind==='preview'){status.textContent='현재 영상 비율의 10초 아웃트로를 미리 보여 드려요.';task.finish(status.textContent);return;}const blob=await canvasBlob(canvas);if(seq!==serial||key!==ownerKey()||!matchesScope(api,scope))throw new Error('프로젝트가 바뀌어 아웃트로 작업을 취소했어요.');if(kind==='save'){download(blob,'아웃트로-10초.png');status.textContent='실제 아웃트로 PNG를 저장했어요.';}else{api.mutate(project=>{project.production||={version:1};project.production.channel={...(project.production.channel||{}),name:value.channelName,outro:{enabled:true,title:value.title,subtitle:value.subtitle,duration:DESIGNED_OUTRO_SECONDS},updatedAt:new Date().toISOString()};});await api.addTemplateScene({scene:{caption:'',duration:DESIGNED_OUTRO_SECONDS,motion:'none'},asset:{blob,type:'image/png',name:'아웃트로-10초.png'},position:'end'});await api.persist?.();if(seq!==serial||key!==ownerKey())return;status.textContent='영상 끝에 10초 아웃트로를 추가하고 프로젝트 설정에 저장했어요.';}task.finish(status.textContent);}catch(cause){if(seq===serial){error.textContent=cause.message||'아웃트로를 준비하지 못했어요.';task.fail(error.textContent);}}finally{if(seq===serial){busy=false;refresh();}}}
+ previewButton.addEventListener('click',()=>perform('preview'));saveButton.addEventListener('click',()=>perform('save'));addButton.addEventListener('click',()=>perform('add'));
+ function render(){const key=ownerKey();if(owner!==key){serial++;owner=key;busy=false;canvas.hidden=true;status.textContent=error.textContent='';operation.clear();}refresh();}
+ render();return{render,flush(){},reset(){serial++;owner='';busy=false;canvas.hidden=true;operation.clear();render();},onClose(){},getBusy:()=>busy};
+}
