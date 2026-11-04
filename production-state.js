@@ -4,6 +4,7 @@ import {normalizeYouTubeUploadDraft, normalizeYouTubeUploadRecord} from './youtu
 import {normalizeDramaPlan, normalizeUploadSeriesState} from './short-series-protocol.js';
 import {normalizeVoicePreferences, normalizeVoiceSample} from './voice-preferences-protocol.js';
 import {normalizeReferenceMediaState, normalizeMusicState} from './media-search-protocol.js';
+import {normalizeStoredShortsFraming} from './shorts-framing-protocol.js';
 
 /** Credential-free, schema-one production tools state shared by backups and workspaces. */
 export const MAX_PRODUCTION_BYTES = 2 * 1024 * 1024;
@@ -99,6 +100,7 @@ function validateChannel(value) {
 }
 function validateShorts(value) {
   optionalText(value, 'sourceKey', 250000);
+  if (value.framing !== undefined) value.framing = normalizeStoredShortsFraming(value.framing);
   if (value.mode !== undefined && !['shorts', 'drama'].includes(value.mode)) fail('쇼츠 형식을 확인해 주세요.');
   if (value.dramaTargetSeconds !== undefined && ![30,60,90,120,180].includes(value.dramaTargetSeconds)) fail('드라마 회차 길이를 확인해 주세요.');
   if (value.targetSeconds !== undefined && !(value.mode === 'drama' ? [30,60,90,120,180] : [30,60]).includes(value.targetSeconds)) fail('선택한 형식의 영상 길이를 확인해 주세요.');

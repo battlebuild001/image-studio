@@ -35,7 +35,7 @@ function checkAbort(signal) {
 
 function snapshot(project) {
   const signature = [project.captionMode, project.aspect,
-    ...(project.scenes || []).map(s => `${s.id}|${s.duration}|${s.caption || ''}|${s.imageId || ''}|${s.motion}|${s.fit}|${s.focusX}|${s.focusY}|${s.endX}|${s.endY}|${s.zoomStart}|${s.zoomEnd}|${s.effect}|${s.effectIntensity}`),
+    ...(project.scenes || []).map(s => `${s.id}|${s.duration}|${s.caption || ''}|${s.imageId || ''}|${s.motion}|${s.fit}|${s.focusX}|${s.focusY}|${s.endX}|${s.endY}|${s.zoomStart}|${s.zoomEnd}|${s.effect}|${s.effectIntensity}|${s.exposure ?? 0}`),
     ...(project.captionMode !== 'auto' ? project.captions || [] : []).map(c => `${c.start}|${c.end}|${c.text}`),
     ...(project.captionMode === 'speech' ? [project.audio?.narrationId, project.audio?.narrationStart,
       project.audio?.narrationEnd, project.audio?.narrationOffset, JSON.stringify(project.captionAnalysis)] : []),
@@ -177,7 +177,11 @@ function drawScene(ctx, scene, assets, progress, width, height, index, localTime
   ctx.save();ctx.beginPath();ctx.rect(0, 0, width, height);ctx.clip();
   ctx.fillStyle = '#080b0d';ctx.fillRect(0, 0, width, height);
   ctx.imageSmoothingEnabled = true;ctx.imageSmoothingQuality = 'high';
+  // Affect the image, leaving captions and the required notice at full contrast.
+  const exposure = clamp(scene.exposure ?? 0, -1, 1);
+  if (exposure !== 0) ctx.filter = `brightness(${Math.pow(2, exposure)})`;
   ctx.drawImage(image, x, y, dw, dh);
+  if (exposure !== 0) ctx.filter = 'none';
   drawSceneEffect(ctx, scene, localTime, width, height);
   ctx.restore();
 }
@@ -202,7 +206,7 @@ function wrapText(ctx, text, maxWidth) {
   return lines;
 }
 
-function aiImageNoticeLayout(ctx, width, height, position) {
+export function getAiImageNoticeLayout(ctx, width, height, position) {
   const scale = Math.min(width, height) / 1080, fontSize = (width < height ? 30 : 22) * scale;
   const paddingX = 14 * scale, paddingY = 6 * scale, lineHeight = fontSize * 1.45;
   ctx.save();ctx.font = `500 ${fontSize}px ${FONT}`;
@@ -227,10 +231,15 @@ function drawAiImageNotice(ctx, layout) {
   ctx.restore();
 }
 
-function drawCaption(ctx, text, settings, width, height, maximumBottom) {
-  if (!text?.trim()) return;
+/** Shared measured layout for actual Canvas rendering and local quality checks. */
+export function getCaptionLayout(ctx, text, settings, width, height, maximumBottom) {
   const scale = Math.min(width, height) / 1080;
-  const maxWidth = width * (width < height ? 0.82 : 0.84);
+  const safe = width < height && settings.shortsSafeArea === true;
+  const paddingX = 28 * scale, paddingY = 15 * scale;
+  const safeArea = {left: safe ? width * .06 : 0, right: safe ? width * .82 : width,
+    top: height * .04, bottom: safe ? height * .78 : height * .96};
+  const centerX = safe ? (safeArea.left + safeArea.right) / 2 : width / 2;
+  const maxWidth = safe ? safeArea.right - safeArea.left - paddingX * 2 : width * (width < height ? 0.82 : 0.84);
   let fontSize = clamp(Number(settings.fontSize) || 48, 20, 100) * scale;
   const minimum = 18 * scale;
   const font = CAPTION_FONTS[settings.captionFont] || FONT;
@@ -243,21 +252,30 @@ function drawCaption(ctx, text, settings, width, height, maximumBottom) {
     fontSize = Math.max(minimum, fontSize - 2 * scale);
   } while (true);
   const lineHeight = fontSize * 1.45;
-  const paddingX = 28 * scale, paddingY = 15 * scale;
-  const panelWidth = Math.min(width * 0.94, Math.max(...lines.map(line => ctx.measureText(line).width), 0) + paddingX * 2);
+  const panelWidth = Math.min(safe ? safeArea.right - safeArea.left : width * 0.94, Math.max(...lines.map(line => ctx.measureText(line).width), 0) + paddingX * 2);
   const panelHeight = lines.length * lineHeight + paddingY * 2;
-  const bottom = height * (width < height ? 0.14 : 0.07);
+  const bottom = height * (safe ? .22 : width < height ? 0.14 : 0.07);
   let top = Math.max(height * 0.12, height - bottom - panelHeight);
   if (settings.captionPosition === 'top') top = height * 0.12;
   if (settings.captionPosition === 'center') top = (height - panelHeight) / 2;
-  top = clamp(top, height * 0.04, Math.max(height * 0.04, (maximumBottom ?? height * 0.96) - panelHeight));
+  const visibleBottom = Math.min(maximumBottom ?? height * .96, safeArea.bottom);
+  top = clamp(top, height * 0.04, Math.max(height * 0.04, visibleBottom - panelHeight));
+  return {font, fontSize, scale, lines, lineHeight, paddingX, paddingY, panelWidth, panelHeight,
+    top, left: centerX - panelWidth / 2, centerX, maxWidth, visibleBottom, safeArea,
+    clipped: top + panelHeight > visibleBottom + .01};
+}
+
+function drawCaption(ctx, text, settings, width, height, maximumBottom) {
+  if (!text?.trim()) return;
+  const layout = getCaptionLayout(ctx, text, settings, width, height, maximumBottom);
+  const {scale, lines, lineHeight, paddingY, panelWidth, panelHeight, top, left, centerX, visibleBottom} = layout;
   // Very long imported cues may exceed the available frame even at the minimum
   // font size. Keep that text/panel above the notice instead of painting over it.
-  if (maximumBottom !== undefined) {ctx.save();ctx.beginPath();ctx.rect(0, 0, width, maximumBottom);ctx.clip();}
+  if (maximumBottom !== undefined || settings.shortsSafeArea === true && width < height) {ctx.save();ctx.beginPath();ctx.rect(0, 0, width, visibleBottom);ctx.clip();}
   ctx.save();
   ctx.fillStyle = settings.captionBackground || '#070a0d';
   ctx.globalAlpha = clamp(settings.captionOpacity ?? 0.83);
-  roundedRect(ctx, (width - panelWidth) / 2, top, panelWidth, panelHeight, 10 * scale);ctx.fill();
+  roundedRect(ctx, left, top, panelWidth, panelHeight, 10 * scale);ctx.fill();
   ctx.restore();
   ctx.fillStyle = settings.captionColor || '#ffffff';
   ctx.shadowColor = 'rgba(0,0,0,0.65)';ctx.shadowBlur = 4 * scale;ctx.shadowOffsetY = scale;
@@ -266,11 +284,11 @@ function drawCaption(ctx, text, settings, width, height, maximumBottom) {
   ctx.lineJoin = 'round';
   lines.forEach((line, i) => {
     const y = top + paddingY + (i + 0.5) * lineHeight;
-    if (ctx.lineWidth > 0 && settings.captionStrokeWidth > 0) ctx.strokeText(line, width / 2, y);
-    ctx.fillText(line, width / 2, y);
+    if (ctx.lineWidth > 0 && settings.captionStrokeWidth > 0) ctx.strokeText(line, centerX, y);
+    ctx.fillText(line, centerX, y);
   });
   ctx.shadowBlur = 0;ctx.shadowOffsetY = 0;
-  if (maximumBottom !== undefined) ctx.restore();
+  if (maximumBottom !== undefined || settings.shortsSafeArea === true && width < height) ctx.restore();
 }
 
 /** Synchronous renderer used by both preview and the export canvas. */
@@ -315,7 +333,7 @@ export function renderFrame(ctx, project, assets, time = 0, width = ctx.canvas.w
     const titleLines = wrapText(ctx, title, width * 0.7);
     ctx.fillText(titleLines[0] || '', x + 16 * scale, y + 13 * scale);
   }
-  const notice = settings.aiImageNotice === true ? aiImageNoticeLayout(ctx, width, height, settings.aiImageNoticePosition) : null;
+  const notice = settings.aiImageNotice === true ? getAiImageNoticeLayout(ctx, width, height, settings.aiImageNoticePosition) : null;
   if (settings.subtitles !== false) {
     const cue = state.captions.find(caption => t >= caption.start && t < caption.end);
     if (cue) drawCaption(ctx, cue.text, settings, width, height, notice ? notice.top - 10 * scale : undefined);
