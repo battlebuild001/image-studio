@@ -726,6 +726,10 @@ Sites deployment credential.
 Deployment uses an owned dedicated `image-studio-web` branch with public `dist/`
 files only, no forced updates and no main-branch changes. Existing unrelated
 Pages sources/branches must be refused; retain an existing matching custom domain.
+Use official Git Tree inline content for valid UTF-8 text files, preserving literal
+newlines and bytes. Upload only binary blobs separately and verify their actual Git
+SHA-1 before referencing them. Reposting every unchanged text blob caused a
+repeatable GitHub500 for editor-tools.css; do not reintroduce that redundant path.
 Check `release.json` revision at the public URL before reporting success. Pending
 builds, mocked API success, pushed commits and saved network configuration are
 not proof of a deployed website. API tests use fixtures and require no credentials.

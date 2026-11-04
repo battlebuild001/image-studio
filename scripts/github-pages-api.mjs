@@ -1,4 +1,6 @@
 import {setTimeout as delay} from 'node:timers/promises';
+import {isUtf8} from 'node:buffer';
+import {createHash} from 'node:crypto';
 
 const OWNER_FILE = '.image-studio-deploy.json';
 const SHA = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i;
@@ -11,6 +13,7 @@ const fail = (code, message, status) => {throw new PagesDeployError(code, messag
 const statusOf = error => Number(error?.status ?? error?.statusCode) || 0;
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const abort = signal => {if (signal?.aborted) throw new DOMException('웹 배포를 취소했습니다.', 'AbortError');};
+const blobSha = bytes => createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
 
 function validRepository(repository) {
   if (typeof repository !== 'string' || !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9_.-]{1,100}$/.test(repository) || ['.', '..'].includes(repository.split('/')[1])) {
@@ -147,9 +150,16 @@ export async function deployGithubPages({repository, branch = 'image-studio-web'
     phase = 'upload';emit('uploading');
     const tree = [];
     for (const file of uploads) {
-      const blob = await invoke('POST', `${repoPath}/git/blobs`, {content: file.content, encoding: 'base64'});
-      if (!SHA.test(blob?.sha || '')) fail('INVALID_GITHUB_RESPONSE', 'GitHub가 배포 파일의 Git 식별자를 반환하지 않았습니다.');
-      tree.push({path: file.path, mode: '100644', type: 'blob', sha: blob.sha});
+      const bytes = decode(file.content), entry = {path: file.path, mode: '100644', type: 'blob'};
+      // The documented Git Trees API accepts UTF-8 content directly. This keeps
+      // text-only releases (including large vendor scripts) to one tree request;
+      // binary/NUL-bearing files still use verified Git Blob uploads.
+      if (isUtf8(bytes) && !bytes.includes(0)) tree.push({...entry, content: bytes.toString('utf8')});
+      else {
+        const blob = await invoke('POST', `${repoPath}/git/blobs`, {content: file.content, encoding: 'base64'});
+        if (!SHA.test(blob?.sha || '') || blob.sha !== blobSha(bytes)) fail('INVALID_GITHUB_RESPONSE', 'GitHub의 배포 바이너리 식별자가 원본 파일과 다릅니다.');
+        tree.push({...entry, sha: blob.sha});
+      }
     }
     const root = await invoke('POST', `${repoPath}/git/trees`, {tree});
     if (!SHA.test(root?.sha || '')) fail('INVALID_GITHUB_RESPONSE', 'GitHub가 배포 파일 묶음의 Git 식별자를 반환하지 않았습니다.');

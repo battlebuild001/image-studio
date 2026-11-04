@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {createHash} from 'node:crypto';
 import {deployGithubPages} from '../scripts/github-pages-api.mjs';
 
 const repository = 'battlebuild001/image-studio', branch = 'image-studio-web', revision = '0123456789abcdef';
-const commit = 'c'.repeat(40), parent = 'p'.repeat(40).replace(/p/g, 'a'), blobSha = 'b'.repeat(40), treeSha = 'd'.repeat(40);
+const commit = 'c'.repeat(40), parent = 'p'.repeat(40).replace(/p/g, 'a'), treeSha = 'd'.repeat(40);
 const root = `/repos/${repository}`;
 const content = value => Buffer.from(typeof value === 'string' ? value : JSON.stringify(value)).toString('base64');
+const blobSha = bytes => createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
 const marker = () => ({app: 'image-studio', schemaVersion: 1, repository});
 function files() {
   return [
@@ -30,7 +32,7 @@ function fixture({existing = false, site = null, builds = [{commit, status: 'bui
     if (key === `GET ${root}/pages`) {if (!site) throw notFound();return site;}
     if (key === `GET ${root}/git/ref/heads/${branch}`) {if (!existing) throw notFound();return {ref: `refs/heads/${branch}`, object: {sha: parent}};}
     if (key === `GET ${root}/contents/.image-studio-deploy.json?ref=${branch}`) return {encoding: 'base64', content: content(marker())};
-    if (key === `POST ${root}/git/blobs`) return {sha: blobSha};
+    if (key === `POST ${root}/git/blobs`) return {sha: blobSha(Buffer.from(body.content, 'base64'))};
     if (key === `POST ${root}/git/trees`) return {sha: treeSha};
     if (key === `POST ${root}/git/commits`) return {sha: commit};
     if (key === `POST ${root}/git/refs` || key === `PATCH ${root}/git/refs/heads/${branch}`) return {object: {sha: commit}};
@@ -47,11 +49,16 @@ test('new deployment uploads actual bytes into an isolated root tree and enables
   const f = fixture(), status = [];const result = await deploy(f, {}, {onStatus: value => status.push(value)});
   assert.deepEqual(result, {repository, branch, commit, revision, url: pages().html_url, status: 'built'});
   const uploads = f.calls.filter(call => call.path.endsWith('/git/blobs'));
-  assert.deepEqual(uploads.map(call => call.body), files().map(({content, encoding}) => ({content, encoding})));
-  assert.equal(Buffer.from(uploads[1].body.content, 'base64').toString('hex'), '00ff89504e47');
+  assert.deepEqual(uploads.map(call => call.body), files().filter(file => file.path === 'image.png').map(({content, encoding}) => ({content, encoding})));
+  assert.equal(Buffer.from(uploads[0].body.content, 'base64').toString('hex'), '00ff89504e47');
   const tree = f.calls.find(call => call.path.endsWith('/git/trees')).body;
-  assert.deepEqual(Object.keys(tree), ['tree']);assert.ok(tree.tree.every(entry => entry.mode === '100644' && entry.type === 'blob' && entry.sha === blobSha));
+  assert.deepEqual(Object.keys(tree), ['tree']);assert.ok(tree.tree.every(entry => entry.mode === '100644' && entry.type === 'blob'));
   assert.deepEqual(tree.tree.map(entry => entry.path), files().map(file => file.path));
+  for (const file of files()) {
+    const entry = tree.tree.find(item => item.path === file.path), bytes = Buffer.from(file.content, 'base64');
+    if (file.path === 'image.png') assert.deepEqual(entry, {path: file.path, mode: '100644', type: 'blob', sha: blobSha(bytes)});
+    else assert.deepEqual(entry, {path: file.path, mode: '100644', type: 'blob', content: bytes.toString('utf8')});
+  }
   assert.deepEqual(f.calls.find(call => call.path.endsWith('/git/commits')).body, {message: `Deploy Image Studio ${revision}`, tree: treeSha, parents: []});
   assert.deepEqual(f.calls.find(call => call.path.endsWith('/git/refs')).body, {ref: `refs/heads/${branch}`, sha: commit});
   assert.deepEqual(f.calls.find(call => call.method === 'POST' && call.path === `${root}/pages`).body, {build_type: 'legacy', source: {branch, path: '/'}});
@@ -64,8 +71,43 @@ test('owned redeploy preserves parent and custom domain without changing Pages s
   assert.deepEqual(f.calls.find(call => call.path.endsWith('/git/commits')).body.parents, [parent]);
   assert.deepEqual(f.calls.find(call => call.method === 'PATCH').body, {sha: commit, force: false});
   assert.equal(f.calls.filter(call => call.method !== 'GET' && call.path === `${root}/pages`).length, 0);
-  const cnameUpload = f.calls.filter(call => call.path.endsWith('/git/blobs')).at(-1);
-  assert.equal(Buffer.from(cnameUpload.body.content, 'base64').toString(), 'studio.example.com\n');
+  const cnameEntry = f.calls.find(call => call.path.endsWith('/git/trees')).body.tree.find(entry => entry.path === 'CNAME');
+  assert.deepEqual(cnameEntry, {path: 'CNAME', mode: '100644', type: 'blob', content: 'studio.example.com\n'});
+});
+
+test('a UTF-8-only release inlines exact Unicode, newlines and large vendor text without Git Blob requests', async () => {
+  const script = '\uFEFFconst title = "한국어 🚀";\r\nconst escaped = "\\n";\n' + '/* vendor */\n'.repeat(140000);
+  const selected = [...files().filter(file => file.path !== 'image.png'), {path: 'vendor/library.js', encoding: 'base64', content: content(script)}];
+  const before = structuredClone(selected), f = fixture();
+  assert.equal((await deploy(f, {files: selected})).status, 'built');
+  assert.equal(f.calls.filter(call => call.path.endsWith('/git/blobs')).length, 0);
+  const tree = f.calls.find(call => call.path.endsWith('/git/trees')).body;
+  assert.deepEqual(Object.keys(tree), ['tree'], 'The new root must not inherit unrelated old files through base_tree');
+  assert.equal(tree.tree.find(entry => entry.path === 'vendor/library.js').content, script);
+  assert.equal(tree.tree.find(entry => entry.path === '.nojekyll').content, '');
+  assert.equal(tree.tree.some(entry => Object.hasOwn(entry, 'sha')), false);
+  assert.deepEqual(selected, before);
+});
+
+test('invalid UTF-8 and NUL-containing files stay binary with exact Git Blob hashes and no text conversion', async () => {
+  const binaries = [{path: 'nul.dat', bytes: Buffer.from('valid UTF-8\0with NUL')}, {path: 'invalid.dat', bytes: Buffer.from([0xc3, 0x28])}];
+  const selected = [...files(), ...binaries.map(({path, bytes}) => ({path, encoding: 'base64', content: bytes.toString('base64')}))], f = fixture();
+  assert.equal((await deploy(f, {files: selected})).status, 'built');
+  const requests = f.calls.filter(call => call.path.endsWith('/git/blobs'));
+  assert.equal(requests.length, 3);
+  const tree = f.calls.find(call => call.path.endsWith('/git/trees')).body.tree;
+  for (const file of [selected.find(item => item.path === 'image.png'), ...selected.filter(item => binaries.some(value => value.path === item.path))]) {
+    const bytes = Buffer.from(file.content, 'base64');
+    assert.ok(requests.some(call => call.body.content === file.content && call.body.encoding === 'base64'));
+    assert.deepEqual(tree.find(item => item.path === file.path), {path: file.path, mode: '100644', type: 'blob', sha: blobSha(bytes)});
+  }
+});
+
+test('a mismatched binary Git Blob hash stops before tree, commit, branch or Pages writes', async () => {
+  const f = fixture({overrides: {[`POST ${root}/git/blobs`]: {sha: 'b'.repeat(40)}}});
+  await assert.rejects(deploy(f), cause => cause.code === 'INVALID_GITHUB_RESPONSE');
+  assert.equal(f.calls.filter(call => call.method === 'POST' && call.path.endsWith('/git/blobs')).length, 1);
+  assert.equal(f.calls.filter(call => call.method !== 'GET' && !call.path.endsWith('/git/blobs')).length, 0);
 });
 
 test('foreign Pages sources and unowned/default branches fail before any mutation', async () => {
