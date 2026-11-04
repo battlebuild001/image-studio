@@ -1,8 +1,8 @@
 {
   "app": "image-studio",
   "schemaVersion": 1,
-  "revision": "c27dffa715c95926",
-  "createdAt": "2026-11-04T12:17:23.205Z",
+  "revision": "38b76048e1bcd331",
+  "createdAt": "2026-11-04T12:54:26.081Z",
   "repository": "battlebuild001/image-studio",
-  "fileCount": 107
+  "fileCount": 110
 }

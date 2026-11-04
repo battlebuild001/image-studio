@@ -1,1 +1,14 @@
-.video-upload-workbench .video-upload-tabs{gap:8px}.video-upload-workbench .video-upload-tabs>.production-workbench-tab{min-width:120px}.video-upload-workbench #videoUploadError:empty{display:none}@media(max-width:650px){.video-upload-workbench .video-upload-tabs>.production-workbench-tab{min-width:0;flex-basis:130px}.video-upload-workbench .video-upload-tabs{gap:6px}}
+.video-upload-workbench .video-upload-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.video-upload-workbench .video-upload-tabs>.production-workbench-tab{min-width:0;width:100%;padding:11px 8px;white-space:normal;line-height:1.5;font-size:12px}
+.video-upload-workbench #videoUploadError:empty{display:none}
+.video-upload-workbench .upload-step-help{margin:2px 0 20px;padding:12px 14px;border-left:2px solid #9b825b;background:#172329;color:#c0cdcd}
+.video-upload-workbench .upload-series-section{margin-top:26px;border:1px solid var(--line);border-radius:7px;background:#111d22}
+.video-upload-workbench .upload-series-section>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;list-style-position:inside;padding:16px;font-size:14px;font-weight:600;color:var(--ink)}
+.video-upload-workbench .upload-series-section>summary::before{content:'›';font-size:21px;line-height:1;color:var(--accent)}
+.video-upload-workbench .upload-series-section[open]>summary::before{transform:rotate(90deg)}
+.video-upload-workbench .upload-series-count{margin-left:auto;font-size:11px;font-weight:400;color:var(--muted)}
+.video-upload-workbench .upload-series-mount{padding:0 16px 16px}
+.video-upload-workbench .video-upload-footer{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.video-upload-workbench #previousVideoUploadStepBtn{margin-right:auto}
+.video-upload-workbench #nextVideoUploadStepBtn{padding:11px 15px;min-height:42px}
+@media(max-width:650px){.video-upload-workbench .video-upload-tabs{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.video-upload-workbench .video-upload-tabs>.production-workbench-tab{font-size:11px;padding:9px 6px;min-height:40px}.video-upload-workbench .video-upload-footer{padding:12px;gap:7px}.video-upload-workbench .video-upload-footer button{min-height:42px;padding:9px 10px;font-size:11px}.video-upload-workbench #nextVideoUploadStepBtn{padding:9px 10px}.video-upload-workbench .upload-series-mount{padding:0 12px 12px}.video-upload-workbench .upload-series-section>summary{padding:12px;font-size:13px}}

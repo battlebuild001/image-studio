@@ -1,15 +1,16 @@
-import {YOUTUBE_SCOPES, normalizeYouTubeClientId, normalizeYouTubeMetadata, buildYouTubeVideoResource, normalizeYouTubeUploadRecord, validateYouTubeVideoFile} from './youtube-protocol.js';
+import {YOUTUBE_SCOPES, normalizeYouTubeClientId, normalizeYouTubeMetadata, buildYouTubeVideoResource, normalizeYouTubeUploadRecord, validateYouTubeVideoFile, validateYouTubeThumbnailFile} from './youtube-protocol.js';
 
 const SETTINGS_KEY = 'content-studio-youtube-client-id-v1';
 const CHUNK_UNIT = 256 * 1024;
 const UPLOAD_ENDPOINT = 'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status';
 const CHANNEL_ENDPOINT = 'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true&maxResults=50';
 const IDENTITY_URL = 'https://accounts.google.com/gsi/client';
+const THUMBNAIL_ENDPOINT = 'https://www.googleapis.com/upload/youtube/v3/thumbnails/set';
 
 function failure(code, message, status, reason, phase) {const error = new Error(message);error.code = code;if (status) error.status = status;if (reason) error.reason = reason;if (phase) error.phase = phase;return error;}
 // Keep only recognized public reason codes. Google messages, metadata, credentials
 // and capability URLs must never become a displayed error or persisted state.
-const GOOGLE_REASONS = new Set(['accessNotConfigured','serviceDisabled','SERVICE_DISABLED','insufficientPermissions','ACCESS_TOKEN_SCOPE_INSUFFICIENT','quotaExceeded','dailyLimitExceeded','dailyLimitExceededUnreg','userRateLimitExceeded','rateLimitExceeded','RATE_LIMIT_EXCEEDED','uploadLimitExceeded','youtubeSignupRequired','channelNotFound','channelClosed','channelSuspended','authenticatedUserAccountClosed','authenticatedUserAccountSuspended','accountDelegationForbidden','forbidden']);
+const GOOGLE_REASONS = new Set(['accessNotConfigured','serviceDisabled','SERVICE_DISABLED','insufficientPermissions','ACCESS_TOKEN_SCOPE_INSUFFICIENT','quotaExceeded','dailyLimitExceeded','dailyLimitExceededUnreg','userRateLimitExceeded','rateLimitExceeded','RATE_LIMIT_EXCEEDED','uploadLimitExceeded','youtubeSignupRequired','channelNotFound','channelClosed','channelSuspended','authenticatedUserAccountClosed','authenticatedUserAccountSuspended','accountDelegationForbidden','forbidden','invalidImage','mediaBodyRequired','videoNotFound','uploadRateLimitExceeded']);
 function googleReason(body) {
   const errors=Array.isArray(body?.error?.errors)?body.error.errors.slice(0,20):[],details=Array.isArray(body?.error?.details)?body.error.details.slice(0,20):[];
   return [...errors,...details].map(item=>item?.reason).find(value=>typeof value==='string'&&GOOGLE_REASONS.has(value))||'';
@@ -62,7 +63,15 @@ async function json(response, max = 1024 * 1024, signal, timeout = 120000) {
 async function responseFailure(response, signal, timeout, phase='upload') {
   let reason = '';try {reason=googleReason(await json(response, 32000, signal, timeout));} catch (cause) {if (cause?.name === 'AbortError') throw cause;}
   const status = Number(response.status);
-  const prefix=phase==='channel'?'YouTube 채널 확인 중':'YouTube 업로드 요청 중',make=(code,message)=>failure(code,`${prefix} ${message}${reason?` (Google: ${reason}, HTTP ${status})`:''}`,status,reason,phase);
+  const prefix=phase==='channel'?'YouTube 채널 확인 중':phase==='thumbnail'?'YouTube 썸네일 적용 중':'YouTube 업로드 요청 중',make=(code,message)=>failure(code,`${prefix} ${message}${reason?` (Google: ${reason}, HTTP ${status})`:''}`,status,reason,phase);
+  if(phase==='thumbnail'){
+    if(['invalidImage','mediaBodyRequired'].includes(reason))return make('YOUTUBE_THUMBNAIL_IMAGE','Google이 썸네일 이미지 내용을 받아들이지 않았어요. 미리보기를 다시 확인하고 PNG·JPEG 썸네일만 다시 적용해 주세요. 영상은 다시 업로드하지 않아요.');
+    if(status===404||reason==='videoNotFound')return make('YOUTUBE_THUMBNAIL_VIDEO_NOT_FOUND','해당 영상을 찾지 못했어요. 영상 링크와 연결한 소유 채널을 확인해 주세요. 새 영상을 자동으로 만들지 않았어요.');
+    if(reason==='uploadRateLimitExceeded'||status===429)return make('YOUTUBE_THUMBNAIL_RATE_LIMIT','최근 썸네일 적용 횟수가 제한됐어요. 잠시 뒤 같은 영상에 썸네일만 다시 적용해 주세요. 요청을 자동 재시도하지 않았어요.');
+    if(status===403&&(reason==='forbidden'||!reason))return make('YOUTUBE_THUMBNAIL_PERMISSION','맞춤 썸네일 권한이 허용되지 않았어요. YouTube Studio에서 이 채널의 맞춤 썸네일 사용 자격과 영상 관리 권한을 확인한 뒤 같은 영상에 썸네일만 다시 적용해 주세요. 영상 업로드 결과는 유지돼요.');
+    if(status===401)return make('YOUTUBE_AUTH_EXPIRED','Google 연결이 만료됐어요. 같은 채널로 다시 연결한 뒤 이 영상의 썸네일만 적용해 주세요.');
+    if(status>=500)return make('YOUTUBE_THUMBNAIL_UNCERTAIN','썸네일 적용 응답을 받지 못했어요. YouTube에서 현재 썸네일을 확인한 뒤 필요하면 같은 영상에 썸네일만 다시 적용해 주세요.');
+  }
   if(['accessNotConfigured','serviceDisabled','SERVICE_DISABLED'].includes(reason))return make('YOUTUBE_API_DISABLED','YouTube Data API 사용이 차단됐어요. 앱에 저장한 OAuth 클라이언트 ID와 같은 Google Cloud 프로젝트에서 YouTube Data API v3를 사용 설정하고, 방금 설정했다면 반영 후 다시 연결해 주세요.');
   if(['insufficientPermissions','ACCESS_TOKEN_SCOPE_INSUFFICIENT'].includes(reason))return make('YOUTUBE_SCOPE_REQUIRED','Google이 필요한 권한이 부족하다고 응답했어요. Google 계정으로 다시 연결해 YouTube 업로드와 내 채널 확인 권한을 모두 허용해 주세요.');
   if(['youtubeSignupRequired','channelNotFound'].includes(reason))return make('YOUTUBE_CHANNEL_REQUIRED','연결한 Google 계정에서 사용할 YouTube 채널을 찾지 못했어요. YouTube에서 채널을 만들거나 기존 채널이 있는 계정·채널을 선택해 다시 연결해 주세요.');
@@ -190,7 +199,7 @@ export function createYouTubeClient(options = {}) {
   function clearUpload() {if (job) throw failure('YOUTUBE_BUSY', '진행 중인 전송을 중지한 뒤 이어 올리기 정보를 비워 주세요.');upload = null;emit('upload-cleared');}
   function progress(state, callback, phase, message) {const value = {phase, uploadedBytes: state.uploadedBytes, totalBytes: state.blob.size, progress: state.complete ? 1 : state.uploadedBytes / state.blob.size, message};try {callback?.(value);} catch {}emit('progress');}
   function check(state, controller, expected) {if (controller.signal.aborted || expected !== revision || state !== upload) throw cancelled();requireAuth(state.channelId);}
-  async function uploadResponseError(response, signal) {const cause = await responseFailure(response, signal, requestTimeout);if (response.status === 401) {clearCredential();emit('expired');}return cause;}
+  async function uploadResponseError(response, signal, phase='upload') {const cause = await responseFailure(response, signal, requestTimeout,phase);if (response.status === 401) {clearCredential();emit('expired');}return cause;}
   async function complete(state, response, controller, expected, onProgress) {
     const body = await json(response, 1024 * 1024, controller.signal, requestTimeout);check(state, controller, expected);
     if (body?.snippet?.channelId && body.snippet.channelId !== state.channelId) throw failure('YOUTUBE_CHANNEL_CHANGED', 'Google 응답의 채널이 연결한 업로드 채널과 달라요. 유튜브에서 결과를 확인해 주세요.');
@@ -252,10 +261,29 @@ export function createYouTubeClient(options = {}) {
     try {requireAuth(state.channelId);} catch (cause) {return Promise.reject(cause);}
     return run(state, {signal, onProgress}, async (controller, expected) => {const result = await probe(state, controller, expected, onProgress);return result || transfer(state, controller, expected, onProgress);});
   }
+  async function setThumbnail({videoId,channelId,blob,signal}={}) {
+    if(typeof videoId!=='string'||!/^[A-Za-z0-9_-]{11}$/u.test(videoId))throw failure('YOUTUBE_THUMBNAIL_VIDEO','썸네일을 적용할 기존 영상 ID를 확인해 주세요.');
+    if(typeof channelId!=='string'||!/^UC[A-Za-z0-9_-]{22}$/u.test(channelId))throw failure('YOUTUBE_THUMBNAIL_CHANNEL','썸네일을 적용할 영상의 소유 채널을 확인해 주세요.');
+    if(job||connecting)throw failure('YOUTUBE_BUSY','진행 중인 YouTube 작업을 마친 뒤 썸네일을 적용해 주세요.');
+    if(upload?.location&&!upload.complete)throw failure('YOUTUBE_UPLOAD_PENDING','중단한 영상 전송을 먼저 확인한 뒤 썸네일을 적용해 주세요.');
+    requireAuth(channelId);const scope=controlled(signal),controller=scope.controller,expected=revision;job=controller;emit('thumbnail-started');
+    const checkThumbnail=()=>{if(controller.signal.aborted||expected!==revision)throw cancelled();return requireAuth(channelId);};
+    try{
+      checkThumbnail();const mimeType=await validateYouTubeThumbnailFile(blob),auth=checkThumbnail(),url=new URL(THUMBNAIL_ENDPOINT);url.searchParams.set('videoId',videoId);url.searchParams.set('uploadType','media');
+      const response=await send(url.href,{method:'POST',headers:{Authorization:`Bearer ${auth.token}`,'Content-Type':mimeType},body:blob},controller.signal);checkThumbnail();
+      if(!response.ok)throw await uploadResponseError(response,controller.signal,'thumbnail');
+      const body=await json(response,128*1024,controller.signal,requestTimeout);checkThumbnail();
+      if(body?.kind!=='youtube#thumbnailSetResponse'||!Array.isArray(body.items)||!body.items.length||body.items.length>10||body.items.some(item=>!item||typeof item!=='object'||Array.isArray(item)))throw failure('YOUTUBE_THUMBNAIL_UNCERTAIN','썸네일 적용 결과를 확인하지 못했어요. 영상 링크에서 현재 썸네일을 확인해 주세요. 영상 업로드 결과는 유지돼요.',undefined,undefined,'thumbnail');
+      emit('thumbnail-complete');return{videoId,uploaded:true};
+    }catch(cause){
+      if(['YOUTUBE_NETWORK','YOUTUBE_TIMEOUT','YOUTUBE_BAD_RESPONSE'].includes(cause?.code))throw failure('YOUTUBE_THUMBNAIL_UNCERTAIN','썸네일 적용 완료 여부를 확인하지 못했어요. YouTube에서 확인한 뒤 필요하면 같은 영상에 썸네일만 다시 적용해 주세요. 영상 업로드 결과는 유지돼요.',cause.status,undefined,'thumbnail');
+      throw cause;
+    }finally{scope.release();if(job===controller){job=null;emit('thumbnail-finished');}}
+  }
   const storageTarget = options.eventTarget ?? (typeof window !== 'undefined' ? window : null);
   const changedElsewhere = event => {if (event.key !== SETTINGS_KEY && event.key !== null) return;let next = '';try {next = normalizeYouTubeClientId(getStorage()?.getItem(SETTINGS_KEY) || '');} catch {}if (next !== clientId) {revision++;stopActive();clearCredential();upload = null;clientId = next;emit('settings');}};
   storageTarget?.addEventListener?.('storage', changedElsewhere);
-  return {getSettings, saveClientId, getSession, subscribe, prepareIdentity, connect, disconnect, uploadVideo, getUploadState, resumeUpload, clearUpload,
+  return {getSettings, saveClientId, getSession, subscribe, prepareIdentity, connect, disconnect, uploadVideo, getUploadState, resumeUpload, clearUpload, setThumbnail,
     dispose() {revision++;stopActive();clearCredential();upload = null;storageTarget?.removeEventListener?.('storage', changedElsewhere);subscribers.clear();}};
 }
 
