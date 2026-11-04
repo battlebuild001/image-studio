@@ -66,7 +66,14 @@
     "test:sync-browser": "node tests/sync-studio.browser.cjs",
     "test:sync-export-browser": "node tests/sync-export.browser.cjs",
     "test:upload-flow-browser": "node tests/upload-flow.browser.cjs",
-    "test:youtube-combined-browser": "node tests/youtube-combined.browser.cjs"
+    "test:youtube-combined-browser": "node tests/youtube-combined.browser.cjs",
+    "test:ai-workbench-browser": "node tests/ai-workbench.browser.cjs",
+    "test:quality-browser": "node tests/quality-check.browser.cjs",
+    "test:source-fidelity-browser": "node tests/source-fidelity.browser.cjs",
+    "test:chat-edit-browser": "node tests/chat-edit.browser.cjs",
+    "test:shorts-framing-browser": "node tests/shorts-framing.browser.cjs",
+    "test:ai-assistant-export-browser": "node tests/ai-assistant-export.browser.cjs",
+    "test:ai-chat-integration-browser": "node tests/ai-chat-integration.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

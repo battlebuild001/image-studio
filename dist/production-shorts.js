@@ -5,6 +5,8 @@ import {normalizeProductionAssistantResult} from './production-assistant-protoco
 import {applyPronunciations} from './production-speech.js';
 import {buildDramaSeriesPlan,normalizeDramaPlan,DRAMA_TARGET_SECONDS} from './short-series-protocol.js';
 import {youtubeExportSourceKey} from './youtube-protocol.js';
+import {setupShortsFraming} from './shorts-framing.js';
+import {normalizeStoredShortsFraming,applyReviewedShortsCrop} from './shorts-framing-protocol.js';
 import {element, action, inputField, ensureProduction, clone, displayScript, deliverySourceKey, taskScope, matchesScope, assist} from './production-delivery-utils.js';
 
 export function validateShortSegments(segments,{durationSeconds,targetSeconds=60,mode='shorts'}={}) {
@@ -23,11 +25,11 @@ export function extractShortCaptions(project,segments) {
   return result;
 }
 /** Select original image windows; tiny edge fragments borrow adjacent imagery, not extra duration. */
-export function extractShortScenes(project,segments) {
+export function extractShortScenes(project,segments,{framing=null}={}) {
   const timeline=getTimeline(project).scenes,result=[];
   for(const segment of segments){const pieces=timeline.flatMap(scene=>{const duration=Math.min(scene.end,segment.end)-Math.max(scene.start,segment.start);return duration>1e-6?[{...scene,duration}]:[];});
     for(let index=0;index<pieces.length;index++){const piece=pieces[index];if(piece.duration<.25){if(index+1<pieces.length){pieces[index+1].duration+=piece.duration;pieces[index+1].caption=[piece.caption,pieces[index+1].caption].filter(Boolean).join(' ');}else if(result.length){result[result.length-1].duration+=piece.duration;result[result.length-1].caption=[result[result.length-1].caption,piece.caption].filter(Boolean).join(' ');}continue;}
-      const {start,end,index:sourceIndex,...scene}=piece;result.push(createScene({...scene,id:createId('scene'),fit:'cover'}));}
+      const {start,end,index:sourceIndex,...scene}=piece;const framed=framing?.frames.some(frame=>frame.sceneId===scene.id&&frame.imageId===scene.imageId)?applyReviewedShortsCrop(scene,framing):{...scene,fit:'cover'};result.push(createScene({...framed,id:createId('scene')}));}
   }
   if(!result.length)throw new Error('선택한 구간에서 장면을 찾지 못했어요.');return result;
 }
@@ -52,14 +54,17 @@ export function cutDramaBgmSamples(buffer,segments,audio={},settings={},sourceDu
  segments.forEach((part,index)=>{for(let frame=0;frame<counts[index];frame++){const globalTime=part.start+frame/sampleRate,time=start+globalTime%window,exact=time*buffer.sampleRate,first=Math.floor(exact),fraction=exact-first;let sample=0;for(const channel of channels)sample+=(channel[first]||0)+((channel[Math.min(first+1,channel.length-1)]||0)-(channel[first]||0))*fraction;const fade=(fadeIn?Math.max(0,Math.min(1,globalTime/fadeIn)):1)*(fadeOut?Math.max(0,Math.min(1,(sourceDuration-globalTime)/fadeOut)):1);output[cursor+frame]=sample/channels.length*fade;}cursor+=counts[index];});return output;
 }
 async function narrationBuffer(asset,signal){if(asset.audioBuffer)return asset.audioBuffer;const Context=globalThis.OfflineAudioContext||globalThis.webkitOfflineAudioContext;if(!Context)throw new Error('이 브라우저에서는 음성을 자를 수 없어요. 최신 Chrome 또는 Edge를 사용해 주세요.');if(signal?.aborted)throw new DOMException('쇼츠 생성을 취소했어요.','AbortError');const context=new Context(1,1,24000);const buffer=await context.decodeAudioData(await asset.blob.arrayBuffer());asset.audioBuffer=buffer;return buffer;}
-export async function buildShortsVariant(project,assets,result,{targetSeconds=60,signal,mode='shorts'}={}) {
+export async function buildShortsVariant(project,assets,result,{targetSeconds=60,signal,mode='shorts',framing=project.production?.shorts?.framing||null}={}) {
+  const reviewedFraming=framing?normalizeStoredShortsFraming(framing):null;if(reviewedFraming&&reviewedFraming.sourceKey!==youtubeExportSourceKey(project))throw new Error('원본이 바뀌어 저장한 쇼츠 구도를 사용할 수 없어요. 구도를 다시 미리 보고 저장하거나 구도 사용을 해제해 주세요.');
+  if(reviewedFraming&&reviewedFraming.frames.some(frame=>!project.scenes.some(scene=>scene.id===frame.sceneId&&scene.imageId===frame.imageId)))throw new Error('저장한 쇼츠 구도의 원본 장면을 찾을 수 없어요. 구도를 다시 미리 보고 저장해 주세요.');
   const timeline=getTimeline(project),segments=validateShortSegments(result.segments,{durationSeconds:timeline.duration,targetSeconds,mode});
-  if(signal?.aborted)throw new DOMException('쇼츠 생성을 취소했어요.','AbortError');const captions=extractShortCaptions(project,segments),scenes=extractShortScenes(project,segments),title=String(result.title||project.title+' 쇼츠').slice(0,200),text=captions.map(cue=>cue.text).join('\n\n');
+  if(signal?.aborted)throw new DOMException('쇼츠 생성을 취소했어요.','AbortError');const captions=extractShortCaptions(project,segments),scenes=extractShortScenes(project,segments,{framing:reviewedFraming}),title=String(result.title||project.title+' 쇼츠').slice(0,200),text=captions.map(cue=>cue.text).join('\n\n');
   const production=clone(project.production||{version:1});delete production.versions;delete production.shorts;delete production.publishing;delete production.youtube;delete production.uploadSeries;delete production.visual;delete production.changes;if(production.budget)production.budget={...production.budget,spentUsd:0,ledger:[]};if(production.speech)delete production.speech.voiceSamples;
   const spoken=applyPronunciations(text,production.speech?.pronunciations||[],project.scriptDraft?.narrationStyle||'standard');
   const next=createProject({...clone(project),id:createId('episode'),title,aspect:'9:16',scenes,captions,captionMode:'srt',captionAnalysis:null,scenePlan:null,production,
     scriptDraft:{...(clone(project.scriptDraft)||{sourceText:'',instructions:'',charsPerMinute:330,result:null}),draftScript:spoken,displayScript:text,targetMinutes:Math.max(1,Math.ceil(scenes.reduce((sum,scene)=>sum+scene.duration,0)/60)),result:null},
     audio:{...clone(project.audio),narrationId:null,narrationStart:0,narrationEnd:null,narrationOffset:0}});
+  if(reviewedFraming)next.settings.shortsSafeArea=reviewedFraming.safeArea;
   if(scenes.some(scene=>!scene.imageId||!assets.get(scene.imageId)?.blob))throw new Error('선택한 구간의 장면 이미지를 먼저 준비해 주세요.');
   const media=new Map(assets),source=assets.get(project.audio?.narrationId);
   if(source){const buffer=await narrationBuffer(source,signal);if(signal?.aborted)throw new DOMException('쇼츠 생성을 취소했어요.','AbortError');const samples=cutNarrationSamples(buffer,segments,project.audio,24000,{maxSeconds:mode==='drama'?180.5:60.5}),blob=encodePcm16Wav(samples,24000),id=createId('audio');media.set(id,{blob,type:'audio/wav',name:`${title}-발췌내레이션.wav`,duration:samples.length/24000});next.audio.narrationId=id;}
@@ -78,6 +83,7 @@ export function setupProductionShorts(api) {
  const dramaTitle=inputField('dramaSeriesTitle','시리즈 제목',{maxLength:200}),dramaDuration=inputField('dramaEpisodeDuration','회차 목표 길이',{options:DRAMA_TARGET_SECONDS.map(value=>[String(value),`${value}초`])});dramaDuration.input.value='60';const split=action('buildDramaSeriesPlanBtn','전체 영상을 회차로 나누기',true),prepare=action('prepareDramaSeriesBtn','검토한 회차를 시리즈 대기열에 추가',true),dramaSummary=element('p',undefined,'production-status'),parts=element('ol',undefined,'production-drama-parts');dramaSummary.id='dramaSeriesSummary';parts.id='dramaSeriesParts';prepare.disabled=true;
  drama.append(dramaTitle.wrapper,dramaDuration.wrapper,element('p','실제 자막 끝·장면 경계 가까이에서 나누며 원본 전체를 빠짐없이 포함해요. 회차는 최대 180초, 전체 최대 120개예요. 나눈 뒤 제목과 순서를 확인하고 대기열에서 영상 생성·업로드를 실행하세요.','production-help'),split,dramaSummary,parts,prepare);
  const error=element('p',undefined,'production-error');error.id='productionShortsError';error.setAttribute('role','alert');container.append(error);const progress=createOperationStatus({container,region:container,id:'productionShortsOperation'});
+ const framing=setupShortsFraming({...api,getFramingSceneIds:()=>{const project=api.getProject();if(format.input.value==='drama')return project.scenes.map(scene=>scene.id);try{const selected=capture().segments;return getTimeline(project).scenes.filter(scene=>selected.some(part=>part.end>scene.start&&part.start<scene.end)).map(scene=>scene.id);}catch{return project.scenes.map(scene=>scene.id);}}});
  let owner='',fingerprint='',controller=null,serial=0,busy=false,dramaPlan=null;
  const inputs=[format.input,target.input,title.input,hook.input,segments.input,ai,manual,apply,dramaTitle.input,dramaDuration.input,split,prepare];
  function active(value){busy=value;for(const input of inputs)input.disabled=value;cancel.hidden=!value;if(!value){refreshSummary();drawDrama();}}
@@ -95,8 +101,8 @@ export function setupProductionShorts(api) {
  prepare.addEventListener('click',run(async()=>{if(!dramaPlan)throw new Error('회차를 먼저 나누어 주세요.');const plan=normalizeDramaPlan(dramaPlan);if(plan.sourceKey!==youtubeExportSourceKey(api.getProject()))throw new Error('원본이 바뀌었어요. 회차를 다시 나누어 주세요.');const seq=++serial;active(true);const job=progress.start('원본을 보관하고 시리즈 대기열을 준비하고 있어요.');try{await api.prepareUploadSeries({plan});if(seq!==serial)return;job.finish('시리즈를 준비했어요. 대기열에서 제목·공개 상태를 검토하세요.');}catch(cause){if(seq===serial)job.fail(cause.message);throw cause;}finally{if(seq===serial)active(false);}}));
  format.input.addEventListener('change',run(()=>{const mode=format.input.value;api.mutate(value=>{ensureProduction(value).shorts={...(value.production?.shorts||{}),mode};});normal.hidden=mode==='drama';drama.hidden=mode!=='drama';}));
  for(const input of[dramaTitle.input,dramaDuration.input])input.addEventListener('input',()=>{if(dramaPlan){dramaPlan=null;drawDrama();}});
- cancel.addEventListener('click',()=>stop());for(const input of[target.input,segments.input,title.input])input.addEventListener('input',refreshSummary);
+ cancel.addEventListener('click',()=>stop());for(const input of[target.input,segments.input,title.input])input.addEventListener('input',()=>{refreshSummary();framing.render();});
  window.addEventListener('studio-api-settings-change',()=>{if(busy)stop('API 설정이 바뀌어 쇼츠 작업을 취소했어요. 원본은 유지돼요.');});
- function render(){const project=api.getProject(),key=`${api.getWorkspaceId?.()||''}|${project.id}`,next=JSON.stringify(project.production?.shorts||null);if(owner!==key){if(busy)stop('프로젝트가 바뀌어 쇼츠 작업을 취소했어요.');owner=key;fingerprint='';}if(next!==fingerprint){fingerprint=next;const value=project.production?.shorts;format.input.value=value?.mode==='drama'?'drama':'shorts';normal.hidden=format.input.value==='drama';drama.hidden=!normal.hidden;target.input.value=String([30,60].includes(value?.targetSeconds)?value.targetSeconds:30);dramaDuration.input.value=String(value?.dramaTargetSeconds||60);dramaTitle.input.value=value?.dramaPlan?.baseTitle||project.title;dramaPlan=value?.dramaPlan?normalizeDramaPlan(value.dramaPlan):null;if(value?.result)write(value.result);else{title.input.value='';hook.input.value='';segments.input.value='';notes.replaceChildren();}}refreshSummary();drawDrama();}
- render();return{render,flush(){},onClose(){if(busy)stop();},reset(){stop('');owner='';fingerprint='';error.textContent='';progress.clear();render();}};
+ function render(){const project=api.getProject(),key=`${api.getWorkspaceId?.()||''}|${project.id}`,next=JSON.stringify(project.production?.shorts||null);if(owner!==key){if(busy)stop('프로젝트가 바뀌어 쇼츠 작업을 취소했어요.');owner=key;fingerprint='';}if(next!==fingerprint){fingerprint=next;const value=project.production?.shorts;format.input.value=value?.mode==='drama'?'drama':'shorts';normal.hidden=format.input.value==='drama';drama.hidden=!normal.hidden;target.input.value=String([30,60].includes(value?.targetSeconds)?value.targetSeconds:30);dramaDuration.input.value=String(value?.dramaTargetSeconds||60);dramaTitle.input.value=value?.dramaPlan?.baseTitle||project.title;dramaPlan=value?.dramaPlan?normalizeDramaPlan(value.dramaPlan):null;if(value?.result)write(value.result);else{title.input.value='';hook.input.value='';segments.input.value='';notes.replaceChildren();}}refreshSummary();drawDrama();framing.render();}
+ render();return{render,flush(){framing.flush();},onClose(){if(busy)stop();framing.onClose();},reset(){stop('');owner='';fingerprint='';error.textContent='';progress.clear();framing.reset();render();},getFraming:()=>framing};
 }

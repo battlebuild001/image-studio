@@ -1,0 +1,24 @@
+.source-fidelity {min-width:0;line-height:1.65;overflow-wrap:anywhere}
+.source-fidelity h3 {margin:0 0 8px;font-size:19px}
+.source-fidelity h4 {margin:0 0 8px;font-size:15px}
+.source-fidelity-help,.source-fidelity-scope {font-size:12px;color:#a6bdc2}
+.source-fidelity-scope {padding:10px 12px;border:1px solid #344c53;border-radius:7px;background:#122126}
+.source-fidelity-actions {display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.source-fidelity-actions button {min-height:40px;white-space:normal}
+.source-fidelity-status {color:#c9d9b4;font-size:13px}
+.source-fidelity-error {color:#f3b4a6;font-size:13px;white-space:pre-wrap}
+.source-fidelity-error:empty,.source-fidelity-status:empty {display:none}
+.source-fidelity-evidence {margin:16px 0;border:1px solid #344c53;border-radius:7px;padding:12px}
+.source-fidelity-evidence summary {cursor:pointer;font-size:13px;font-weight:600;min-height:24px}
+.source-fidelity-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.source-fidelity-field {display:grid;gap:7px;min-width:0;font-size:12px;color:#c9d7da}
+.source-fidelity-field textarea {box-sizing:border-box;width:100%;min-width:0;resize:vertical;background:#0c171b;color:#dfe7e9;border:1px solid #425961;border-radius:5px;padding:10px;font:13px/1.7 inherit;min-height:150px}
+.source-fidelity-field textarea:focus-visible,.source-fidelity-actions button:focus-visible {outline:2px solid #dfbc80;outline-offset:3px}
+.source-fidelity-card {padding:14px;margin:12px 0;background:#122126;border:1px solid #344c53;border-radius:8px}
+.source-fidelity-card p {margin:8px 0;font-size:13px}
+.source-fidelity-card blockquote {margin:6px 0 12px;padding:9px 11px;white-space:pre-wrap;border-left:3px solid #c8aa74;background:#0c171b;font-size:12px;color:#dce4e6}
+.source-fidelity-quote-label {font-size:11px;color:#c8aa74}
+.source-fidelity-suggestion {color:#b9cacf}
+.source-fidelity-notes {padding-left:20px;color:#a6bdc2;font-size:12px}
+.source-fidelity-stale {padding:10px 12px;border:1px solid #8d7241;border-radius:6px;background:#302b20;color:#e5cd9e;font-size:13px}
+@media(max-width:640px) {.source-fidelity-grid{grid-template-columns:1fr}.source-fidelity-actions button{min-height:44px}.source-fidelity-card{padding:11px}.source-fidelity-evidence{padding:10px}}

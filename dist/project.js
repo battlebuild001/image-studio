@@ -37,6 +37,7 @@ export function createScene(overrides = {}) {
     zoomEnd: 1.12,
     effect: 'none',
     effectIntensity: 0.25,
+    exposure: 0,
     ...overrides,
   };
 }
@@ -72,6 +73,7 @@ export function createProject(overrides = {}) {
       captionStroke: '#000000',
       captionStrokeWidth: 0,
       captionPosition: 'bottom',
+      shortsSafeArea: false,
       bgmFadeIn: 0,
       bgmFadeOut: 0,
       ducking: false,
@@ -398,6 +400,7 @@ export function validateProject(input) {
       zoomEnd: finiteNumber(scene.zoomEnd, 1.12, 1, 3, '종료 확대 배율'),
       effect: choice(scene.effect, 'none', EFFECTS, '장면 효과'),
       effectIntensity: finiteNumber(scene.effectIntensity, 0.25, 0, 1, '장면 효과 강도'),
+      exposure: finiteNumber(scene.exposure, 0, -1, 1, '장면 밝기'),
     };
   });
   if (scenes.reduce((sum, scene) => sum + scene.duration, 0) > 3600.001) fail('한 프로젝트의 길이는 최대 60분입니다.');
@@ -458,6 +461,7 @@ export function validateProject(input) {
       captionStroke: colorValue(settings.captionStroke, '#000000'),
       captionStrokeWidth: finiteNumber(settings.captionStrokeWidth, 0, 0, 8, '자막 테두리 두께'),
       captionPosition: choice(settings.captionPosition, 'bottom', ['top', 'center', 'bottom'], '자막 위치'),
+      shortsSafeArea: booleanValue(settings.shortsSafeArea, false, '쇼츠 자막 안전 영역'),
       bgmFadeIn: finiteNumber(settings.bgmFadeIn, 0, 0, 10, '음악 페이드 인'),
       bgmFadeOut: finiteNumber(settings.bgmFadeOut, 0, 0, 10, '음악 페이드 아웃'),
       ducking: booleanValue(settings.ducking, false, '음악 자동 음량'),
@@ -594,7 +598,7 @@ export function duplicateScenes(input, ids) {
 export function updateScenes(input, ids, patch) {
   const project = validateProject(input);
   const selected = selectedSceneIds(project, ids);
-  const allowed = new Set(['duration', 'caption', 'motion', 'fit', 'focusX', 'focusY', 'endX', 'endY', 'zoomStart', 'zoomEnd', 'effect', 'effectIntensity']);
+  const allowed = new Set(['duration', 'caption', 'motion', 'fit', 'focusX', 'focusY', 'endX', 'endY', 'zoomStart', 'zoomEnd', 'effect', 'effectIntensity', 'exposure']);
   if (!plainObject(patch) || Object.keys(patch).some(key => !allowed.has(key))) {
     fail('장면에 적용할 설정을 확인해 주세요.');
   }

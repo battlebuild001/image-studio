@@ -1,7 +1,10 @@
 import {cleanGeneratedVideoDescription} from './video-description.js';
+import {validateSourceFidelityInput, SOURCE_FIDELITY_SCHEMA, SOURCE_FIDELITY_INSTRUCTIONS, normalizeSourceFidelityResult} from './source-fidelity-protocol.js';
+import {validateChatEditInput, CHAT_EDIT_SCHEMA, CHAT_EDIT_INSTRUCTIONS, normalizeChatEditResult} from './chat-edit-protocol.js';
+import {validateShortsFramingInput, SHORTS_FRAMING_SCHEMA, SHORTS_FRAMING_INSTRUCTIONS, normalizeShortsFramingResult} from './shorts-framing-protocol.js';
 
 /** One bounded, browser/Node contract for explicit production-assistant requests. */
-export const PRODUCTION_TASKS = Object.freeze(['visual-review', 'diagrams', 'shorts', 'publishing', 'rewrite-section', 'upload-title', 'upload-description', 'music-recommendations']);
+export const PRODUCTION_TASKS = Object.freeze(['visual-review', 'diagrams', 'shorts', 'publishing', 'rewrite-section', 'upload-title', 'upload-description', 'music-recommendations', 'source-fidelity', 'edit-plan', 'shorts-framing']);
 export const MAX_PRODUCTION_REQUEST_BYTES = 14 * 1024 * 1024;
 export class ProductionAssistantError extends Error {
   constructor(status, code, message) {super(message);this.name = 'ProductionAssistantError';this.status = status;this.code = code;}
@@ -68,7 +71,12 @@ export function validateProductionAssistantRequest(value) {
   if (input.task === 'visual-review') {
     if (!ids.size || !input.images.some(item => item.role === 'scene')) throw invalid('점검할 장면과 실제 장면 이미지를 먼저 선택해 주세요.');
     for (const item of input.images) if (item.role === 'scene' && (!item.sceneId || !ids.has(item.sceneId))) throw invalid('점검 이미지와 장면 식별자가 일치하지 않아요.');
-  } else if (input.images.length) throw invalid('이 제작 도구에는 장면 이미지 업로드가 필요하지 않아요.');
+  } else if (input.task !== 'shorts-framing' && input.images.length) throw invalid('이 제작 도구에는 장면 이미지 업로드가 필요하지 않아요.');
+  const taskValidator = {'source-fidelity': validateSourceFidelityInput, 'edit-plan': validateChatEditInput, 'shorts-framing': validateShortsFramingInput}[input.task];
+  if (taskValidator) {
+    try {taskValidator(input.context, input.options, input.images);}
+    catch {throw invalid(input.task === 'source-fidelity' ? '원본과 자막용 대본, 점검할 장면의 형식과 분량을 확인해 주세요.' : input.task === 'edit-plan' ? '편집 요청과 현재 장면·설정의 형식이나 범위를 확인해 주세요.' : '실제 장면 이미지와 구도 분석 범위를 확인해 주세요.');}
+  }
   if (input.task === 'shorts') {
     if (![30,60].includes(input.options.targetSeconds)) throw invalid('쇼츠 길이는 30초 또는 60초로 선택해 주세요.');
     finite(input.context.durationSeconds, .25, 3600, invalid);
@@ -93,6 +101,9 @@ const notes = array(str), node = obj({id:str,label:str,x:num,y:num});
 const card = obj({id:str,type:{type:'string',enum:['timeline','relations','chart','map']},title:str,subtitle:str,
   events:array(obj({date:str,label:str,detail:str})),nodes:array(node),edges:array(obj({from:str,to:str,label:str})),series:array(obj({label:str,value:num,unit:str})),notes});
 const SCHEMAS = {
+  'source-fidelity': SOURCE_FIDELITY_SCHEMA,
+  'edit-plan': CHAT_EDIT_SCHEMA,
+  'shorts-framing': SHORTS_FRAMING_SCHEMA,
   'visual-review':obj({summary:str,findings:array(obj({sceneId:str,severity:{type:'string',enum:['info','warning','error']},reason:str,suggestion:str})),notes}),
   diagrams:obj({title:str,cards:array(card),notes}),
   shorts:obj({title:str,hook:str,segments:array(obj({start:num,end:num,label:str})),notes}),
@@ -104,6 +115,9 @@ const SCHEMAS = {
 };
 const DESCRIPTION_INSTRUCTIONS = 'description에는 영상의 실제 사건·인물·배경·논점만 자연스러운 한국어 문단으로 요약하세요. 제목 반복, 영상 제목·요약·설명 같은 머리말, 소제목, 챕터 목록·타임코드, 해시태그, 크레딧·출처URL, 검색·검증했다는 말, 영상 제작 과정, TTS·나레이션·AI 이미지·편집 방식 안내, 구독·좋아요·다음 영상 유도 문구를 넣지 마세요. 제작 기술·음성·이미지·검증 등이 영상 주제 자체의 사실인 경우에만 그 실제 내용을 요약할 수 있습니다. 제공된 대본과 실제 장면에 없는 사건·숫자·인과관계나 성과를 만들지 마세요. 제목·챕터·태그·출처는 별도 자료이며 설명 본문에 합치지 않습니다.';
 const TASK_INSTRUCTIONS = {
+  'source-fidelity': SOURCE_FIDELITY_INSTRUCTIONS,
+  'edit-plan': CHAT_EDIT_INSTRUCTIONS,
+  'shorts-framing': SHORTS_FRAMING_INSTRUCTIONS,
   'visual-review': '제공된 실제 장면 이미지와 해당 대본/전체 콘셉트를 비교하세요. 자료에 없는 장비나 설정을 공식 사실로 단정하지 마세요. 명백한 내용 불일치, 반복 구도, 참조 외형과의 차이를 재검토 후보로 표시하며 불확실한 판단은 reason에 명시하세요. 실제로 픽셀이 제공된 sceneId에 대해서만 findings를 쓰세요. severity는 info/warning/error 중 하나입니다. 오탈자·손가락·객체 식별을 무조건 확신하거나 모든 장면이 정확하다고 보증하지 마세요. findings는 최대200개, reason2000자,suggestion3000자 이내입니다.',
   diagrams: '주어진 참고 사실로 정보 화면을 설계하세요. cards는 최대4개이며 사용자가 선택한 options.type 또는 context.requestedType을 따릅니다. type은 timeline/relations/chart/map 입니다. 각 카드에 id(ASCII영숫자/-/_), title,subtitle,events,nodes,edges,series,notes를 모두 넣고 쓰지 않는 목록은[]로 둡니다. timeline events는 최대12개(date,label,detail), 관계/지도 nodes는 최대12개(id,label,x,y,좌표0~1),edges는 최대24개(from/to는실제nodeid),chart series는 최대12개(label,value,unit)입니다. 주어진 자료에 없는 연도·수치·인과관계를 만들지 마세요. map은 실제 지도나 지리 좌표가 아니라 개념도이며 notes에 그 한계를 명시하세요. 노드 위치는 시각적 제안이지 사실 자료가 아닙니다. 출처가 모자라면 notes에 표시하고 장식용 데이터를 지어내지 마세요.',
   shorts: '기존 영상의 실제 시간표를 보고 핵심 구간을 골라 쇼츠를 구성하세요. 원본 음성을 재사용할 수 있도록 segments는 원본 영상 start/end 초 단위 구간과 label을 최대8개 반환합니다. 구간은 시간순·비중복이며 각각0.25초이상, 전체 구간합은 options.targetSeconds(30또는60) 이하여야 합니다. context.durationSeconds를 넘거나 원문에 없는 발화를 생성하지 마세요. title과hook은 게시/화면용 제안이며 원본 음성이 그 새 문장을 읽는다고 주장하지 마세요. 도입·핵심·마무리의 의미가 끊기지 않는 구간을 우선하세요.',
@@ -127,6 +141,16 @@ export function buildProductionAssistantRequest(value, model = 'gpt-5-mini') {
 }
 
 function normalizeData(task,value,input) {
+  const taskNormalizer = {'source-fidelity': normalizeSourceFidelityResult, 'edit-plan': normalizeChatEditResult, 'shorts-framing': normalizeShortsFramingResult}[task];
+  if (taskNormalizer) {
+    try {
+      if (!input || input.task !== task) throw new Error('점검 당시 자료가 필요해요.');
+      const validate = {'source-fidelity': validateSourceFidelityInput, 'edit-plan': validateChatEditInput, 'shorts-framing': validateShortsFramingInput}[task];
+      validate(input.context, input.options ?? {}, input.images ?? []);
+      return taskNormalizer(value, input.context);
+    }
+    catch {throw badOutput(task === 'source-fidelity' ? '원본·대본에 있는 인용 근거나 점검 결과의 범위를 확인하지 못했어요. 기존 대본은 유지했어요.' : task === 'edit-plan' ? '현재 장면과 허용한 설정에 맞는 편집안인지 확인하지 못했어요. 영상은 바꾸지 않았어요.' : '실제 이미지에 대응하는 유효한 구도 분석 결과인지 확인하지 못했어요. 기존 구도는 유지했어요.');}
+  }
   const result = {}, hasNotes=!['upload-title','upload-description','music-recommendations'].includes(task), noteList = hasNotes?texts(value.notes,12,1000):null;
   if (task === 'visual-review') {
     object(value,['summary','findings','notes']);const known = input ? new Set(input.images.filter(item=>item.role==='scene').map(item=>item.sceneId)) : null;

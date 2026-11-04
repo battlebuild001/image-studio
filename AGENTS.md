@@ -156,6 +156,51 @@ need a real short export with images, narration, BGM and captions; inspect decod
 playback and ffprobe audio/video streams. Run real exports sequentially. Never
 describe these fixtures as live AI quality or actual billing verification.
 
+## Optional AI review and editing
+
+The visible AI 도우미 header button composes quality, fidelity and chat in
+`dist/ai-workbench.js`, without changing the primary workflow or delivery order.
+Keep keyboard tab behavior, modal focus, strict editor flush, owner-scoped resets,
+mobile/landscape footer access and export → review → export navigation.
+
+- `quality-check.js` / `quality-check-analysis.js` perform readonly local checks.
+  Use actual referenced decoded images, sampled Canvas frames, the shared measured
+  `getCaptionLayout`/`getAiImageNoticeLayout` and actual used decoded PCM channels.
+  Distinguish sampled structural/audio checks from semantic speech alignment or a
+  full encoded-file audit. Report bounded/partial coverage, never hide skipped
+  captions or call AI during local checks. Navigation cannot use stale results.
+- `source-fidelity.js` and its protocol compare the same complete source composition
+  used by the script writer with actual display text. Local numbers are heuristic;
+  semantic source-fidelity is an explicit paid task. Preserve exact quotes, reject
+  fabricated spans/IDs/oversized whole inputs, and never auto-rewrite source/script.
+- `chat-edit.js`, protocol and transform stage allowlisted real edits from edit-plan.
+  Show actual Canvas before/after, enabled operations, editable values, full timing
+  consequences and explicit Apply. No arbitrary code, routes, media IDs, hidden
+  generation or publishing. Keep spoken/SRT/estimated caption semantics distinct;
+  reject timing changes relying on stale/incomplete speech analysis. Front trim
+  adjusts narration source window/offset and captions, retaining BGM loop phase and
+  channels in a new local WAV. Preserve source media for Undo and current production
+  ledgers. Guard settings/workspace/selection/instruction/source and Blob identity.
+- Common production adapter supports source-fidelity, edit-plan and shorts-framing
+  through the existing direct/server route and fixed Responses endpoint, with strict
+  task schemas and no web-search tools. Explicit calls retain shared job/budget locks.
+- Optional scene.exposure is finite[-1,1], missing0, actual image brightness in the
+  common renderer, preserved in copy/bulk/backups/Undo. Captions/notice remain clear.
+  Optional settings.shortsSafeArea is boolean, missingfalse. Only portrait captions
+  reserve right18% and bottom22%; preserve landscape and off-state pixels and exact
+  independent AI notice placement. Share layout computation with quality checks.
+- `shorts-framing.js` and protocol stage actual portrait previews and explicit pixel
+  analysis. Preserve manual crops by default, identify central fallback honestly,
+  permit manual refinement and wide-subject contain. Store only reviewed bounded
+  production.shorts.framing; derived shorts/series use it without altering source.
+  uploadSeries.framingKey invalidates cached parts. Never replace unresolved queues
+  or paused transfer capabilities when preparing a newly reviewed series.
+
+Run new AI workbench/quality/source-fidelity/chat-edit/shorts-framing browser tests,
+existing production suite and npm test. Run actual native video exports sequentially
+with real synthetic image/narration/BGM/captions; inspect streams, decoded frames and
+audio. Fixtures do not prove live AI quality, provider permissions or real posting.
+
 ## YouTube integration
 
 The user explicitly requested account-connected uploads including editable title

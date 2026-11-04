@@ -88,6 +88,10 @@ export function setupEditorTools(api) {
   }, 'outline full');
   const effectField = field('sceneEffect', '화면 효과', {select: Object.entries(effectLabels)});
   const intensityField = field('sceneEffectIntensity', '효과 강도', {type: 'range', min: 0, max: 100, step: 1, value: 25});
+  const exposureField = field('sceneExposure', '이미지 밝기 · 기본 0', {type: 'range', min: -100, max: 100, step: 1, value: 0});
+  const exposureValue = node('output', {id: 'sceneExposureValue', htmlFor: 'sceneExposure', text: '0'});
+  exposureField.firstElementChild.append(exposureValue);
+  fields.get('sceneExposure').setAttribute('aria-describedby', 'sceneExposureValue');
   const intensityValue = node('output', {id: 'sceneEffectIntensityValue', htmlFor: 'sceneEffectIntensity', text: '25%'});
   intensityField.firstElementChild.append(intensityValue);
   fields.get('sceneEffectIntensity').setAttribute('aria-describedby', 'sceneEffectIntensityValue');
@@ -97,9 +101,16 @@ export function setupEditorTools(api) {
     api.mutate(project => {for (const item of project.scenes) if (ids.includes(item.id)) Object.assign(item, {effect, effectIntensity});});
     api.toast(`${ids.length}개 장면에 ${effect === 'none' ? '효과 없음' : effectLabels[effect]} 설정을 적용했어요.`);
   }, 'ghost full');
-  sceneEffects.append(effectsHeading, subtleMotion, effectField, intensityField, applyEffects,
+  sceneEffects.append(effectsHeading, subtleMotion, exposureField, effectField, intensityField, applyEffects,
     node('p', {className: 'editor-help', text: '정지 이미지에 카메라 움직임과 화면 효과를 더해요. 별도 생성 비용 없이 미리보기와 저장 영상에 함께 적용돼요.'}));
   document.querySelector('label[for="sceneMotion"]').before(sceneEffects);
+  watch(fields.get('sceneExposure'), 'input', event => {exposureValue.textContent = event.target.value;});
+  watch(fields.get('sceneExposure'), 'change', () => {
+    const value = number('sceneExposure', 0);
+    if (value < -100 || value > 100) throw new Error('이미지 밝기는 -100~100으로 정해 주세요.');
+    if (!currentScene()) return;
+    api.mutate(project => {const scene = project.scenes.find(item => item.id === api.getSelectedId());if (scene) scene.exposure = value / 100;});
+  });
   watch(fields.get('sceneEffect'), 'change', event => {
     const effect = event.target.value;
     if (!Object.hasOwn(effectLabels, effect)) throw new Error('화면 효과를 다시 선택해 주세요.');
@@ -240,6 +251,9 @@ export function setupEditorTools(api) {
         presets = next;renderPresets();
       })));
   document.querySelector('.video-settings').append(styleDetails);
+  const shortsSafeField = field('shortsSafeAreaToggle', '쇼츠 자막 안전 영역', {type: 'checkbox'});
+  styleDetails.querySelector('.editor-details-body').prepend(shortsSafeField);
+  setting('shortsSafeAreaToggle', 'shortsSafeArea', input => input.checked);
   for (const key of STYLE_KEYS) {
     if (key === 'fontSize') setting('captionStyleSize', key);
     else if (key === 'captionOpacity') setting(key, key, input => Number(input.value) / 100);
@@ -476,6 +490,9 @@ export function setupEditorTools(api) {
     const targetCount = effectTargets().length;
     const canEditEffects = Boolean(scene) && (typeof api.canUseSceneImages !== 'function' || api.canUseSceneImages());
     set('sceneEffect', scene?.effect || 'none');set('sceneEffectIntensity', Math.round((scene?.effectIntensity ?? 0.25) * 100));
+    set('sceneExposure', Math.round((scene?.exposure ?? 0) * 100));exposureValue.textContent = fields.get('sceneExposure').value;
+    fields.get('sceneExposure').disabled = !canEditEffects;
+    set('shortsSafeAreaToggle', settings.shortsSafeArea === true);shortsSafeField.hidden = project.aspect !== '9:16';
     intensityValue.textContent = `${fields.get('sceneEffectIntensity').value}%`;
     effectsSelection.textContent = targetCount ? `${targetCount}개 선택` : '장면 선택';
     fields.get('sceneEffect').disabled = !canEditEffects;

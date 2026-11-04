@@ -15,13 +15,23 @@ const {chromium}=require('playwright');
    const image=new Blob([Uint8Array.from(atob(imageBase64),x=>x.charCodeAt(0))],{type:'image/png'});
    const makeProject=id=>{const p=createProject({id,title:'시리즈',scenes:[createScene({imageId:'test-frame',duration:2,motion:'none',caption:'실제 자막'})]});const now=new Date().toISOString();p.production={version:1,uploadSeries:{version:1,sourceKey:youtubeExportSourceKey(p),baseTitle:'시리즈',targetSeconds:60,createdAt:now,updatedAt:now,privacyStatus:'private',selfDeclaredMadeForKids:false,containsSyntheticMedia:true,episodes:[{id:'part-001',start:0,end:2,title:'시리즈 | 제01화',description:'처음 설명',status:'planned'}]}};return p;};
    window.__seriesHarness=()=>{
-    let project=makeProject('guard-'+Math.random().toString(36).slice(2)),session={connected:true,channelId:'UCabcdefghijklmnopqrstuv',channelTitle:'처음 채널'},listener,uploads=0,renders=0,resolveRender;
+    let project=makeProject('guard-'+Math.random().toString(36).slice(2)),session={connected:true,channelId:'UCabcdefghijklmnopqrstuv',channelTitle:'처음 채널'},listener,uploads=0,renders=0,resolveRender,transferState={available:false,paused:false};
     const container=document.createElement('section');document.body.append(container);
-    const api={container,getProject:()=>project,getAssets:()=>new Map([['test-frame',{blob:image,name:'장면.png'}]]),getWorkspaceId:()=>null,mutateProductionMetadata:fn=>fn(project),persist:async()=>{},setUploadBatchBusy:()=>{},youtubeClient:{getSession:()=>session,getUploadState:()=>({available:false,paused:false}),subscribe:fn=>{listener=fn;return()=>{};},uploadVideo:async()=>{uploads++;throw new Error('실제 업로드를 호출하면 안 돼요.');}},renderUploadProject:options=>{renders++;return new Promise((resolve,reject)=>{resolveRender=()=>resolve({blob:new Blob(['synthetic video'],{type:'video/mp4'}),extension:'mp4'});options.signal.addEventListener('abort',()=>reject(new DOMException('중지','AbortError')),{once:true});});}};
+    const api={container,getProject:()=>project,getAssets:()=>new Map([['test-frame',{blob:image,name:'장면.png'}]]),getWorkspaceId:()=>null,mutateProductionMetadata:fn=>fn(project),persist:async()=>{},setUploadBatchBusy:()=>{},youtubeClient:{getSession:()=>session,getUploadState:()=>transferState,subscribe:fn=>{listener=fn;return()=>{};},uploadVideo:async()=>{uploads++;throw new Error('실제 업로드를 호출하면 안 돼요.');}},renderUploadProject:options=>{renders++;return new Promise((resolve,reject)=>{resolveRender=()=>resolve({blob:new Blob(['synthetic video'],{type:'video/mp4'}),extension:'mp4'});options.signal.addEventListener('abort',()=>reject(new DOMException('중지','AbortError')),{once:true});});}};
     const feature=setupUploadSeries(api);
-    return {feature,container,getProject:()=>project,getCounts:()=>({uploads,renders}),makeProject,changeProject:value=>{project=value;},changeChannel:(id,emit=true)=>{session={...session,channelId:id};if(emit)listener({type:'connected'});},resolveRender:()=>resolveRender?.(),click:id=>container.querySelector('#'+id).dispatchEvent(new Event('click'))};
+    return {feature,container,getProject:()=>project,getCounts:()=>({uploads,renders}),makeProject,changeProject:value=>{project=value;},changeTransfer:value=>{transferState=value;},changeChannel:(id,emit=true)=>{session={...session,channelId:id};if(emit)listener({type:'connected'});},resolveRender:()=>resolveRender?.(),click:id=>container.querySelector('#'+id).dispatchEvent(new Event('click'))};
    };
   },imageBase64);
+  const preparation=await page.evaluate(async()=>{
+   const {buildDramaSeriesPlan}=await import('./short-series-protocol.js'),{youtubeExportSourceKey}=await import('./youtube-protocol.js');
+   const h=window.__seriesHarness(),p=h.getProject(),queue=p.production.uploadSeries;
+   const plan=buildDramaSeriesPlan({durationSeconds:2,targetSeconds:60,sceneBoundaries:[{end:2}],title:'새 시리즈',sourceKey:youtubeExportSourceKey(p)}),failures=[];
+   for(const status of['uploading','needs-check']){queue.episodes[0].status=status;const before=JSON.stringify(queue);try{await h.feature.prepareSeries({plan});failures.push({unexpected:true});}catch(error){failures.push({status,error:error.message,unchanged:JSON.stringify(p.production.uploadSeries)===before});}}
+   queue.episodes[0].status='planned';h.changeTransfer({available:true,paused:true});const before=JSON.stringify(queue);try{await h.feature.prepareSeries({plan});failures.push({unexpected:true});}catch(error){failures.push({transfer:true,error:error.message,unchanged:JSON.stringify(p.production.uploadSeries)===before});}
+   return{failures,counts:h.getCounts()};
+  });
+  assert.equal(preparation.failures.length,3);assert.ok(preparation.failures.every(v=>v.error&&v.unchanged));assert.deepEqual(preparation.counts,{uploads:0,renders:0});
+  console.log('PASS preparing a new series cannot erase uncertain/uploading episodes or a paused transfer; existing queue/receipts remain unchanged with no new render/upload');
   const recovery=await page.evaluate(async()=>{
    const h=__seriesHarness();window.__seriesLibraryGate=new Promise(resolve=>window.__releaseSeriesLibrary=resolve);
    const episode=h.getProject().production.uploadSeries.episodes[0];Object.assign(episode,{status:'uploading',projectId:'missing-series-episode',attemptAt:new Date().toISOString()});h.feature.render();h.feature.onOpen();
