@@ -62,7 +62,11 @@
     "test:youtube-diagnostics-browser": "node tests/youtube-diagnostics.browser.cjs",
     "test:title-overline-browser": "node tests/title-overline.browser.cjs",
     "test:video-description-browser": "node tests/video-description.browser.cjs",
-    "test:thumbnail-layout-browser": "node tests/thumbnail-layout.browser.cjs"
+    "test:thumbnail-layout-browser": "node tests/thumbnail-layout.browser.cjs",
+    "test:sync-browser": "node tests/sync-studio.browser.cjs",
+    "test:sync-export-browser": "node tests/sync-export.browser.cjs",
+    "test:upload-flow-browser": "node tests/upload-flow.browser.cjs",
+    "test:youtube-combined-browser": "node tests/youtube-combined.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

@@ -2,3 +2,4 @@
 
 .youtube-studio .youtube-ai-field-actions{margin-top:-4px;margin-bottom:14px}.youtube-studio .youtube-ai-field-actions button{font-size:12px}.youtube-studio .youtube-metadata-operation:empty{display:none}.youtube-studio #youtubeSourceNotes{min-height:110px}
 .youtube-studio #youtubeUploadError{overflow-wrap:anywhere;line-height:1.8}
+.youtube-studio .youtube-thumbnail{margin-top:20px}.youtube-studio .youtube-thumbnail-preview{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:contain;border:1px solid var(--line);border-radius:6px;background:#090d10;margin:12px 0}.youtube-studio .youtube-thumbnail-pending{margin-top:14px;border-color:var(--accent)}.youtube-studio .youtube-thumbnail-pending p{font-size:12px;line-height:1.8}.youtube-studio .youtube-thumbnail-pending a{display:block;margin:10px 0}.youtube-studio #youtubeConnectionOperation{margin-top:12px}

@@ -4,6 +4,8 @@ export const YOUTUBE_READONLY_SCOPE = 'https://www.googleapis.com/auth/youtube.r
 export const YOUTUBE_SCOPES = `${YOUTUBE_UPLOAD_SCOPE} ${YOUTUBE_READONLY_SCOPE}`;
 export const YOUTUBE_MAX_VIDEO_BYTES = 256 * 1024 ** 3;
 export const YOUTUBE_MAX_DESCRIPTION_BYTES = 5000;
+// Application preview/upload bound; the provider currently documents a larger limit.
+export const YOUTUBE_MAX_THUMBNAIL_BYTES = 5 * 1024 ** 2;
 
 const encoder = new TextEncoder();
 const PRIVACY = new Set(['private', 'unlisted', 'public']);
@@ -164,4 +166,19 @@ export function validateYouTubeVideoFile(blob) {
   if (mimeType === 'video/x-m4v') mimeType = 'video/mp4';
   if (!VIDEO_MIME.has(mimeType)) fail('MP4·WebM·MOV 등 지원하는 영상 파일을 선택해 주세요.');
   return mimeType;
+}
+
+/** Thumbnail headers/terminator must match PNG/JPEG bytes, not only a file extension. */
+export async function validateYouTubeThumbnailFile(blob) {
+  if(typeof Blob==='undefined'||!(blob instanceof Blob)||!Number.isSafeInteger(blob.size)||blob.size<=0||blob.size>YOUTUBE_MAX_THUMBNAIL_BYTES)fail('맞춤 썸네일은 앱에서 5MiB 이하의 PNG·JPEG 이미지를 사용할 수 있어요.');
+  const name=typeof blob.name==='string'?blob.name:'';
+  if(name&&(!name.trim()||Array.from(name).length>180||CREDENTIAL.test(name)||/[\u0000-\u001f\u007f\\/]/u.test(name)))fail('썸네일 파일 이름은 폴더 경로 없이 180자 이하여야 해요.');
+  let mimeType=String(blob.type||'').split(';',1)[0].trim().toLowerCase();if(mimeType==='image/jpg')mimeType='image/jpeg';
+  if(mimeType&&!['image/png','image/jpeg','application/octet-stream'].includes(mimeType))fail('맞춤 썸네일은 PNG·JPEG 이미지를 선택해 주세요.');
+  const data=new Uint8Array(await blob.arrayBuffer()),view=new DataView(data.buffer,data.byteOffset,data.byteLength),ascii=(from,to)=>String.fromCharCode(...data.subarray(from,to));
+  const png=data.length>=45&&[137,80,78,71,13,10,26,10].every((byte,index)=>data[index]===byte)&&view.getUint32(8)===13&&ascii(12,16)==='IHDR'&&view.getUint32(16)>0&&view.getUint32(20)>0&&view.getUint32(data.length-12)===0&&ascii(data.length-8,data.length-4)==='IEND';
+  const jpeg=data.length>4&&data[0]===255&&data[1]===216&&data[2]===255&&data.at(-2)===255&&data.at(-1)===217;
+  const actual=png?'image/png':jpeg?'image/jpeg':'';
+  if(!actual||(mimeType&&mimeType!=='application/octet-stream'&&mimeType!==actual))fail('썸네일 이미지의 실제 내용과 PNG·JPEG 파일 형식이 일치하지 않아요.');
+  return actual;
 }

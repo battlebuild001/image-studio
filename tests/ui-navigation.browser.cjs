@@ -27,12 +27,17 @@ async function closeStudioWorkbench(page) {
   }
 }
 async function openProductionSection(page, section) {
-  const delivery=['shorts','publishing','youtube','series'].includes(section);
+  const delivery=['settings','shorts','publishing','youtube','series'].includes(section);
   const target=delivery?'#videoUploadDialog':'#productionWorkbenchDialog';
   const other=delivery?'#productionWorkbenchDialog':'#videoUploadDialog';
   if (await page.locator(other).isVisible()) await closeStudioWorkbench(page);
   if (!await page.locator(target).isVisible()) await page.locator(delivery?'#videoUploadBtn':'#productionToolsBtn').click();
-  await page.locator((delivery?'#uploadTab-':'#productionTab-')+section).click();
+  await page.locator((delivery?'#uploadTab-':'#productionTab-')+(section==='series'?'shorts':section)).click();
+  if(section==='series'){
+    const series=page.locator('#uploadSeriesSection');
+    if(!(await series.evaluate(element=>element.open)))await series.locator(':scope > summary').click();
+    await page.locator('#uploadPanel-series').scrollIntoViewIfNeeded();
+  }
 }
 module.exports.openProductionSection=openProductionSection;
 module.exports.closeStudioWorkbench=closeStudioWorkbench;

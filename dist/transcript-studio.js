@@ -279,9 +279,8 @@ export function setupTranscriptStudio(api) {
     finally{if(requested===operation){activeSignature=null;setBusy(false);}}
   }
   function closeDialog() {if (busy) stop();dialog.close();}
-  open.addEventListener('click', run(async () => {
-    api.pause();showError('');renderSource();renderResult();refreshActions();dialog.showModal();await checkConnection();
-  }));
+  async function openStudio(){api.pause();showError('');renderSource();renderResult();refreshActions();if(!dialog.open)dialog.showModal();await checkConnection();}
+  open.addEventListener('click',run(openStudio));
   refresh.addEventListener('click', run(checkConnection));analyze.addEventListener('click', run(analyzeNarration));
   cancel.addEventListener('click', () => stop());apply.addEventListener('click', run(applyResult));
   close.addEventListener('click', closeDialog);closeFooter.addEventListener('click', closeDialog);
@@ -311,5 +310,5 @@ export function setupTranscriptStudio(api) {
     stop('');cancelConnectionCheck();projectId = api.getProject().id;lastResult = null;showError('');status.textContent = '';
     if (dialog.open) dialog.close();renderResult();render();
   }
-  render();return {render, reset};
+  render();return {render, reset, open:openStudio};
 }

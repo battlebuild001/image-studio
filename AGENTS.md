@@ -40,7 +40,9 @@ with images, narration, BGM and captions. Do not replace this with a DOM overlay
 The header has separate 프로젝트 기본 설정, 프로젝트 저장 and 영상 업로드 buttons.
 Project settings contain basics, speech/dictionary, partial changes, budget,
 history, image review, information cards and channel presets. The separate upload
-dialog contains YouTube, shorts/drama, series uploads and publishing materials.
+dialog follows four steps: 업로드 설정 → 게시 자료 → 영상 업로드 → 쇼츠 업로드.
+Keep the drama-series queue inside the shorts step and preserve reviewed title,
+description and thumbnail selection across Previous/Next navigation.
 Preserve the four primary workflow steps and route legacy section openers to the
 correct dialog; never put delivery tools back inside project settings.
 
@@ -336,6 +338,14 @@ regressions and test:dual-scripts-browser for visible subtitle/voice separation.
 - `dist/project.js`: validation, pure scene operations, timeline, captions, SRT,
   IndexedDB autosave/library, portable backup.
 - `dist/engine.js`: Canvas rendering, Web Audio mixing, MediaRecorder export.
+- `dist/sync-timing.js`: pure local timing plans using the actual decoded narration
+  window and offset. Preserve every scene/media/text/style, protect only consecutive
+  known intro/outro image names at timeline edges, and bound body scenes to 0.25–600s.
+  Repeated voice/video repair must not accumulate timing drift or pre-voice gaps.
+- `dist/sync-studio.js` / `.css`: visible 싱크 다시 맞추기 near the timeline. Preview
+  is read-only; Apply archives the original and atomically changes timing fields
+  with project/workspace/media guards, Undo and actual Blob persistence. Opening
+  the existing transcription studio never starts paid recognition automatically.
 - `dist/scene-effects.js`: bounded deterministic scene-local dust/fog/light overlays;
   camera presets and final compositing remain in engine.js.
 - `dist/editor-tools.js` / `.css`: framing/motion controls, caption editor/styles,
@@ -701,6 +711,19 @@ for credential values in chat. Inspect configured presence without exposing valu
   cue offsets reject negative starts. Scene edits do not implicitly retime SRT.
   Prepending a generated title card shifts SRT by the inserted duration and shifts
   speech captions through the narration offset without changing their source times.
+- Explicit sync repair may fit manual/SRT cues to the audio or video envelope,
+  retaining full text/order/gaps and clearly labeling the result as estimated.
+  Only same-narration, full-window cached speech may retain the precise label;
+  keep its raw source cues/analysis unchanged. Stale or incomplete analysis requires
+  reanalysis or an explicit estimated rebuild from current scene text. Relative
+  shifts reject negative/out-of-video cues instead of clipping away words.
+  Normal narration imports/sample application fit body scenes only: preserve SRT
+  and raw speech timing, title-card durations and an offset at least the intro length.
+  Title-card-only projects may accept narration but need body scenes for repair.
+  Retain stale scene plans without falsely reconfirming image generation; rebuild
+  timing/keys only for an already-valid plan while preserving IDs, requests and text.
+  Verify with tests/sync-timing.test.mjs and tests/sync-studio.browser.cjs using
+  actual WAV/PNG/BGM fixtures, archive/Undo, workspace/backup/reload and no providers.
 - Duplicate scenes use distinct IDs. Undo/redo must retain referenced media for
   both stacks. Merge accepts only consecutive scenes sharing the same image and
   uses the first scene settings (custom motion connects first start to last end);
