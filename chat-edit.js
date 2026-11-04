@@ -54,6 +54,7 @@ export function setupChatEdit(api) {
     const before = staged.original, after = staged.preview.project, t = Math.max(0, Math.min(Number(timeField.input.value) || 0, staged.preview.newDuration - .00001));
     const originalTime = Math.min(staged.preview.oldDuration - .00001, t + staged.preview.trimSeconds);
     for (const [index, project, time] of [[0, before, originalTime], [1, after, t]]) {const canvas = canvases[index], portrait = project.aspect === '9:16';canvas.width = portrait ? 360 : 640;canvas.height = portrait ? 640 : 360;renderFrame(canvas.getContext('2d'), project, api.getAssets(), time, canvas.width, canvas.height);}
+    staged.reviewTime = t;staged.reviewSceneId = getTimeline(after).scenes.find(scene => t >= scene.start && t < scene.end)?.id || null;staged.hasReviewPosition = true;
     previewTime.textContent = `원본 ${originalTime.toFixed(2)}초 → 변경 후 ${t.toFixed(2)}초${staged.preview.trimSeconds ? ` · 맨 앞 ${staged.preview.trimSeconds}초 제거` : ''}`;
   }
   function rebuildPreview() {
@@ -61,7 +62,16 @@ export function setupChatEdit(api) {
     try {
       const preview = buildChatEditPreview(staged.original, selectedPlan(), api.getAssets());staged.preview = preview;
       detail.textContent = `${preview.oldDuration.toFixed(2)}초 → ${preview.newDuration.toFixed(2)}초 · 선택한 실제 변경 ${preview.changes.length}개`;
-      timeField.input.max = String(Math.max(0, preview.newDuration - .00001));timeField.input.value = String(Math.min(Number(timeField.input.value) || 0, Number(timeField.input.max)));
+      const timeline = getTimeline(preview.project), existingTarget = staged.reviewSceneId && timeline.scenes.some(scene => scene.id === staged.reviewSceneId);
+      let position = staged.reviewTime;
+      // A later edited scene must be visible immediately; subsequent edits retain
+      // the user's comparison position, including across temporarily invalid values.
+      if (!staged.hasReviewPosition || staged.reviewSceneId && !existingTarget) {
+        const changed = new Set(preview.changes.filter(change => change.kind === 'scene').map(change => change.sceneId));
+        const selected = new Set(selection(api)), target = timeline.scenes.find(scene => changed.has(scene.id)) || timeline.scenes.find(scene => selected.has(scene.id));
+        position = target ? target.start + target.duration / 2 : (Number(api.getCurrent?.()) || 0) - preview.trimSeconds;
+      }
+      timeField.input.max = String(Math.max(0, preview.newDuration - .00001));timeField.input.value = String(Math.max(0, Math.min(Number(position) || 0, Number(timeField.input.max))));
       warnings.replaceChildren(...preview.warnings.map(value => node('li', '', value)));canvasPreview();
     } catch (cause) {showError(cause);detail.textContent = '편집 값을 확인하면 미리보기를 다시 만들어요.';warnings.replaceChildren();}
     busy();
