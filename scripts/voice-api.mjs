@@ -1,5 +1,6 @@
 import http from 'node:http';
 import https from 'node:https';
+import {createTypecastApi} from './typecast-api.mjs';
 
 // Current official API: https://api.ncloud-docs.com/docs/ai-naver-clovavoice-ttspremium
 const ENDPOINT = 'https://naveropenapi.apigw.ntruss.com/tts-premium/v1/tts';
@@ -182,7 +183,17 @@ function withAbort(promise, signal) {
 }
 
 /** Voice credentials never gate script preparation or the research API. */
-export function createVoiceApi({env = process.env, requestProvider = createVoiceProviderRequest(env), timeoutMs = 180_000} = {}) {
+export function createVoiceApi(options = {}) {
+  const {env = process.env, timeoutMs = 180_000} = options;
+  const selected = String(env.VOICE_PROVIDER || '').trim().toLowerCase();
+  if (selected === 'typecast' || (!selected && env.TYPECAST_API_KEY)) {
+    return createTypecastApi({env, ...(options.requestProvider ? {requestProvider: options.requestProvider} : {}),
+      timeoutMs: options.timeoutMs ?? 30 * 60_000, ...(options.configTimeoutMs ? {configTimeoutMs: options.configTimeoutMs} : {})});
+  }
+  if (selected && !['clova', 'naver', 'legacy'].includes(selected)) {
+    throw new VoiceApiError(503, 'VOICE_PROVIDER_CONFIGURATION_ERROR', 'VOICE_PROVIDER를 지원하는 음성 제공자로 설정해 주세요.');
+  }
+  const requestProvider = options.requestProvider || createVoiceProviderRequest(env);
   let generating = false;
   const credentials = () => ({clientId: env.CLOVA_VOICE_CLIENT_ID || '', clientSecret: env.CLOVA_VOICE_CLIENT_SECRET || ''});
   const configured = () => Boolean(credentials().clientId && credentials().clientSecret);

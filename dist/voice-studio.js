@@ -2,6 +2,7 @@ import {combineVoiceChunks, VOICE_SAMPLE_RATE} from './voice-audio.js';
 import {apiFetch} from './api-client.js';
 import {createOperationStatus, nextPaint} from './operation-status.js';
 import {getNarrationScript, getDisplayScript} from './production-speech.js';
+import {setupVoiceProviderControls} from './voice-provider-controls.js';
 
 const $ = id => document.getElementById(id);
 const characterCount = value => Array.from(String(value || '')).length;
@@ -36,7 +37,7 @@ export function setupVoiceStudio(api) {
   const body = node('div', 'dialog-body');dialog.append(body);
   body.append(node('p', 'voice-intro', '먼저 작성한 대본을 확인한 뒤 음성을 만들어요. 음성 API가 없어도 대본 작성·저장과 영상 편집을 계속할 수 있어요.'));
   const service = node('div', 'voice-service');service.id = 'voiceServiceState';service.setAttribute('role', 'status');
-  const serviceText = node('span'), refresh = button('refreshVoiceServiceBtn', '연결 다시 확인', 'ghost small');service.append(serviceText, refresh);body.append(service);
+  const serviceText = node('span'), refresh = button('refreshVoiceServiceBtn', '연결 다시 확인', 'ghost small'), connectionSettings=button('voiceApiSettingsBtn','API 설정','ghost small');service.append(serviceText,refresh,connectionSettings);body.append(service);connectionSettings.addEventListener('click',()=>api.openApiSettings?.({tab:'typecast'}));
   const text = field('voiceText', '읽을 대본', 'textarea');text.input.rows = 10;text.input.maxLength = 30000;text.input.placeholder = '1단계에서 작성한 대본을 가져오거나 여기에 붙여넣으세요.';
   const metrics = node('p', 'voice-help');metrics.id = 'voiceTextStats';body.append(text.wrapper, metrics);
   body.append(node('p', 'voice-help', '여기서 수정한 문장은 이번 음성과 다음 영상 편집에 사용해요. 이 화면에서 수정하는 것만으로 1단계 대본이 바뀌지는 않아요.'));
@@ -66,11 +67,13 @@ export function setupVoiceStudio(api) {
   let projectId = api.getProject().id, busy = false, applying = false, configured = false, connectionSequence = 0, operation = 0, controller = null, connectionController = null;
   let lastResult = null, resultUrl = null, active = null, draftTitle = '', targetMinutes = 8;
   const run = task => event => {event?.preventDefault();Promise.resolve().then(task).catch(cause => {error.textContent = cause.message || '음성 작업을 마치지 못했어요.';});};
+  let voiceEpoch=0;
+  const providerControls=setupVoiceProviderControls({container:settings,fields:{speaker,speed,pitch,volume},prefix:'voice',openSettings:()=>api.openApiSettings?.({tab:'typecast'}),onChange:()=>{error.textContent='';if(busy&&!matches(active))stop('목소리 설정이 바뀌어 생성을 취소했어요.');refreshActions();}});
   const projectScript = () => getNarrationScript(api.getProject());
   function snapshot() {
     const p = api.getProject();return {projectId: p.id, projectScript: projectScript(), narrationId: p.audio?.narrationId ?? null,
       narrationAsset: api.getAssets().get(p.audio?.narrationId) ?? null,
-      text: text.input.value, speaker: speaker.input.value, speed: Number(speed.input.value), pitch: Number(pitch.input.value), volume: Number(volume.input.value)};
+      text:text.input.value,voiceEpoch,...providerControls.snapshot()};
   }
   const matches = value => {
     if (!value) return false;
@@ -82,7 +85,7 @@ export function setupVoiceStudio(api) {
     apply.disabled = busy || applying || !lastResult || lastResult.applied || !matches(lastResult.snapshot);next.disabled = busy || applying || !content;
     apply.textContent = lastResult?.applied ? '내레이션으로 적용됨' : '이 음성을 내레이션으로 사용';
     stale.textContent = lastResult && !matches(lastResult.snapshot) ? '현재 대본·설정과 다른 이전 결과예요. 미리듣기와 저장은 가능하며, 현재 내용으로 적용하려면 다시 생성해 주세요.' : '';
-    text.input.disabled = busy || applying;for (const input of [speaker.input, speed.input, pitch.input, volume.input]) input.disabled = busy || applying;
+    text.input.disabled=busy||applying;providerControls.setDisabled(busy||applying);connectionSettings.disabled=busy||applying;
     cancel.hidden = !busy;refresh.disabled = busy || applying;fileButton.disabled = busy || applying;close.disabled=applying;closeFooter.disabled=applying;
     metrics.textContent = `${characterCount(text.input.value).toLocaleString()} / 30,000자 · 기본 읽기 속도 기준 예상 ${seconds(spokenCount(text.input.value) / (api.getProject().scriptDraft?.charsPerMinute || 330) * 60)} · 실제 길이는 합성 후 확인해요.`;
   }
@@ -100,32 +103,30 @@ export function setupVoiceStudio(api) {
     const abort = new AbortController(), timeout = setTimeout(() => abort.abort(), 60000);connectionController = abort;
     try {
       const response = await request('/api/voice/config', {signal: abort.signal});if (sequence !== connectionSequence) return;
-      configured = response.configured === true;
+      configured = response.configured === true;providerControls.applyConfig(response);
       service.dataset.state = configured ? 'ready' : 'unavailable';
-      serviceText.textContent = configured ? '연결된 음성 API로 한국어 음성을 만들 수 있어요. ‘음성 생성’을 누를 때만 합성해요.'
-        : '대본은 준비됐어요. 음성 생성은 서버 연결 후 사용하거나 MP3·WAV 파일을 불러오세요.';
+      serviceText.textContent = configured ? response.provider==='typecast'?`Typecast · ${response.model} · 실제 목소리 목록을 불러왔어요. 선택한 목소리로 한국어를 합성해요.`:'연결된 음성 API로 한국어 음성을 만들 수 있어요. ‘음성 생성’을 누를 때만 합성해요.'
+        : '대본은 준비됐어요. API 설정에서 타입캐스트를 연결하거나 MP3·WAV 파일을 불러오세요.';
       task.finish(configured?'음성 생성 연결 확인 완료':'연결 확인 완료 · 파일 불러오기는 사용할 수 있어요.');
     } catch {
       if (sequence !== connectionSequence) return;configured = false;service.dataset.state = 'unavailable';
-      serviceText.textContent = '대본은 준비됐어요. 음성 생성 서버가 연결되지 않아도 파일 불러오기와 영상 편집을 계속할 수 있어요.';task.fail(abort.signal.aborted?'연결 확인 시간이 초과됐어요.':'음성 생성 연결을 확인하지 못했어요.');
+      serviceText.textContent = '음성 API 연결을 확인하지 못했어요. API 설정과 사용 권한을 확인하세요. 대본·파일 불러오기는 계속 사용할 수 있어요.';task.fail(abort.signal.aborted?'연결 확인 시간이 초과됐어요.':'음성 생성 연결을 확인하지 못했어요.');
     } finally {clearTimeout(timeout);if (sequence === connectionSequence) {connectionController = null;refreshActions();}}
   }
   async function generateVoice() {
     if (busy || applying) return;if (!configured) throw new Error('음성 생성 연결을 먼저 확인해 주세요. 대본 작성에는 이 연결이 필요하지 않아요.');
     const source = snapshot();if (!source.text.trim() || characterCount(source.text) > 30000) throw new Error('읽을 대본을 1~30,000자로 입력해 주세요.');
-    for (const [name, min, max] of [['speed', -5, 10], ['pitch', -5, 5], ['volume', -5, 5]]) {
-      if (!Number.isInteger(source[name]) || source[name] < min || source[name] > max) throw new Error('목소리 속도·음높이·음량의 범위를 확인해 주세요.');
-    }
+    const payload=providerControls.request(source.text);
     api.pause();audio.pause();error.textContent = '';const requested = ++operation;controller = new AbortController();const {signal} = controller;
     active = source;busy = true;dialog.setAttribute('aria-busy', 'true');status.textContent = '대본을 음성으로 만들고 있어요. 긴 대본은 여러 구간으로 처리해요.';refreshActions();
     const task=operationProgress.start('음성 생성 응답 대기 중',{detail:'대본을 합성 서비스로 전송해요.'});
     try {
       await nextPaint();
       const response = await request('/api/voice/generate', {method: 'POST', headers: {'Content-Type': 'application/json'}, signal,
-        body: JSON.stringify({text: source.text, speaker: source.speaker, speed: source.speed, pitch: source.pitch, volume: source.volume})});
+        body:JSON.stringify(payload)});
       if (requested !== operation || !matches(source)){task.cancel('대본이나 프로젝트가 바뀌어 음성 생성을 취소했어요.');return;}
       status.textContent = '생성된 실제 음성 구간을 하나의 WAV 파일로 합치고 있어요.';task.update('생성 음성을 WAV로 합치는 중',{detail:`${response.chunks?.length||0}개 구간 수신`});await nextPaint();
-      const blob = await combineVoiceChunks(response.chunks, {signal});
+      const blob = await combineVoiceChunks(response.chunks,{signal,...(response.provider==='typecast'?{maxInputBytes:160*1024*1024}:{})});
       if (requested !== operation || !matches(source) || signal.aborted){task.cancel('음성 생성을 취소했어요. 기존 내레이션은 유지했어요.');return;}
       clearResult();lastResult = {blob, snapshot: source, name: filename(draftTitle || api.getProject().title)};resultUrl = URL.createObjectURL(blob);
       audio.src = resultUrl;download.href = resultUrl;download.download = lastResult.name;
@@ -156,7 +157,7 @@ export function setupVoiceStudio(api) {
     refreshActions();
     if (!dialog.open) dialog.showModal();await checkConnection();
   }
-  function closeDialog() {if(applying)return;if (busy) stop();audio.pause();dialog.close();}
+  function closeDialog() {if(applying)return;if (busy) stop();audio.pause();providerControls.stopSample();dialog.close();}
   function render() {
     const p = api.getProject();
     if (p.id !== projectId) {stop('');projectId = p.id;cancelConnectionCheck();clearResult();text.input.value = '';error.textContent = '';if (dialog.open) dialog.close();}
@@ -170,10 +171,8 @@ export function setupVoiceStudio(api) {
   refresh.addEventListener('click', run(checkConnection));generate.addEventListener('click', run(generateVoice));cancel.addEventListener('click', () => stop());apply.addEventListener('click', run(applyVoice));
   dialog.addEventListener('cancel', event => {event.preventDefault();closeDialog();});
   dialog.addEventListener('close', cancelConnectionCheck);
-  window.addEventListener('studio-api-settings-change', () => {
-    if (busy) stop('AI 서버 연결이 바뀌어 음성 생성을 취소했어요. 대본과 기존 결과는 유지했어요.');
-    cancelConnectionCheck();configured = false;refreshActions();if (dialog.open) checkConnection();
-  });
+  function voiceConnectionChanged(){voiceEpoch++;providerControls.stopSample();if(busy)stop('음성 API 연결이 바뀌어 생성을 취소했어요. 기존 결과는 유지했어요.');cancelConnectionCheck();configured=false;refreshActions();if(dialog.open)checkConnection();}
+  window.addEventListener('studio-api-settings-change',voiceConnectionChanged);window.addEventListener('studio-voice-settings-change',voiceConnectionChanged);
   for (const input of [text.input, speaker.input, speed.input, pitch.input, volume.input]) input.addEventListener('input', () => {
     error.textContent = '';if (busy && !matches(active)) stop('대본이나 목소리 설정이 바뀌어 생성을 취소했어요. 다시 생성해 주세요.');refreshActions();
   });
@@ -189,6 +188,6 @@ export function setupVoiceStudio(api) {
     const project = api.getProject(), hasDisplay = typeof project.scriptDraft?.displayScript === 'string' || typeof project.scriptDraft?.result?.displayScript === 'string';
     audio.pause();dialog.close();api.applyScriptDraft({script,...(hasDisplay ? {displayScript:getDisplayScript(project)}:{}), title: draftTitle, targetMinutes});
   }));
-  function reset() {stop('');cancelConnectionCheck();clearResult();text.input.value = '';projectId = api.getProject().id;if (dialog.open) dialog.close();render();}
+  function reset() {stop('');cancelConnectionCheck();providerControls.reset();clearResult();text.input.value = '';projectId = api.getProject().id;if (dialog.open) dialog.close();render();}
   render();return {open, render, reset};
 }

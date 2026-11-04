@@ -2,7 +2,7 @@
 
 **OpenAI 대본 작성·이미지 생성·음성 인식에는 Render 계정이나 별도 서버가 필요하지 않습니다.** 웹 편집기의 **설정 → OpenAI API**에 본인의 키를 입력하면 브라우저가 OpenAI에 직접 요청합니다. 대본을 먼저 작성한 뒤 필요할 때 음성을 만들고 영상을 편집하는 순서이며, 대본·이미지에는 보이스 API가 필요하지 않습니다.
 
-아래 Render 배포는 **CLOVA Voice 음성 합성**이나 **키를 서버에 보관하는 운영 방식**을 선택할 때만 사용합니다. 앱 설정에 직접 키를 입력하려고 Render 계정을 만들 필요는 없습니다. OpenAI API 사용료와 모델 이용 권한은 개인 OpenAI 계정에 따르며, ChatGPT 구독이나 Codex 채팅을 직접 호출하는 연결은 아닙니다.
+**Typecast 음성도 설정 → Typecast 음성에 개인 API 키를 입력하면 별도 서버 없이 사용할 수 있습니다.** 아래 Render 배포는 **음성 키를 서버에 보관하는 방식**이나 기존 서버 제공자를 선택할 때만 사용합니다. 앱 설정에 직접 키를 입력하려고 Render 계정을 만들 필요는 없습니다. OpenAI API 사용료와 모델 이용 권한은 개인 OpenAI 계정에 따르며, ChatGPT 구독이나 Codex 채팅을 직접 호출하는 연결은 아닙니다.
 
 ## 1. 앱 안에서 OpenAI 직접 연결
 
@@ -17,7 +17,7 @@
 
 직접 연결 키는 고정된 HTTPS `api.openai.com` 경로로만 보내며 임의 서버나 리디렉션으로 전달하지 않습니다. 대본과 이미지는 같은 키를 재사용합니다. 대본은 실제 웹 검색 완료와 출처를 확인하고, 자막은 인식 서비스의 실제 시간 정보를 사용합니다. 원문 복사나 글자 수로 추정한 시간을 AI 조사·발화 시간으로 대신 표시하지 않습니다.
 
-CLOVA Voice는 브라우저 직접 연결을 제공하지 않습니다. OpenAI 키를 입력해도 CLOVA 음성 합성이 활성화되지는 않습니다. 준비한 MP3·WAV를 가져오거나 아래 선택적 서버를 연결합니다.
+Typecast는 앱 설정에서 개인 API 키로 직접 연결할 수 있습니다. 기본 모델은 ssfm-v31이며 한국어 합성을 사용합니다. 기존 서버 음성 제공자는 아래 선택적 서버에 자체 인증정보가 필요합니다. OpenAI 키를 음성 제공자 키로 재사용하지 않습니다. 준비한 MP3·WAV를 가져오는 방식도 유지합니다.
 
 ## 2. 선택 사항: Render에서 서버 만들기
 
@@ -63,6 +63,9 @@ CLOVA Voice는 브라우저 직접 연결을 제공하지 않습니다. OpenAI �
 | `SCRIPT_AI_MODEL` | 서버 대본 모델. 기본값 `gpt-5-mini`. |
 | `IMAGE_AI_MODEL` | 서버 이미지 모델. 기본값 `gpt-image-2`. |
 | `TRANSCRIBE_MODEL` | 실제 시간 정보를 반환하는 음성 인식 모델. 기본값 `whisper-1`. |
+| `TYPECAST_API_KEY` | 선택적 서버의 Typecast API 키. 개인 브라우저 키를 자동 복사하지 않습니다. |
+| `TYPECAST_MODEL` | Typecast 모델. 기본값 `ssfm-v31`, 지원 모델 `ssfm-v30`, `ssfm-v21`. |
+| `VOICE_PROVIDER` | `typecast`로 Typecast 서버 합성을 선택합니다. 미설정 시 Typecast 키가 있으면 Typecast, 없으면 기존 제공자를 사용합니다. |
 | `CLOVA_VOICE_CLIENT_ID` | CLOVA Voice Premium 애플리케이션의 서버용 Client ID. |
 | `CLOVA_VOICE_CLIENT_SECRET` | 같은 애플리케이션의 서버용 Client Secret. |
 | `STUDIO_ACCESS_TOKEN` | Render가 생성하는 앱 접속코드. 공개 API 요청 인증에 사용합니다. |

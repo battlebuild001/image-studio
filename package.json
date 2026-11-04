@@ -44,7 +44,9 @@
     "test:production-visual-browser": "node tests/production-visual-tools.browser.cjs",
     "test:production-delivery-browser": "node tests/production-delivery.browser.cjs",
     "test:production-guards-browser": "node tests/production-suite-guards.browser.cjs",
-    "test:youtube-browser": "node tests/youtube-studio.browser.cjs"
+    "test:youtube-browser": "node tests/youtube-studio.browser.cjs",
+    "test:typecast-settings-browser": "node tests/typecast-settings.browser.cjs",
+    "test:typecast-voice-browser": "node tests/typecast-voice.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

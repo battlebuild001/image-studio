@@ -19,10 +19,10 @@ The old fixed channel name must not appear automatically in the editor, generate
 templates, preview, PNG or video export. Keep legacy settings.branding compatible,
 but use it only for the user's project title; UI label is 영상 제목 표시. Never
 rename internal storage/database/backup identifiers or erase user-entered text.
-Voice-provider choice is undecided. Keep user-visible voice guidance, demo captions
-and API errors provider-neutral (음성 API / 음성 생성). Preserve implementation
-credential names, official endpoints and provider metadata until an actual adapter
-change is requested; neutral copy does not add support for another provider.
+The user explicitly selected Typecast and requested its documented API integration.
+Use Typecast labels for its configured adapter and keep legacy guidance provider-neutral
+(음성 API / 음성 생성); do not reintroduce the old fixed voice-provider branding.
+Preserve existing legacy credential names/endpoints and optional server behavior.
 Optional settings.aiImageNotice controls a fixed small bottom AI-image notice.
 Default/missing legacy is false; keep it independent of subtitles and branding.
 settings.aiImageNoticePosition supports bottom-center (default/legacy), bottom-left
@@ -138,6 +138,63 @@ exclusion, receipt Undo retention/deletion, mobile and an actual short local
 image+narration+BGM+caption export followed by a mocked upload. Run real exports
 sequentially. Current official Google docs are linked in README; avoid hardcoding
 outdated quota numbers or blanket project private-only restrictions.
+
+## Typecast narration
+
+The user authorized in-app Typecast key configuration, voice catalog, Korean TTS
+and integration with existing full narration and partial replacement workflows.
+Official docs and public-origin CORS were checked on 2026-11-04; actual authenticated
+generation is unverified until a user explicitly generates with their own API key.
+
+- `dist/typecast-protocol.js` shares official v3 voice normalization, model/emotion
+  support checks and v1 TTS bodies between browser and Node. Use ssfm-v31 by
+  default, Korean language kor and real MP3 output. v31/v30 smart/preset prompts
+  differ from v21 legacy presets. No undocumented seed or provider SSML fields.
+  Keep each text chunk <=2000 Unicode code points and lossless concatenation;
+  reject whitespace-only chunks before any paid request instead of dropping text.
+- `dist/direct-typecast.js` keeps private keys in memory unless tab/browser
+  retention is explicitly selected. Blank saves preserve keys; deletion and
+  cross-tab changes abort obsolete requests. Only X-API-KEY to fixed HTTPS
+  api.typecast.ai is allowed; reject redirects and caller-supplied credentials.
+  Bound response headers and bodies, use one paid synthesis lock and no retries.
+- `dist/api-client.js` selects the enabled Typecast client only for the two voice
+  routes before independent direct OpenAI/server routing. Local validation occurs
+  before the central budget guard. Do not reserve a second budget inside adapters.
+  Failure must not silently call a different voice service. Candidate server
+  checks still use the explicitly supplied server and its own access code.
+- `dist/typecast-settings.js` / `.css` mounts inside the third native settings
+  panel. Key verification only GETs /v3/voices. Loading, timeout, cancellation,
+  masked restoration and three retention choices must work without changing
+  OpenAI settings or emitting generic image/text configuration cancellation.
+- `dist/voice-provider-controls.js` / `.css` populate actual voice names and model
+  capabilities in full and partial voice studios. Korean localized voice names
+  are not proof of language/accent quality. Samples use returned allowlisted
+  static Typecast URLs without API headers, only on explicit Play; unavailable
+  samples never trigger charged synthesis. Preserve legacy IDs/ranges/payloads.
+- `scripts/typecast-api.mjs` provides the optional authenticated backend selected
+  by TYPECAST_API_KEY/TYPECAST_MODEL and VOICE_PROVIDER=typecast (or key-based
+  selection when provider is unset). Existing voice-api legacy exports and
+  credentials remain compatible. Keep native HTTPS proxy/CA support, cancellation,
+  request limits and the existing authenticated public gateway/paid job lock.
+- `dist/voice-audio.js` retains the existing actual MP3/WAV decode and 24kHz PCM
+  merge. Default legacy input remains32MiB; Typecast callers explicitly allow
+  up to160MiB total and32MiB per chunk because its MP3 is320kbps. Final output
+  remains <=60min/180MiB. Do not reject typical16min scripts only after charging
+  because of the old32MiB aggregate limit.
+
+Use the dedicated studio-voice-settings-change event for Typecast key/model
+changes. In partial tools cancel/stale only the voice job, preserving active
+image work. Preserve selected voice/emotion when refreshing before generation,
+and previous audio/preview after errors, cancellation or stale responses. Typecast
+Studio subscriptions and API plans are separate; link official API pricing and
+commercial-use terms rather than guaranteeing free commercial audio rights.
+
+Run npm test, test:typecast-settings-browser, test:typecast-voice-browser, existing
+voice and production-changes browser suites plus direct API/key retention/layout/
+speech regressions. Use synthetic keys and intercepted providers. Verify actual
+binary audio/PCM, preview/Apply, distinct display/spoken scripts, partial timing,
+budget accounting once, credential-free backups and mobile. Keep real short video
+exports sequential and distinguish mocked feature checks from live speech quality.
 
 ## Architecture
 

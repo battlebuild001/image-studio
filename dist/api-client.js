@@ -1,5 +1,6 @@
 import {getDirectSettings, handlesDirectPath, directApiFetch} from './direct-openai.js';
 import {beginProductionBudgetRequest} from './production-budget.js';
+import {getTypecastSettings, handlesTypecastPath, directTypecastApiFetch, validateTypecastApiRequest} from './direct-typecast.js';
 
 const BASE_KEY = 'bth-studio-api-base-v1';
 const TOKEN_KEY = 'bth-studio-api-token-v1';
@@ -14,6 +15,7 @@ const ROUTES = new Set([
 const PROVIDER_HOSTS = new Set([
   'api.openai.com', 'api.anthropic.com', 'generativelanguage.googleapis.com',
   'naveropenapi.apigw.ntruss.com', 'models.github.ai',
+  'api.typecast.ai',
 ]);
 
 export class ApiConnectionError extends Error {
@@ -52,7 +54,7 @@ function storageError() {return new ApiConnectionError('storage', '이 브라우
 function invalidSavedSettings() {return new ApiConnectionError('saved-settings', '저장된 AI 서버 연결 설정을 확인하지 못했어요. ‘AI 서버 연결’에서 다시 연결하거나 해제해 주세요.');}
 
 /** Injectable storage/fetch keeps tests offline and credentials out of project state. */
-export function createApiClient({localStorage = browserStorage('localStorage'), sessionStorage = browserStorage('sessionStorage'), fetchImpl = (...args) => globalThis.fetch(...args), directClient = null, budgetGuard = beginProductionBudgetRequest, dispatchChange = () => {
+export function createApiClient({localStorage = browserStorage('localStorage'), sessionStorage = browserStorage('sessionStorage'), fetchImpl = (...args) => globalThis.fetch(...args), directClient = null, voiceClient = null, budgetGuard = beginProductionBudgetRequest, dispatchChange = () => {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('studio-api-settings-change'));
 }} = {}) {
   function readSettings() {
@@ -113,7 +115,7 @@ export function createApiClient({localStorage = browserStorage('localStorage'), 
   async function fetchWithSettings(path, settings, options = {}) {
     if (typeof path !== 'string' || !ROUTES.has(path)) throw new ApiConnectionError('invalid-path', '허용되지 않은 AI 서버 요청 주소예요.');
     const headers = new Headers(options.headers);
-    if (headers.has('Authorization') || headers.has('Proxy-Authorization')) throw new ApiConnectionError('request-credential', 'AI 서버 인증은 저장된 앱 접속코드만 사용할 수 있어요.');
+    if (headers.has('Authorization') || headers.has('Proxy-Authorization') || headers.has('X-API-KEY')) throw new ApiConnectionError('request-credential', 'AI 서버 인증은 저장된 앱 접속코드만 사용할 수 있어요.');
     if (settings.baseUrl && settings.accessToken) headers.set('Authorization', `Bearer ${settings.accessToken}`);
     try {
       return await fetchImpl(settings.baseUrl + path, {...options, headers, redirect: 'error', credentials: settings.baseUrl ? 'omit' : 'same-origin'});
@@ -125,21 +127,23 @@ export function createApiClient({localStorage = browserStorage('localStorage'), 
   const apiFetch = async (path, options = {}) => {
     if (typeof path !== 'string' || !ROUTES.has(path)) throw new ApiConnectionError('invalid-path', '허용되지 않은 AI 요청 주소예요.');
     const headers = new Headers(options.headers);
-    if (headers.has('Authorization') || headers.has('Proxy-Authorization')) throw new ApiConnectionError('request-credential', 'API 인증은 설정에 입력한 키나 접속코드만 사용할 수 있어요.');
-    const direct = directClient?.getSettings().enabled && directClient.handles(path);
+    if (headers.has('Authorization') || headers.has('Proxy-Authorization') || headers.has('X-API-KEY')) throw new ApiConnectionError('request-credential', 'API 인증은 설정에 입력한 키나 접속코드만 사용할 수 있어요.');
+    const voice = ['/api/voice/config', '/api/voice/generate'].includes(path) && voiceClient?.getSettings().enabled && voiceClient.handles(path);
+    const direct = !voice && directClient?.getSettings().enabled && directClient.handles(path);
     // Validate stored backend settings before reserving a paid estimate. Neither
     // key checks nor explicit server-configuration checks use this paid path.
-    const settings = direct ? null : readSettings();
+    const settings = voice || direct ? null : readSettings();
+    if (voice) await voiceClient.validate?.(path, options);
     const reservation = budgetGuard ? await budgetGuard(path, options) : null;
     try {
-      const response = await (direct ? directClient.fetch(path, options) : fetchWithSettings(path, settings, options));
+      const response = await (voice ? voiceClient.fetch(path, options) : direct ? directClient.fetch(path, options) : fetchWithSettings(path, settings, options));
       try {reservation?.finish(response.ok ? 'completed' : 'uncertain');} catch {}return response;
     } catch (error) {try {reservation?.finish('uncertain');} catch {}throw error;}
   };
   const candidateApiFetch = async (path, settings, options = {}) => {
     if (typeof path !== 'string' || !ROUTES.has(path)) throw new ApiConnectionError('invalid-path', '허용되지 않은 AI 서버 요청 주소예요.');
     const next = candidateSettings(settings), headers = new Headers(options.headers);
-    if (headers.has('Authorization') || headers.has('Proxy-Authorization')) throw new ApiConnectionError('request-credential', 'AI 서버 인증은 저장된 앱 접속코드만 사용할 수 있어요.');
+    if (headers.has('Authorization') || headers.has('Proxy-Authorization') || headers.has('X-API-KEY')) throw new ApiConnectionError('request-credential', 'AI 서버 인증은 저장된 앱 접속코드만 사용할 수 있어요.');
     const reservation = budgetGuard ? await budgetGuard(path, options) : null;
     try {const response = await fetchWithSettings(path, next, options);try {reservation?.finish(response.ok ? 'completed' : 'uncertain');} catch {}return response;}
     catch (error) {try {reservation?.finish('uncertain');} catch {}throw error;}
@@ -147,7 +151,7 @@ export function createApiClient({localStorage = browserStorage('localStorage'), 
   return {apiFetch, candidateApiFetch, getApiSettings, setApiSettings, clearApiSettings};
 }
 
-const client = createApiClient({directClient: {getSettings: getDirectSettings, handles: handlesDirectPath, fetch: directApiFetch}});
+const client = createApiClient({directClient: {getSettings: getDirectSettings, handles: handlesDirectPath, fetch: directApiFetch}, voiceClient: {getSettings: getTypecastSettings, handles: handlesTypecastPath, fetch: directTypecastApiFetch, validate: validateTypecastApiRequest}});
 export const apiFetch = (path, options) => client.apiFetch(path, options);
 export const candidateApiFetch = (path, settings, options) => client.candidateApiFetch(path, settings, options);
 export const getApiSettings = () => client.getApiSettings();
