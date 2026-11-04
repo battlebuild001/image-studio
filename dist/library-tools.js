@@ -1,5 +1,5 @@
 import {createOperationStatus, nextPaint} from './operation-status.js';
-import {renderTitleDesign, selectTitleBackdrop} from './title-design.js';
+import {renderTitleDesign, selectTitleBackdrop, normalizeTitleOverline} from './title-design.js';
 import {
   createId, createScene, getTimeline, saveLibraryProject, listLibraryProjects,
   loadLibraryProject, deleteLibraryProject,
@@ -61,7 +61,8 @@ function storedPresets() {
     if (!Array.isArray(entries)) return [];
     return entries.filter(value => value && typeof value.name === 'string' && value.name.length <= 50 &&
       ['intro', 'chapter', 'outro'].includes(value.style) && typeof value.title === 'string' && value.title.length <= 120 &&
-      typeof value.subtitle === 'string' && value.subtitle.length <= 200 && /^#[0-9a-f]{6}$/i.test(value.color)).slice(0, LIMIT);
+      typeof value.subtitle === 'string' && value.subtitle.length <= 200 && /^#[0-9a-f]{6}$/i.test(value.color) &&
+      (value.overline === undefined || (typeof value.overline === 'string' && Array.from(value.overline).length <= 80 && !/[\u0000-\u001f\u007f]/u.test(value.overline)))).slice(0, LIMIT);
   } catch { return []; }
 }
 function writePresets(entries) {
@@ -222,11 +223,12 @@ export function setupLibraryTools(api) {
   const position = selectField('templatePosition', '추가 위치', [['start', '영상 맨 앞'], ['end', '영상 맨 뒤']]);
   const title = field('templateTitle', '제목'); title.input.maxLength = 120;
   const subtitle = field('templateSubtitle', '보조 문구'); subtitle.input.maxLength = 200;
+  const overline = field('templateOverline', '상단 작은 문구'); overline.input.maxLength = 80; overline.input.value = 'PROLOGUE'; overline.input.placeholder = '빈칸으로 두면 숨겨요';
   const color = field('templateColor', '강조 색상', 'color'); color.input.value = '#dfbb84';
   const duration = field('templateDuration', '표시 시간 (초)', 'number'); duration.input.min = '0.25'; duration.input.max = '600'; duration.input.step = '0.25'; duration.input.value = '4';
   const logoField = field('templateLogo', '로고 이미지 (선택)', 'file'); logoField.input.accept = 'image/png,image/jpeg,image/webp,image/svg+xml';
   const logoClear = button('clearTemplateLogoBtn', '로고 빼기', 'ghost small'); logoClear.disabled = true; logoField.wrapper.append(logoClear);
-  grid.append(style.wrapper, position.wrapper, title.wrapper, subtitle.wrapper, color.wrapper, duration.wrapper, logoField.wrapper);
+  grid.append(style.wrapper, position.wrapper, overline.wrapper, title.wrapper, subtitle.wrapper, color.wrapper, duration.wrapper, logoField.wrapper);
   templates.body.append(grid);
   const backgroundControl = node('label', 'template-background-control'), background = node('input');
   background.type = 'checkbox'; background.id = 'templateImageBackground'; background.checked = true;
@@ -245,16 +247,17 @@ export function setupLibraryTools(api) {
   const footer = node('div', 'dialog-footer');
   const cancel = button('cancelTemplateBtn', '취소', 'ghost'); cancel.addEventListener('click', () => templates.dialog.close());
   const insert = button('insertTemplateBtn', '장면 추가', 'primary'); footer.append(cancel, insert); templates.dialog.append(footer);
-  let durationEdited = false, suggestedTitle = '';
+  let durationEdited = false, suggestedTitle = '', overlineEdited = false;
   const defaultTitle = () => style.input.value === 'outro' ? '시청해 주셔서 감사합니다' : api.getProject().title.slice(0, 120);
   function updateSuggestedTitle() {
     if (!title.input.value || title.input.value === suggestedTitle) {suggestedTitle = defaultTitle(); title.input.value = suggestedTitle;}
   }
   function updateDefaultDuration() {if (!durationEdited) duration.input.value = style.input.value === 'outro' ? '10' : '4';}
+  function updateDefaultOverline() {if (!overlineEdited) overline.input.value = normalizeTitleOverline(undefined, style.input.value);}
   duration.input.addEventListener('input', () => {durationEdited = true;});
   duration.input.addEventListener('change', () => {durationEdited = true;});
   function currentTemplate() {
-    return {style: style.input.value, title: title.input.value, subtitle: subtitle.input.value, color: color.input.value};
+    return {style: style.input.value, title: title.input.value, subtitle: subtitle.input.value, overline: normalizeTitleOverline(overline.input.value, style.input.value), color: color.input.value};
   }
   function renderPresets() {
     const selected = presetSelect.input.value;
@@ -269,7 +272,7 @@ export function setupLibraryTools(api) {
   function paintTemplate() {
     const project = api.getProject(), portrait = project.aspect === '9:16';
     preview.width = portrait ? 720 : 1280; preview.height = portrait ? 1280 : 720;
-    renderTitleDesign(preview, {kind: style.input.value, title: title.input.value, subtitle: subtitle.input.value,
+    renderTitleDesign(preview, {kind: style.input.value, title: title.input.value, subtitle: subtitle.input.value, overline: overline.input.value,
       channelName: project.production?.channel?.name || '', color: color.input.value || '#dfbb84',
       backgroundImage: background.checked ? selectTitleBackdrop(api, style.input.value) : null, logo});
   }
@@ -291,8 +294,9 @@ export function setupLibraryTools(api) {
       } catch { URL.revokeObjectURL(url); throw new Error('로고 이미지를 읽지 못했어요. PNG·JPG·WebP 파일로 다시 넣어주세요.'); }
     }, '로고 이미지를 불러왔어요.');
   }));
-  for (const input of [title.input, subtitle.input, style.input, color.input]) input.addEventListener('input', () => {
-    if (input === style.input) {position.input.value = style.input.value === 'outro' ? 'end' : 'start'; updateSuggestedTitle(); updateDefaultDuration();}
+  for (const input of [title.input, subtitle.input, style.input, color.input, overline.input]) input.addEventListener('input', () => {
+    if (input === overline.input) overlineEdited = true;
+    if (input === style.input) {position.input.value = style.input.value === 'outro' ? 'end' : 'start'; updateSuggestedTitle(); updateDefaultDuration(); updateDefaultOverline();}
     paintTemplate();
   });
   background.addEventListener('change', paintTemplate);
@@ -301,6 +305,7 @@ export function setupLibraryTools(api) {
     deletePreset.disabled = !preset;
     if (!preset) return;
     style.input.value = preset.style; title.input.value = preset.title; subtitle.input.value = preset.subtitle; color.input.value = preset.color; presetName.input.value = preset.name;
+    overline.input.value = normalizeTitleOverline(preset.overline, preset.style); overlineEdited = preset.overline !== undefined;
     suggestedTitle = ''; position.input.value = preset.style === 'outro' ? 'end' : 'start'; updateDefaultDuration(); paintTemplate();
   });
   savePreset.addEventListener('click', run(() => {
@@ -321,7 +326,7 @@ export function setupLibraryTools(api) {
   }));
   templatesBtn.addEventListener('click', run(async () => {
     api.pause();
-    updateSuggestedTitle(); updateDefaultDuration();
+    updateSuggestedTitle(); updateDefaultDuration(); updateDefaultOverline();
     if (templateBusy) return;
     templateBusy = true; insert.disabled = true; templates.dialog.showModal();
     try { await tracked(templateProgress, '제목 화면의 글꼴과 미리보기를 준비하고 있어요', async () => {

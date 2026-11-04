@@ -50,6 +50,60 @@ test('missing granted scope, denied grant and empty/ambiguous channels never yie
   }
 });
 
+test('channel connection distinguishes legacy API-disabled and Google ErrorInfo scope reasons without echoing provider data', async()=>{
+  for(const [body,code,reason,action]of[
+    [{error:{message:TOKEN,errors:[{reason:'accessNotConfigured',message:TOKEN}]}},'YOUTUBE_API_DISABLED','accessNotConfigured',/같은 Google Cloud 프로젝트/u],
+    [{error:{message:TOKEN,details:[{'@type':'type.googleapis.com/google.rpc.ErrorInfo',reason:'SERVICE_DISABLED',metadata:{consumer:TOKEN,service:'youtube.googleapis.com'}}]}},'YOUTUBE_API_DISABLED','SERVICE_DISABLED',/사용 설정/u],
+    [{error:{errors:[{reason:'unrecognized',message:TOKEN},{reason:'insufficientPermissions'}]}},'YOUTUBE_SCOPE_REQUIRED','insufficientPermissions',/모두 허용/u],
+    [{error:{details:[{reason:'ACCESS_TOKEN_SCOPE_INSUFFICIENT',metadata:{secret:TOKEN}}]}},'YOUTUBE_SCOPE_REQUIRED','ACCESS_TOKEN_SCOPE_INSUFFICIENT',/모두 허용/u],
+  ]){
+    let calls=0;const h=harness({fetchImpl:async()=>{calls++;return reply(body,403);}});
+    await assert.rejects(h.client.connect(),cause=>{
+      assert.equal(cause.code,code);assert.equal(cause.reason,reason);assert.equal(cause.phase,'channel');assert.equal(cause.status,403);assert.match(cause.message,/채널 확인 중/u);assert.match(cause.message,action);assert.equal(JSON.stringify(cause).includes(TOKEN),false);assert.equal(cause.message.includes(TOKEN),false);return true;
+    });
+    assert.equal(calls,1);assert.equal(h.client.getSession().connected,false);assert.equal(h.client.getUploadState().available,false);h.client.dispose();
+  }
+});
+
+test('known upload refusal reasons identify quota, frequency, channel and account actions with exactly one initialization', async()=>{
+  const cases=[
+    ['serviceDisabled','YOUTUBE_API_DISABLED',/사용 설정/u],
+    ['quotaExceeded','YOUTUBE_QUOTA',/할당량/u],['dailyLimitExceeded','YOUTUBE_QUOTA',/다시 로그인해도/u],['dailyLimitExceededUnreg','YOUTUBE_QUOTA',/할당량/u],
+    ['userRateLimitExceeded','YOUTUBE_RATE_LIMIT',/요청 빈도/u],['rateLimitExceeded','YOUTUBE_RATE_LIMIT',/요청 빈도/u],['RATE_LIMIT_EXCEEDED','YOUTUBE_RATE_LIMIT',/요청 빈도/u],
+    ['uploadLimitExceeded','YOUTUBE_UPLOAD_LIMIT',/채널 업로드 제한/u],
+    ['youtubeSignupRequired','YOUTUBE_CHANNEL_REQUIRED',/채널을 만들거나/u],['channelNotFound','YOUTUBE_CHANNEL_REQUIRED',/채널을 만들거나/u],
+    ['channelClosed','YOUTUBE_ACCOUNT_RESTRICTED',/채널 상태/u],['channelSuspended','YOUTUBE_ACCOUNT_RESTRICTED',/채널 상태/u],['authenticatedUserAccountClosed','YOUTUBE_ACCOUNT_RESTRICTED',/관리 권한/u],['authenticatedUserAccountSuspended','YOUTUBE_ACCOUNT_RESTRICTED',/관리 권한/u],['accountDelegationForbidden','YOUTUBE_ACCOUNT_RESTRICTED',/위임/u],
+  ];
+  for(const[reason,code,action]of cases){
+    const h=harness({handler:async()=>reply({error:{errors:[{reason,message:TOKEN}],message:TOKEN}},403)});await h.client.connect();
+    await assert.rejects(h.client.uploadVideo({blob:bytes(4),metadata}),cause=>{assert.equal(cause.code,code);assert.equal(cause.reason,reason);assert.equal(cause.phase,'upload');assert.match(cause.message,/업로드 요청 중/u);assert.match(cause.message,action);assert.equal(cause.message.includes(TOKEN),false);return true;});
+    assert.equal(h.calls.filter(call=>call.method==='POST').length,1);assert.equal(h.calls.filter(call=>call.method==='PUT').length,0);assert.equal(h.client.getUploadState().available,false);assert.equal(JSON.stringify(h.events).includes(TOKEN),false);h.client.dispose();
+  }
+});
+
+test('unspecified403 remains an honest unknown and never reflects arbitrary reason/message or upload-session addresses',async()=>{
+  for(const reason of['forbidden',`<script>${TOKEN}</script>`,LOCATION]){
+    const h=harness({handler:async()=>reply({error:{message:`Bearer ${TOKEN} ${LOCATION}`,errors:[{reason,message:TOKEN}],details:[{reason:`${TOKEN}\nsecret`,metadata:{token:TOKEN}}]}},403)});await h.client.connect();
+    await assert.rejects(h.client.uploadVideo({blob:bytes(4),metadata}),cause=>{assert.equal(cause.code,'YOUTUBE_PERMISSION');assert.match(cause.message,/원인인지 확정할 수 없어요/u);assert.equal(cause.reason,reason==='forbidden'?'forbidden':undefined);assert.equal(cause.message.includes(TOKEN),false);assert.equal(cause.message.includes(LOCATION),false);assert.equal(cause.message.includes('<script>'),false);return true;});
+    assert.equal(h.calls.filter(call=>call.method==='POST').length,1);h.client.dispose();
+  }
+});
+
+test('OAuth denial provides conditional testing-user guidance without mistaking it for an upload or exposing descriptions',async()=>{
+  const h=harness({grantResponse:{error:'access_denied',error_description:`${TOKEN} ${LOCATION}`}});
+  await assert.rejects(h.client.connect(),cause=>{assert.equal(cause.code,'YOUTUBE_OAUTH_DENIED');assert.equal(cause.reason,'access_denied');assert.equal(cause.phase,'oauth');assert.match(cause.message,/테스트 상태라면/u);assert.match(cause.message,/테스트 사용자/u);assert.equal(cause.message.includes(TOKEN),false);assert.equal(cause.message.includes(LOCATION),false);return true;});
+  assert.equal(h.calls.length,0);assert.equal(h.client.getSession().connected,false);h.client.dispose();
+});
+
+test('classified403 during media send and explicit resume retains the same uncertain session with no newPOST or automatic retry',async()=>{
+  const h=harness({handler:async(_url,input)=>input.method==='POST'?initialized():reply({error:{errors:[{reason:'insufficientPermissions'}]}},403)});await h.client.connect();
+  await assert.rejects(h.client.uploadVideo({blob:bytes(4),metadata}),{code:'YOUTUBE_SCOPE_REQUIRED',reason:'insufficientPermissions'});
+  assert.equal(h.client.getUploadState().available,true);assert.equal(h.client.getUploadState().uncertain,true);
+  await assert.rejects(h.client.uploadVideo({blob:bytes(4),metadata}),{code:'YOUTUBE_UPLOAD_PENDING'});
+  await assert.rejects(h.client.resumeUpload(),{code:'YOUTUBE_SCOPE_REQUIRED',reason:'insufficientPermissions'});
+  assert.equal(h.calls.filter(call=>call.method==='POST').length,1);assert.equal(h.calls.filter(call=>call.method==='PUT').length,2);assert.equal(h.calls.at(-1).url,LOCATION);assert.equal(h.calls.at(-1).headers['Content-Range'],'bytes */4');h.client.dispose();
+});
+
 test('actual Blob chunks, Content-Range acknowledgements, metadata and final server privacy are preserved', async () => {
   const progress = [], blob = bytes(UNIT * 2 + 19), h = harness({handler: async (url, input) => {
     if (input.method === 'POST') {const body = JSON.parse(input.body);assert.deepEqual(body.snippet.tags, metadata.tags);assert.equal(body.snippet.description, metadata.description);assert.equal(body.status.privacyStatus, 'unlisted');assert.equal(body.status.selfDeclaredMadeForKids, false);assert.equal(body.status.containsSyntheticMedia, true);assert.equal(input.headers['Content-Length'], undefined);assert.equal(input.headers['X-Upload-Content-Length'], String(blob.size));assert.equal(input.headers['X-Upload-Content-Type'], 'video/webm');return initialized();}

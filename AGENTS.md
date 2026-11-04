@@ -102,6 +102,10 @@ correct dialog; never put delivery tools back inside project settings.
   `dist/production-channels.js` and `outro-design.js` provide explicit preview,
   PNG download and append as a real10-second image scene. Interactive YouTube end
   screens still require separate YouTube Studio configuration.
+  Optional `overline` is user-editable as 상단 작은 문구, <=80Unicode characters.
+  Missing legacy values retain the kind's PROLOGUE/CHAPTER/EPILOGUE default; an
+  explicit empty value hides both label and accent rule. Persist the distinction
+  in channel/generic template presets and match preview/PNG/scene pixels.
 - `dist/production-shorts.js` and `short-series-protocol.js` preserve traditional
   쇼츠형식 30/60-second highlights and add 드라마형식 covering the entire original
   source chronologically. Review natural caption/scene boundaries, soft targets
@@ -119,6 +123,11 @@ correct dialog; never put delivery tools back inside project settings.
   and block editing during the queue. No hidden Google calls or playlist scopes.
 - `dist/production-publishing.js` and `production-delivery-utils.js` create real
   PNG/ZIP materials; users can import those drafts into the separate upload form.
+  Preserve optional publishing.thumbnail version1 items: <=3 unique candidate
+  indices, independent title<=120, overlay/split/band and top/center/bottom.
+  Missing metadata must retain exact legacy rendering. Local edits persist without
+  hydrating over unsaved publishing fields; preview/individual PNG/ZIP use the same
+  edited Canvas and survive reload/portable backups. Never charge for layout edits.
 
 `dist/media-search-protocol.js`, `media-search-client.js`, `reference-media.js` and
 `music-recommendations.js` use actual Wikimedia Commons public catalog metadata
@@ -132,6 +141,11 @@ instrument/tempo directions, not invented real tracks. Search actual audio, play
 only on explicit preview, apply only the chosen verified file as BGM, and retain
 source attribution in project state/backups with copy controls. Empty results must
 remain honest; search/recommendation must not replace existing media automatically.
+Music card search must immediately focus/reveal loading, elapsed time, cancellation
+and results before recommendation cards. Distinguish empty results from errors.
+Broaden read-only catalog queries only after zero matches, <=3queries total per
+recommendation; never retry network/provider errors or trigger paid regeneration.
+Retain the existing BGM until explicit user selection and Apply.
 
 Run npm test and the six test:production-*-browser scripts after suite changes.
 Browser suites use synthetic media and mocked providers, with actual IndexedDB,
@@ -161,6 +175,12 @@ publish user media as a regression check or claim authenticated upload success.
   fetch redirects disabled, bounded response-body timeouts and abort cleanup.
   Use confirmed308Range acknowledgements and explicit same-session status probes.
   Never initialize another upload automatically after ambiguous final responses.
+  Classify bounded allowlisted legacy Google reasons and ErrorInfo.details into
+  disabled API, insufficient scopes, quota/frequency/upload limits and missing or
+  restricted channels/accounts. Distinguish OAuth denial and channel lookup from
+  actual upload failure; unknown403 must stay uncertain. Never reflect raw Google
+  messages/metadata, tokens or resumable URLs into UI/project data, nor add scopes,
+  retries or new POSTs to diagnose an error.
 - `dist/youtube-studio.js` / `.css`: Korean upload form, connected destination,
   file/current-export selection, publishing metadata import, progress and resume,
   one-shot automatic upload arming and project-scoped receipts. Auto arming is
@@ -168,6 +188,10 @@ publish user media as a regression check or claim authenticated upload success.
   closing the setup dialog; cancel on content/project/workspace/channel changes.
   Root delivers an actual exported Blob only after exportController is cleared.
   Closing active upload cancels transmission, not remote video deletion.
+  Clear stale SDK-readiness/success on the next attempt and show connection errors
+  beside connection controls. SDK preparation is not an authenticated channel.
+  Use test:youtube-diagnostics-browser with intercepted responses; never claim
+  those tests proved actual Google authorization or successful public posting.
 - `dist/upload-metadata.js`: explicit separate title/description AI actions based
   on actual project display script, timed scenes/cues and research sources. Update
   only the clicked field and preserve manual siblings/tags/privacy. External files
@@ -175,6 +199,12 @@ publish user media as a regression check or claim authenticated upload success.
   Validate100 Unicode title/5000UTF8 description limits and only supplied source
   URLs. Settings/source/workspace changes and cancellation reject late responses;
   opening the dialog must never incur a paid request.
+  Both publishing and upload-description AI produce only factual video content
+  summaries. `video-description.js` cleans known generated wrappers at the AI
+  boundary; retain mixed factual content or reject ambiguous output, never silently
+  delete story facts. Do not clean saved/manual text on load/edit. Summary-only
+  regeneration preserves titles/chapters/tags/thumbnail edits; YouTube handoff
+  copies the exact description without auto-appending separate chapter lists.
 - `dist/youtube-storage.js`: atomic receipt cleanup across saved current projects,
   workspace projects and library records. Preserve draft text/media/timestamps.
   Root serializes saves and clears live Undo/Redo copies as well. Disconnect
@@ -186,6 +216,9 @@ publish user media as a regression check or claim authenticated upload success.
   Keep its claims aligned with code. Do not add a clientsecret input or backend
   requirement. Google JavaScript origin is https://battlebuild001.github.io,
   without /image-studio/; the OAuth Client ID is supplied by the user in-app.
+  Preserve the static google-site-verification homepage meta and privacy link.
+  Search Console Verify requires the OAuth project's Owner/Editor account; URL-prefix
+  proof is not full OAuth branding approval, and a public meta alone is not live verification.
 
 Run npm test and test:youtube-browser. Cover OAuth grants/expiry/popup abort,
 exact metadata and actual Blob chunks, interruption/probe/no duplicate uploads,

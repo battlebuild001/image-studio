@@ -57,15 +57,15 @@ test('upload receipts derive a fixed video URL, canonicalize real timestamps and
   for(const patch of [{videoId:'short'},{videoId:12345678901},{channelId:'UCshort'},{videoUrl:'https://evil.test/watch?v=synthetic01'},{videoUrl:'https://www.youtube.com/watch?v=other000001'},{uploadedAt:'2026-02-30T00:00:00.000Z'},{uploadedAt:'yesterday'},{bytes:0},{bytes:NaN},{bytes:YOUTUBE_MAX_VIDEO_BYTES+1},{fileName:'../private.webm'},{title:'<invalid>'},{accessToken:'never-store'},{uploadUrl:'https://www.googleapis.com/session'}])assert.throws(()=>normalizeYouTubeUploadRecord(receipt(patch)));
 });
 
-test('publishing import preserves real description, tags and chapter times and never copies the full script',()=>{
+test('publishing import preserves manual description and tags verbatim without appending separate chapter times or the full script',()=>{
   const source=project();source.scriptDraft={draftScript:'사용자가 공개하기로 하지 않은 긴 원본 대본'};source.production={publishing:{selectedTitle:1,result:{titles:['첫 후보','선택한 영상 제목'],description:'  사용자가 검토한 설명입니다.  ',tags:['세계관','우주'],chapters:[{start:0,title:'도입'},{start:65.7,title:'항해'},{start:3601,title:'정착'}]}}};
   const before=structuredClone(source),value=publishingToYouTubeMetadata(source);
-  assert.equal(value.title,'선택한 영상 제목');assert.equal(value.description,'  사용자가 검토한 설명입니다.  \n\n챕터\n00:00 도입\n01:05 항해\n01:00:01 정착');assert.deepEqual(value.tags,['세계관','우주']);assert.equal(value.description.includes(source.scriptDraft.draftScript),false);assert.deepEqual(source,before);
+  assert.equal(value.title,'선택한 영상 제목');assert.equal(value.description,'  사용자가 검토한 설명입니다.  ');assert.deepEqual(value.tags,['세계관','우주']);assert.equal(value.description.includes(source.scriptDraft.draftScript),false);assert.deepEqual(source,before);assert.deepEqual(source.production.publishing.result.chapters,before.production.publishing.result.chapters);
   const noKit=publishingToYouTubeMetadata(project());assert.equal(noKit.title,'영상 제목');assert.equal(noKit.description,'');assert.equal(noKit.privacyStatus,'private');
 });
 
 test('oversized publishing imports fail without truncating the source or current draft',()=>{
-  const source=project();source.production={publishing:{selectedTitle:0,result:{titles:['올릴 제목'],description:'한'.repeat(1660),tags:[],chapters:[{start:0,title:'긴 챕터 설명입니다.'}]}}};const before=structuredClone(source);
+  const source=project();source.production={publishing:{selectedTitle:0,result:{titles:['올릴 제목'],description:'한'.repeat(1667),tags:[],chapters:[{start:0,title:'긴 챕터 설명입니다.'}]}}};const before=structuredClone(source);
   assert.throws(()=>publishingToYouTubeMetadata(source),/5,000바이트/);assert.deepEqual(source,before);
   source.production.publishing.result.description='짧은 설명';source.production.publishing.result.titles=['가'.repeat(101)];assert.throws(()=>publishingToYouTubeMetadata(source),/100/);
 });

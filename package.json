@@ -57,7 +57,12 @@
     "test:outro-export-browser": "node tests/outro-export.browser.cjs",
     "test:upload-series-guards-browser": "node tests/upload-series-guards.browser.cjs",
     "test:library-title-design-browser": "node tests/library-title-design.browser.cjs",
-    "test:voice-search-browser": "node tests/voice-search.browser.cjs"
+    "test:voice-search-browser": "node tests/voice-search.browser.cjs",
+    "test:music-card-search-browser": "node tests/music-card-search.browser.cjs",
+    "test:youtube-diagnostics-browser": "node tests/youtube-diagnostics.browser.cjs",
+    "test:title-overline-browser": "node tests/title-overline.browser.cjs",
+    "test:video-description-browser": "node tests/video-description.browser.cjs",
+    "test:thumbnail-layout-browser": "node tests/thumbnail-layout.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

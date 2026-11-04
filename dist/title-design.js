@@ -4,6 +4,11 @@ const FONT='"Noto Sans KR","Malgun Gothic",system-ui,sans-serif';
 const TITLE_IMAGE=/(?:^(?:인트로|아웃트로|챕터)[-· ]|-(?:intro|outro|chapter)\.png$|^(?:intro|outro|chapter)[-_.])/iu;
 export const TITLE_DESIGN_VERSION=2;
 export const TITLE_ACCENT='#c8dfc7';
+export function normalizeTitleOverline(value,kind='intro'){
+ if(value===undefined)return kind==='outro'?'EPILOGUE':kind==='chapter'?'CHAPTER':'PROLOGUE';
+ if(typeof value!=='string'||Array.from(value).length>80||/[\u0000-\u001f\u007f]/u.test(value))throw new Error('상단 작은 문구는 제어 문자 없이 80자까지 입력해 주세요.');
+ return value.trim();
+}
 
 export function selectTitleBackdrop(api,kind='intro'){
  const project=api.getProject(),assets=api.getAssets?.();if(!assets?.get)return null;
@@ -30,10 +35,10 @@ function background(ctx,image,w,h,portrait,kind){
 }
 
 /** Draw a complete image scene. Leave the bottom 9% clear for the AI notice. */
-export function renderTitleDesign(canvas,{kind='intro',title='',subtitle='',channelName='',color=TITLE_ACCENT,backgroundImage=null,logo=null}={}){
+export function renderTitleDesign(canvas,{kind='intro',title='',subtitle='',channelName='',color=TITLE_ACCENT,backgroundImage=null,logo=null,overline}={}){
  const width=canvas.width,height=canvas.height,ctx=canvas.getContext('2d');if(!ctx||width<320||height<240)throw new Error('제목 화면의 크기를 확인해 주세요.');if(!['intro','chapter','outro'].includes(kind))throw new Error('제목 화면의 종류를 확인해 주세요.');
  const portrait=height>width,w=portrait?720:1280,h=portrait?1280:720,safeX=portrait?64:82;
- const accent=/^#[a-f\d]{6}$/iu.test(color)?color:TITLE_ACCENT;
+ const accent=/^#[a-f\d]{6}$/iu.test(color)?color:TITLE_ACCENT,label=normalizeTitleOverline(overline,kind);
  const main=String(title|| (kind==='outro'?'다음 이야기에서 만나요.':kind==='chapter'?'새로운 이야기':'이야기의 시작')).slice(0,600),sub=String(subtitle||'').slice(0,1200),channel=String(channelName||'').slice(0,240);
  ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,width,height);ctx.scale(width/w,height/h);background(ctx,backgroundImage,w,h,portrait,kind);
  let channelX=safeX;
@@ -45,9 +50,11 @@ export function renderTitleDesign(canvas,{kind='intro',title='',subtitle='',chan
  const titleBottom=portrait?(kind==='outro'?894:877):(kind==='outro'?500:512);
  const titleY=Math.max(portrait?390:212,titleBottom-heading.height);
  // The overline identifies the beat rather than repeating a second headline.
- const overline=kind==='outro'?'EPILOGUE':kind==='chapter'?'CHAPTER':'PROLOGUE';
- ctx.fillStyle=accent;ctx.fillRect(safeX,titleY-(portrait?52:42),portrait?32:28,2);
- ctx.font=`600 ${portrait?15:13}px ${FONT}`;ctx.textBaseline='top';ctx.textAlign='left';ctx.fillText(overline,safeX+(portrait?49:44),titleY-(portrait?58:48));
+ if(label){
+  ctx.fillStyle=accent;ctx.fillRect(safeX,titleY-(portrait?52:42),portrait?32:28,2);
+  const overlineBlock=fit(ctx,label,{w:w-safeX*2-(portrait?49:44),h:portrait?21:18,size:portrait?15:13,min:10,weight:600,leading:1.15});
+  drawText(ctx,overlineBlock,safeX+(portrait?49:44),titleY-(portrait?58:48),accent);
+ }
  drawText(ctx,heading,safeX,titleY);
  if(sub){const subBox=fit(ctx,sub,{w:portrait?availableW:Math.min(830,availableW),h:portrait?146:100,size:portrait?25:24,min:17,weight:400,leading:1.45});drawText(ctx,subBox,safeX,titleBottom+(portrait?38:32),'#d0d2cf');}
  const bottomY=portrait?1128:635;

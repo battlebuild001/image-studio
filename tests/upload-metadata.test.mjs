@@ -23,10 +23,11 @@ test('title and description are separate exact JSON tasks with real YouTube Unic
  assert.throws(()=>parse('upload-description',{description:'<html>본문</html>'}));
  for(const task of ['upload-title','upload-description']){const payload=buildProductionAssistantRequest(request(task));assert.equal(payload.text.format.strict,true);assert.deepEqual(Object.keys(payload.text.format.schema.properties),[task==='upload-title'?'title':'description']);assert.equal(payload.tools,undefined);assert.match(payload.instructions,/영상/);}
 });
-test('description uses only actual supplied source links and preserves readable Korean lines',()=>{
+test('generated description remains a plain content summary even when real source links and timed scenes are provided',()=>{
  const context={...buildUploadMetadataContext(project()),sources:[{title:'공식 설정',url:'https://example.org/%EC%84%A4%EC%A0%95'}]},input=request('upload-description',context);
- assert.equal(parse('upload-description',{description:'영상 소개입니다.\n\n출처: https://example.org/설정'},input).description,'영상 소개입니다.\n\n출처: https://example.org/설정');
- assert.throws(()=>parse('upload-description',{description:'출처: https://invented.example/story'},input),/출처/);
+ assert.equal(parse('upload-description',{description:'요약\n개척자들은 새로운 행성으로 떠납니다.\n\n출처: https://example.org/설정\n\n챕터\n00:00 항해\n00:20 도시 건설\n\n#세계관 #우주'},input).description,'개척자들은 새로운 행성으로 떠납니다.');
+ assert.throws(()=>parse('upload-description',{description:'출처: https://invented.example/story'},input));
+ const payload=buildProductionAssistantRequest(input);assert.match(payload.instructions,/내용 요약만/u);assert.match(payload.instructions,/제목 반복/u);assert.match(payload.instructions,/챕터 목록·타임코드/u);assert.match(payload.instructions,/영상 제작 과정/u);
 });
 test('music recommendations are bounded style/query suggestions and never fabricated track assets',()=>{
  const recommendation={title:'차분한 우주 앰비언트',mood:'긴장감과 신비로움',style:'ambient',instruments:['신시사이저','현악기'],tempoBpm:null,searchQuery:'ambient cinematic instrumental',reason:'항해와 정착의 흐름을 방해하지 않는 편성입니다.'};
