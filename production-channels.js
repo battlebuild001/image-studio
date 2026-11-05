@@ -6,7 +6,7 @@ import {cloneProductionData} from './production-state.js';
 import {element, action, inputField, ensureProduction, clone, canvasBlob, taskScope, matchesScope} from './production-delivery-utils.js';
 
 const STORAGE_KEY='studio-channel-production-presets-v1';
-const SETTING_KEYS=['transition','subtitles','branding','aiImageNotice','aiImageNoticePosition','fontSize','bgmVolume','narrationVolume','captionFont','captionColor','captionBackground','captionOpacity','captionStroke','captionStrokeWidth','captionPosition','shortsSafeArea','bgmFadeIn','bgmFadeOut','ducking'];
+const SETTING_KEYS=['transition','introFadeIn','introFadeInDuration','subtitles','branding','aiImageNotice','aiImageNoticePosition','fontSize','bgmVolume','narrationVolume','captionFont','captionColor','captionBackground','captionOpacity','captionStroke','captionStrokeWidth','captionPosition','shortsSafeArea','bgmFadeIn','bgmFadeOut','ducking'];
 const IMAGE_KEYS=['background','style','negativePrompt','size','quality'];
 const plain=value=>value&&typeof value==='object'&&!Array.isArray(value);
 function text(value,max,label){if(typeof value!=='string'||Array.from(value).length>max)throw new Error(`${label}을 확인해 주세요.`);return value.replace(/\u0000/gu,'').trim();}

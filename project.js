@@ -59,6 +59,8 @@ export function createProject(overrides = {}) {
     ...overrides,
     settings: {
       transition: 0.4,
+      introFadeIn: false,
+      introFadeInDuration: 2,
       subtitles: true,
       branding: true,
       aiImageNotice: false,
@@ -447,6 +449,8 @@ export function validateProject(input) {
     ...(input.production === undefined || input.production === null ? {} : {production: normalizeProductionState(input.production)}),
     settings: {
       transition: finiteNumber(settings.transition, 0.4, 0, 3, '전환 시간'),
+      introFadeIn: booleanValue(settings.introFadeIn, false, '인트로 페이드인'),
+      introFadeInDuration: finiteNumber(settings.introFadeInDuration, 2, 0.5, 10, '인트로 페이드인 길이'),
       subtitles: settings.subtitles !== false,
       branding: settings.branding !== false,
       aiImageNotice: booleanValue(settings.aiImageNotice, false, 'AI 생성 이미지 안내'),

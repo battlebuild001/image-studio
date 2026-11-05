@@ -1,5 +1,6 @@
 import {createOperationStatus, nextPaint} from './operation-status.js';
 import {renderTitleDesign, selectTitleBackdrop, normalizeTitleOverline} from './title-design.js';
+import {drawLibraryThumbnail} from './engine.js';
 import {
   createId, createScene, getTimeline, saveLibraryProject, listLibraryProjects,
   loadLibraryProject, deleteLibraryProject,
@@ -132,7 +133,7 @@ export function setupLibraryTools(api) {
   async function thumbnail() {
     const source = api.getCanvas(), canvas = document.createElement('canvas');
     canvas.width = 240; canvas.height = api.getProject().aspect === '9:16' ? 426 : 135;
-    const ctx = canvas.getContext('2d'); ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+    drawLibraryThumbnail(canvas.getContext('2d'), source, api.getProject(), api.getAssets(), api.getCurrent());
     return canvas.toDataURL('image/png');
   }
   async function refreshShelf() {
