@@ -5,6 +5,7 @@ import {buildProductionAssistantRequest,parseProductionAssistantResponse} from '
 import {createProject,createScene,validateProject} from '../dist/project.js';
 import {publishingToYouTubeMetadata} from '../dist/youtube-protocol.js';
 const story='개척자들이 우주선을 타고 새로운 행성으로 떠납니다.\n\n도착한 행성에서는 도시를 건설하고 새로운 질서를 만듭니다.';
+const compactStory='개척자들이 우주선을 타고 새로운 행성으로 떠납니다. 도착한 행성에서는 도시를 건설하고 새로운 질서를 만듭니다.';
 const title='원본의 항해 이야기';
 const context={title,currentTitle:title,fullScript:story,durationSeconds:120,scenes:[{id:'first',start:0,end:60,caption:'개척자들이 우주선을 타고 떠납니다.'},{id:'second',start:60,end:120,caption:'새로운 행성에 도시를 세웁니다.'}]};
 const complete=value=>({status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(value)}]}]});
@@ -37,10 +38,10 @@ test('mixed user-style story and documentary wording keeps every LEAP/ABOL fact 
 test('publishing and single-description AI share content-only prompts and normalized output without changing sibling fields',()=>{
  const raw=`영상 제목: ${title}\n\n요약\n${story}\n\n챕터\n00:00 항해\n01:00 도시 건설\n\n출처: https://example.org/source`;
  const input={task:'publishing',context,options:{}},original=kit(raw),result=parseProductionAssistantResponse(complete(original),input,'gpt-5-mini',new Date('2026-11-04T04:00:00Z'));
- assert.equal(result.description,story);for(const key of['titles','chapters','tags','thumbnailConcepts','notes'])assert.deepEqual(result[key],original[key]);assert.equal(original.description,raw);
+ assert.equal(result.description,compactStory);for(const key of['titles','chapters','thumbnailConcepts','notes'])assert.deepEqual(result[key],original[key]);assert.deepEqual(result.tags,[],'AI publishing leaves tag selection to the miniature-game picker');assert.deepEqual(original.tags,['세계관','이주']);assert.equal(original.description,raw);
  for(const task of['publishing','upload-description']){
   const payload=buildProductionAssistantRequest({task,context,options:{}});assert.match(payload.instructions,/실제 사건·인물·배경·논점/u);assert.match(payload.instructions,/제목 반복/u);assert.match(payload.instructions,/챕터 목록·타임코드/u);assert.match(payload.instructions,/제작 과정/u);assert.match(payload.instructions,/주제 자체의 사실/u);assert.equal(payload.tools,undefined);assert.equal(JSON.parse(payload.input[0].content[0].text).context.fullScript,story);
-  const value=task==='publishing'?kit(raw):{description:raw};assert.equal(parseProductionAssistantResponse(complete(value),{task,context,options:{}}).description,story);
+  const value=task==='publishing'?kit(raw):{description:raw};assert.equal(parseProductionAssistantResponse(complete(value),{task,context,options:{}}).description,compactStory);
   const empty=task==='publishing'?kit('요약\n출처: https://example.org/source'):{description:'요약\n출처: https://example.org/source'};assert.throws(()=>parseProductionAssistantResponse(complete(empty),{task,context,options:{}}));
  }
 });

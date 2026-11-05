@@ -154,6 +154,37 @@ correct dialog; never put delivery tools back inside project settings.
   Missing metadata must retain exact legacy rendering. Local edits persist without
   hydrating over unsaved publishing fields; preview/individual PNG/ZIP use the same
   edited Canvas and survive reload/portable backups. Never charge for layout edits.
+- `dist/miniature-tags.js` and `miniature-tag-picker.js/.css` offer curated
+  miniature-game tags in publishing and YouTube. Recommend from actual title,
+  script and supplied external-video notes, never from existing polluted tags.
+  Keep game families relevant; do not claim measured popularity or SEO outcomes.
+  Provider publishing output validates its raw tags shape but returns an empty
+  selection. Full publishing regeneration preserves existing manually selected
+  tags; description-only generation still preserves every sibling field.
+  Browsing candidates/profiles/presets changes only picker drafts. Explicit Apply
+  uses canonical catalog tags and the YouTube500-character budget, preserving
+  edited titles, descriptions, chapters, thumbnails and schedules. Existing/manual
+  tag text remains intact until explicit replacement; do not silently migrate it.
+  YouTube Apply must use normal input/strict-save paths to invalidate auto-upload
+  review. Shared browser-local presets have bounded validation, explicit create/
+  update/delete, same-page and cross-tab sync, and honest storage-failure messages.
+  Selected tags remain normal project metadata; preset definitions stay separate.
+  Run npm test, test:miniature-tags-browser and relevant publishing/upload tests.
+- Optional production.description stores strict {length:'short'|'standard',
+  support:boolean}, missing defaults short/false. Shared description-preferences
+  helpers bound generated summaries to350characters/3sentences or800/5 while
+  retaining facts, then append the exact user-supplied sponsorship block only
+  when explicitly enabled. composeSupportBlock changes only the owned exact
+  suffix; toggling options must never compact a manually edited body or call AI.
+  Sponsor copy/links must stay intact and outside the summary cap. Keep the5000
+  UTF8-byte upload limit; reject oversized manual composition without truncation.
+  This explicit sponsorship option is the sole fixed-name exception: never
+  restore that name as the channel, project title, video overlay or default output.
+  Options are shared per project but separate manual publishing/upload drafts
+  stay editable; explicit support reapply handles the current draft only.
+  Generation/source keys and armed upload review must include preference changes.
+  Verify test:description-options-browser plus metadata, description and backup
+  tests; provider mocks are not proof of live summary quality or real posting.
 
 `dist/media-search-protocol.js`, `media-search-client.js`, `reference-media.js` and
 `music-recommendations.js` use actual Wikimedia Commons public catalog metadata

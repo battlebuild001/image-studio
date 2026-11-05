@@ -18,7 +18,8 @@ test('title and description are separate exact JSON tasks with real YouTube Unic
  assert.equal(parse('upload-title',{title:'🚀'.repeat(100)}).title.length,200);
  assert.throws(()=>parse('upload-title',{title:'🚀'.repeat(101)}));
  for(const value of [{title:'줄\n바꿈'},{title:'<태그>'},{title:'제목',description:'다른 항목'}])assert.throws(()=>parse('upload-title',value));
- assert.equal(parse('upload-description',{description:'가'.repeat(1666)}).description.length,1666);
+ assert.equal(parse('upload-description',{description:'가'.repeat(1666)}).description,'가'.repeat(349)+'…');
+ assert.equal(parse('upload-description',{description:'가'.repeat(1666)},{...request('upload-description'),options:{descriptionLength:'standard'}}).description,'가'.repeat(799)+'…');
  assert.throws(()=>parse('upload-description',{description:'가'.repeat(1667)}));
  assert.throws(()=>parse('upload-description',{description:'<html>본문</html>'}));
  for(const task of ['upload-title','upload-description']){const payload=buildProductionAssistantRequest(request(task));assert.equal(payload.text.format.strict,true);assert.deepEqual(Object.keys(payload.text.format.schema.properties),[task==='upload-title'?'title':'description']);assert.equal(payload.tools,undefined);assert.match(payload.instructions,/영상/);}
