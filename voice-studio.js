@@ -69,7 +69,7 @@ export function setupVoiceStudio(api) {
   const operationProgress=createOperationStatus({container:operationProgressMount,region:body,id:'voiceStudioOperation'});
 
   let projectId = api.getProject().id, busy = false, applying = false, configured = false, connectionSequence = 0, operation = 0, controller = null, connectionController = null;
-  let lastResult = null, resultUrl = null, active = null, draftTitle = '', targetMinutes = 8,samplesFingerprint='',restoringSample=false;
+  let lastResult = null, resultUrl = null, active = null, draftTitle = '', targetMinutes = 8,samplesFingerprint='',restoringSample=false, textDraftBaseline='';
   const run = task => event => {event?.preventDefault();Promise.resolve().then(task).catch(cause => {error.textContent = cause.message || '음성 작업을 마치지 못했어요.';});};
   let voiceEpoch=0;
   const providerControls=setupVoiceProviderControls({container:settings,fields:{speaker,speed,pitch,volume},prefix:'voice',getPreferences:()=>api.getProject().production?.speech?.voicePreferences,onPreferenceChange:value=>{const mutate=api.mutateProductionMetadata||api.mutate;if(mutate)mutate(p=>{p.production||={version:1};p.production.speech||={};p.production.speech.voicePreferences=value;});},openSettings:()=>api.openApiSettings?.({tab:'typecast'}),onChange:()=>{error.textContent='';if(busy&&!matches(active))stop('목소리 설정이 바뀌어 생성을 취소했어요.');refreshActions();}});
@@ -173,10 +173,18 @@ export function setupVoiceStudio(api) {
     draftTitle = options.title || api.getProject().scriptDraft?.result?.title || api.getProject().title;
     targetMinutes = options.targetMinutes || api.getProject().scriptDraft?.targetMinutes || 8;
     const remembered=api.getProject().production?.speech?.voiceDraft,base=projectScript();text.input.value=stripEnglishParentheticalGlosses(options.text!==undefined?String(options.text):remembered?.baseScriptKey===voiceTextKey(base)?remembered.text:base);providerControls.setText(text.input.value);renderSavedSamples();
+    textDraftBaseline=text.input.value;
     refreshActions();
     if (!dialog.open) dialog.showModal();await checkConnection();
   }
   function closeDialog() {if(applying)return;if (busy) stop();audio.pause();providerControls.stopSample();dialog.close();}
+  function canOpenToolNavigation() {
+    if(!dialog.open||text.input.value===textDraftBaseline)return true;
+    const remembered=api.getProject().production?.speech?.voiceDraft;
+    if(remembered?.baseScriptKey===voiceTextKey(projectScript())&&stripEnglishParentheticalGlosses(text.input.value)===remembered.text)return true;
+    error.textContent='수정한 보이스 대본이 아직 반영되지 않았어요. ‘다음: 영상 편집’으로 반영하거나 ‘닫기’를 누른 뒤 다른 도구를 열어 주세요.';
+    error.tabIndex=-1;error.focus();return false;
+  }
   function render() {
     const p = api.getProject();
     if (p.id !== projectId) {stop('');projectId = p.id;cancelConnectionCheck();clearResult();samplesFingerprint='';text.input.value = '';error.textContent = '';if (dialog.open) dialog.close();}
@@ -209,5 +217,5 @@ export function setupVoiceStudio(api) {
   }));
   function reset() {stop('');cancelConnectionCheck();providerControls.reset();clearResult();samplesFingerprint='';text.input.value = '';projectId = api.getProject().id;if (dialog.open) dialog.close();render();}
   savedField.input.addEventListener('change',()=>selectStoredSample(savedField.input.value));deleteSample.addEventListener('click',run(async()=>{if(busy||applying||!lastResult?.record)return;const assetId=lastResult.record.assetId,job=operationProgress.start('선택한 음성 샘플을 보관함에서 지우고 있어요.');applying=true;refreshActions();try{await api.removeVoiceSample?.(assetId);if(lastResult?.record?.assetId===assetId)clearResult();samplesFingerprint='';job.finish('선택한 샘플을 보관함에서 지웠어요.');}catch(cause){job.fail(cause.message);throw cause;}finally{applying=false;renderSavedSamples();refreshActions();}}));
-  render();return {open, render, reset};
+  render();return {open, render, reset, canOpenToolNavigation};
 }

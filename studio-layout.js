@@ -51,6 +51,25 @@ export function setupStudioLayout(api = {}) {
   const actions = document.querySelector('.top-actions');
   if (actions) actions.insertBefore(fileMenu.details, $('exportBtn'));
 
+  // Global connection, file management and everyday project actions have
+  // different purposes. Reuse the original buttons and listeners.
+  const apiConnection = $('apiSettingsBtn');
+  if (apiConnection && actions) {
+    apiConnection.textContent = 'API 연결';apiConnection.setAttribute('aria-label', 'API 연결 설정');
+    actions.insertBefore(apiConnection, fileMenu.details);
+  }
+  for (const [id, label] of [['productionToolsBtn', '프로젝트 설정'], ['aiAssistantBtn', '검사·AI 편집']]) {
+    const button = $(id);if (!button) continue;button.textContent = label;fileMenu.body.append(button);
+  }
+  const projectActions = document.querySelector('.project-tools');
+  if (projectActions) {
+    for (const id of ['toolNavigationBtn', 'saveProjectBtn', 'videoUploadBtn']) {
+      const button = $(id);if (button) projectActions.append(button);
+    }
+    const localNote = projectActions.querySelector('.local-pill');
+    if (localNote) {localNote.classList.add('studio-storage-note');fileMenu.body.append(localNote);}
+  }
+
   const creation = disclosure('creationToolsDrawer', '제작 도구', '대본 · 레퍼런스 · 템플릿');
   creation.details.classList.add('studio-creation-tools');
   const dropzone = $('imageDropzone');dropzone?.after(creation.details);
@@ -89,17 +108,73 @@ export function setupStudioLayout(api = {}) {
     move(sceneControls, appearance.body);inspector.append(appearance.details);
   }
 
-  const drawers = [creation, sceneTools, audio, video, appearance];
+  const effects = disclosure('sceneEffectsDrawer', '이미지 움직임·효과', '밝기 · 효과');
+  const effectControls = $('sceneEffectsControls');
+  if (effectControls) {effectControls.before(effects.details);effects.body.append(effectControls);}
+
+  // A phone shows one editor area at a time. Desktop keeps the original
+  // simultaneous preview, scene list and inspector, without duplicate media.
+  const workspace = document.querySelector('main.workspace'), mobileQuery = matchMedia('(max-width:720px)');
+  const paneEntries = [
+    ['preview', '미리보기', document.querySelector('.center-stage')],
+    ['scenes', '장면 목록', document.querySelector('.scenes-panel')],
+    ['inspector', '장면 설정', document.querySelector('.inspector')],
+  ].filter(([, , panel]) => panel);
+  const panes = new Map(), paneButtons = new Map(), mobileTabs = node('div', 'studio-mobile-editor-tabs');
+  mobileTabs.id = 'mobileEditorTabs';mobileTabs.setAttribute('role', 'tablist');mobileTabs.setAttribute('aria-label', '편집 화면 영역');
+  let activePane = 'preview';
+  for (const [id, label, panel] of paneEntries) {
+    panel.id ||= 'editorPane-' + id;panel.dataset.editorPane = id;panel.tabIndex = -1;panes.set(id, panel);
+    const tab = node('button', 'studio-mobile-editor-tab', label);tab.id = 'mobileEditorTab-' + id;tab.type = 'button';tab.setAttribute('role', 'tab');tab.setAttribute('aria-controls', panel.id);paneButtons.set(id, tab);mobileTabs.append(tab);
+    tab.addEventListener('click', () => showPane(id));
+    tab.addEventListener('keydown', event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();const ids = paneEntries.map(entry => entry[0]), index = ids.indexOf(activePane);
+      showPane(event.key === 'Home' ? ids[0] : event.key === 'End' ? ids.at(-1) : ids[(index + (event.key === 'ArrowRight' ? 1 : -1) + ids.length) % ids.length], {focus: true});
+    });
+  }
+  workspace?.prepend(mobileTabs);
+  const quickEdit = node('button', 'outline studio-selected-scene-action', '선택 장면 편집');quickEdit.id = 'editSelectedSceneBtn';quickEdit.type = 'button';
+  document.querySelector('.stage-header')?.append(quickEdit);
+  quickEdit.addEventListener('click', () => {showPane('inspector');const target = $('sceneCaption');if (target && !target.disabled) target.focus({preventScroll: true});else panes.get('inspector')?.focus({preventScroll: true});});
+  const skip = node('a', 'studio-skip-link', '편집 화면으로 건너뛰기');skip.href = '#editorPane-preview';document.body.prepend(skip);
+  skip.addEventListener('click', event => {event.preventDefault();showPane('preview');panes.get('preview')?.focus({preventScroll: true});panes.get('preview')?.scrollIntoView({block: 'start'});});
+  function updatePanes() {
+    if (workspace) workspace.dataset.mobilePane = activePane;
+    for (const [id, panel] of panes) {
+      const selected = id === activePane, tab = paneButtons.get(id);tab.setAttribute('aria-selected', String(selected));tab.tabIndex = selected ? 0 : -1;
+      if (mobileQuery.matches) {panel.setAttribute('role', 'tabpanel');panel.setAttribute('aria-labelledby', tab.id);}
+      else {panel.removeAttribute('role');panel.removeAttribute('aria-labelledby');}
+      // CSS hides inactive mobile panels; inert also protects focus during
+      // resize/reveal tasks without touching inner project-owned hidden flags.
+      panel.inert = mobileQuery.matches && !selected;
+    }
+  }
+  function showPane(id, {focus = false} = {}) {
+    if (!panes.has(id)) return null;
+    activePane = id;updatePanes();if (focus && mobileQuery.matches) paneButtons.get(id).focus({preventScroll: true});
+    return panes.get(id);
+  }
+  mobileQuery.addEventListener('change', () => {
+    const focused = [...panes].find(([, panel]) => panel.contains(document.activeElement));
+    if (mobileQuery.matches && focused) activePane = focused[0];updatePanes();
+    if (!mobileQuery.matches && mobileTabs.contains(document.activeElement)) panes.get(activePane)?.focus({preventScroll: true});
+  });
+  updatePanes();
+
+  const drawers = [creation, sceneTools, audio, video, appearance, effects];
   let redrawQueued = false;
   function redrawAudio() {
     if (redrawQueued) return;redrawQueued = true;
     requestAnimationFrame(() => {redrawQueued = false;if (audio.details.open) api.renderAll?.(false);});
   }
   audio.details.addEventListener('toggle', () => {if (audio.details.open) redrawAudio();});
-  function openDrawer(drawer) {drawer.details.open = true;if (drawer === audio) redrawAudio();return drawer.details;}
+  function openDrawer(drawer) {reveal(drawer.details);drawer.details.open = true;if (drawer === audio) redrawAudio();return drawer.details;}
   function reveal(target) {
     const element = typeof target === 'string' ? $(target) || document.querySelector(target) : target;
     if (!(element instanceof Element)) return null;
+    const pane = [...panes].find(([, panel]) => panel === element || panel.contains(element));
+    if (pane) showPane(pane[0]);
     const parents = [];for (let parent = element.parentElement; parent; parent = parent.parentElement) if (parent instanceof HTMLDetailsElement) parents.push(parent);
     for (const parent of parents.reverse()) parent.open = true;
     if (audio.details.contains(element)) redrawAudio();
@@ -179,9 +254,15 @@ export function setupStudioLayout(api = {}) {
     audio.details.dataset.hasContent = String(audioParts.length > 0);
     video.value.textContent = `${project.aspect || '16:9'} · 전환·자막`;
     sceneTools.value.textContent = $('selectionCount')?.textContent || '복제 · 분할 · 일괄 편집';
+    const selectedId = api.getSelectedId?.(), selectedScene = project.scenes?.find(scene => scene.id === selectedId);
+    quickEdit.disabled = !selectedScene;quickEdit.hidden = !project.scenes?.length;
+    quickEdit.title = selectedScene ? '선택한 장면의 자막·시간·효과 설정' : '먼저 장면을 선택하세요';
+    paneButtons.get('scenes').textContent = `장면 목록${project.scenes?.length ? ' ' + project.scenes.length : ''}`;
+    paneButtons.get('inspector').textContent = selectedScene ? `장면 설정 ${String(project.scenes.indexOf(selectedScene) + 1).padStart(2, '0')}` : '장면 설정';
+    effects.value.textContent = selectedScene?.effect && selectedScene.effect !== 'none' ? '효과 적용 중' : '밝기 · 효과';
     for (const drawer of drawers) drawer.details.dataset.open = String(drawer.details.open);
   }
   const controller = {render, openAudio: () => openDrawer(audio), openCreationTools: () => openDrawer(creation),
-    openProjectMenu: () => openDrawer(fileMenu), openSceneTools: () => openDrawer(sceneTools), reveal};
+    openProjectMenu: () => openDrawer(fileMenu), openSceneTools: () => openDrawer(sceneTools), showPane, getPane: () => activePane, reveal};
   layouts.set(document, controller);render();return controller;
 }
