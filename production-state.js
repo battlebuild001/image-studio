@@ -1,3 +1,4 @@
+import {normalizeDescriptionPreferences} from './description-preferences.js';
 import {normalizePronunciations} from './pronunciation.js';
 import {normalizeDiagramCard, normalizeVisualReview, DIAGRAM_TYPES} from './production-visual-protocol.js';
 import {normalizeYouTubeUploadDraft, normalizeYouTubeUploadRecord} from './youtube-protocol.js';
@@ -8,7 +9,7 @@ import {normalizeStoredShortsFraming} from './shorts-framing-protocol.js';
 
 /** Credential-free, schema-one production tools state shared by backups and workspaces. */
 export const MAX_PRODUCTION_BYTES = 2 * 1024 * 1024;
-const DOMAINS = new Set(['version', 'speech', 'changes', 'budget', 'versions', 'visual', 'diagrams', 'channel', 'shorts', 'publishing', 'youtube', 'uploadSeries', 'referenceMedia', 'music']);
+const DOMAINS = new Set(['version', 'speech', 'changes', 'budget', 'versions', 'visual', 'diagrams', 'channel', 'shorts', 'publishing', 'youtube', 'uploadSeries', 'referenceMedia', 'music', 'description']);
 const ID = /^[a-zA-Z0-9_-]{1,180}$/u;
 const DENIED = /(?:api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|credentials?|private[_-]?key)|^(?:__proto__|prototype|constructor|token|secret|raw[_-]?provider(?:response)?|provider[_-]?response|base64|b64_json)$/iu;
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && [Object.prototype, null].includes(Object.getPrototypeOf(value));
@@ -223,6 +224,7 @@ export function normalizeProductionState(input) {
   if (result.uploadSeries) result.uploadSeries = normalizeUploadSeriesState(result.uploadSeries);
   if (result.referenceMedia) result.referenceMedia = normalizeReferenceMediaState(result.referenceMedia);
   if (result.music) result.music = normalizeMusicState(result.music);
+  if (Object.hasOwn(result, 'description')) result.description = normalizeDescriptionPreferences(result.description);
   return result;
 }
 
