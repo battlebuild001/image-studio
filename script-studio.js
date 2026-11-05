@@ -3,9 +3,9 @@ import {apiFetch} from './api-client.js';
 import {validateProject} from './project.js';
 import {normalizeNarrationStyle, cleanNarrationText, formatNarrationText, stripEnglishParentheticalGlosses} from './narration-text.js';
 import {createOperationStatus, nextPaint} from './operation-status.js';
-import {normalizeSourceFidelity as normalizedFidelity, normalizeDetailLevel as normalizedDetail} from './script-protocol.js';
+import {normalizeSourceFidelity as normalizedFidelity, normalizeDetailLevel as normalizedDetail, normalizeGeneratedNarration, assertGeneratedNarrationPronunciation} from './script-protocol.js';
 import {validateTopicResearchRequest, normalizeTopicResearchResult, topicResearchSourceText} from './topic-research-protocol.js';
-import {getDisplayScript, applyPronunciations, normalizePronunciations} from './production-speech.js';
+import {getDisplayScript, normalizePronunciations} from './production-speech.js';
 
 const LIMIT = 100000;
 const FILE_LIMIT = 10 * 1024 * 1024;
@@ -366,7 +366,7 @@ export function setupScriptStudio(api) {
     lengthMismatch.textContent = lengthMismatch.hidden ? '' : `현재 대본은 목표 분량의 약 ${Math.round(actual / (m * p) * 100)}%예요. 원본과 대조해 부족한 사건·설명을 보완하거나 목표 길이로 다시 작성할 수 있어요. 자동 추가 요청은 하지 않아요.`;
     const style = normalizeNarrationStyle(narrationStyle.input.value);
     const examples = {standard: '예: 1991, NASA. 숫자와 영문을 일반 표기로 유지해요.', korean: '예: 천구백구십일 년, 나사. 숫자는 문맥에 맞게 읽고 영문 고유명사는 한글 발음으로 작성해요.', 'korean-digits': '예: 1991 → 일구구일, NASA → 나사. 모든 숫자를 한 자리씩 한글로 읽어요.', 'korean-native-digits': '예: 1991 → 하나아홉아홉하나, NASA → 나사. 숫자를 하나·둘 방식으로 한 자리씩 읽어요.'};
-    pronunciationHint.textContent = examples[style] + ' 새 AI 대본에 적용하며, 선택만 바꿔도 현재 대본은 바뀌지 않아요. 아래 정리는 숫자·주소만 바꾸고 영문 음차는 AI 작성에서 처리해요.';
+    pronunciationHint.textContent = examples[style] + ' 새 AI 대본에 적용하며, 선택만 바꿔도 현재 대본은 바뀌지 않아요.' + (style === 'standard' ? '' : ' AI 응답의 숫자·확인 가능한 발음은 추가 요청 없이 보완해요. 모르는 영문 이름은 발음 사전이 필요해요.');
     renderTopicResearch();refreshApply();
   }
   function renderResults() {
@@ -459,15 +459,17 @@ export function setupScriptStudio(api) {
     const links = Array.isArray(value.sources) ? value.sources.filter(entry => entry && typeof entry.title === 'string' && entry.title.length <= 500 && safeUrl(entry.url)).slice(0, 30) : [];
     if (!links.length) throw new Error('참고 출처를 확인하지 못했어요. 기존 대본은 유지했어요.');
     if (typeof value.searchedAt !== 'string' || !Number.isFinite(Date.parse(value.searchedAt))) throw new Error('검색 시각을 확인하지 못했어요. 잠시 뒤 다시 시도해 주세요.');
-    const script = applyPronunciations(value.script,settings.pronunciations || [],settings.narrationStyle);
     if (value.displayScript !== undefined && (typeof value.displayScript !== 'string' || !value.displayScript.trim() || length(value.displayScript) > LIMIT)) throw new Error('화면용 대본의 형식이나 길이를 확인하지 못해 기존 두 대본을 유지했어요.');
     const displayScript = value.displayScript === undefined ? undefined : cleanNarrationText(value.displayScript);
     if (displayScript !== undefined && !displayScript.trim()) throw new Error('화면용 대본 본문이 없어 기존 두 대본을 유지했어요.');
+    const normalized = normalizeGeneratedNarration(value.script,{narrationStyle:settings.narrationStyle,pronunciations:settings.pronunciations || [],sourceText:settings.sourceText || '',displayScript:value.displayScript || ''});
+    const script = normalized.script;
     if (!script.trim()) throw new Error('읽을 내레이션 없이 조사 설명만 반환되어 적용하지 않았어요. 기존 대본은 유지했어요.');
-    if (normalizeNarrationStyle(settings.narrationStyle) !== 'standard' && (/\p{Script=Latin}/u.test(script) || /\d/u.test(script))) throw new Error('선택한 한글 발음 표기가 적용되지 않아 기존 대본을 유지했어요. 영문 이름과 숫자를 한글 발음으로 다시 작성해 주세요.');
+    assertGeneratedNarrationPronunciation(normalized,settings.narrationStyle);
     if (length(script) > LIMIT) throw new Error('발음 표기 후 대본이 100,000자를 넘어서 적용하지 않았어요. 기존 대본은 유지했어요.');
+    const notes = [...new Set([...(normalized.notes || []),...(Array.isArray(value.notes) ? value.notes : [])].filter(item => typeof item === 'string').map(item => item.slice(0, 2000)))].slice(0, 30);
     return {...value, script, ...(displayScript === undefined ? {} : {displayScript}), narrationStyle: settings.narrationStyle, sourceFidelity: settings.sourceFidelity, detailLevel: settings.detailLevel, title: String(value.title || '영상 대본').slice(0, 200), summary: String(value.summary || '').slice(0, 20000),
-      sources: links.map(entry => ({title: entry.title, url: safeUrl(entry.url)})), notes: Array.isArray(value.notes) ? value.notes.filter(item => typeof item === 'string').map(item => item.slice(0, 2000)).slice(0, 30) : [],
+      sources: links.map(entry => ({title: entry.title, url: safeUrl(entry.url)})), notes,
       targetMinutes: settings.targetMinutes, charsPerMinute: settings.charsPerMinute, characters: count(script), estimatedMinutes: count(script) / settings.charsPerMinute};
   }
   async function writeScript(value, abort, seq, startedProject) {
