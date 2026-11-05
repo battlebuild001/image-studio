@@ -80,7 +80,9 @@
     "test:tool-routing-browser": "node tests/tool-routing.browser.cjs",
     "test:project-tool-groups-browser": "node tests/project-tool-groups.browser.cjs",
     "test:delivery-categories-browser": "node tests/delivery-categories.browser.cjs",
-    "test:editor-layout-categories-browser": "node tests/editor-layout-categories.browser.cjs"
+    "test:editor-layout-categories-browser": "node tests/editor-layout-categories.browser.cjs",
+    "test:intro-fade-browser": "node tests/intro-fade.browser.cjs",
+    "test:intro-fade-export-browser": "node tests/intro-fade-export.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

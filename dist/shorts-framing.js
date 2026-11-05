@@ -38,7 +38,7 @@ export function setupShortsFraming(api){
  function renderPreview(canvas,scene,frame,{after=false}={}){
   const project=api.getProject(),timeline=getTimeline(project).scenes,source=timeline.find(item=>item.id===scene.id),modified=after?applyReviewedShortsCrop(scene,{...draft,frames:[frame]}):{...scene,fit:'cover'};
   const cues=getCaptions(project).filter(cue=>source&&cue.end>source.start&&cue.start<source.end).map(cue=>({...cue,start:Math.max(0,cue.start-source.start),end:Math.min(scene.duration,cue.end-source.start)}));
-  const view={...project,aspect:'9:16',scenes:[modified],captionMode:'srt',captionAnalysis:null,captions:cues,settings:{...project.settings,transition:0,shortsSafeArea:after?safe.input.checked:project.settings.shortsSafeArea===true}};
+  const view={...project,aspect:'9:16',scenes:[modified],captionMode:'srt',captionAnalysis:null,captions:cues,settings:{...project.settings,transition:0,introFadeIn:false,shortsSafeArea:after?safe.input.checked:project.settings.shortsSafeArea===true}};
   renderFrame(canvas.getContext('2d'),view,api.getAssets(),scene.duration/2,canvas.width,canvas.height);
   if(after){const ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height;ctx.save();ctx.fillStyle='rgba(7,15,20,.38)';ctx.fillRect(w*.82,0,w*.18,h);ctx.fillRect(0,h*.78,w,h*.22);ctx.strokeStyle='#e4bf7b';ctx.lineWidth=1;ctx.setLineDash([4,3]);ctx.strokeRect(w*.06,h*.04,w*.76,h*.74);ctx.restore();}
  }

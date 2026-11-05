@@ -31,6 +31,17 @@ placements use mirrored safe insets with left/right-aligned text; center pixels 
 unchanged. Expose 위치 only when the notice is enabled.
 Render the exact requested text in Canvas for preview, PNG and video export,
 reserve caption space, and persist the flag through undo/workspaces/backups.
+Optional settings.introFadeIn is boolean, defaultfalse; introFadeInDuration is
+finite0.5–10seconds, default2. Render one full-frame black-to-visible opening fade
+using absolute project time in engine.renderFrame, after title/captions/notice.
+Keep scenes, duration, audio and cues unchanged; cap the effective fade to the
+actual video length. Off/legacy and completed frames retain exact prior pixels.
+Video-style and project-default controls mirror the same project settings;
+previewIntro is an explicit user action only. Keep library covers recognizable
+without the fade, while current-frame PNG and video output retain the true effect.
+Channel presets and independent shorts inherit the reviewed settings; crop-only
+comparison previews show the unobscured image. Verify test:intro-fade-browser,
+test:intro-fade-export-browser and npm test, with native exports run serially.
 For notice changes run npm run test:ai-notice-browser and npm test; verify readable
 landscape/portrait layouts, off-state pixel parity and a real short exported video
 with images, narration, BGM and captions. Do not replace this with a DOM overlay.

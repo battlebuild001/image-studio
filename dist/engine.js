@@ -50,6 +50,14 @@ function snapshot(project) {
 
 export function getDuration(project) { return getTimeline(project).duration; }
 
+/** One opening fade on absolute video time; never inserts time or restarts per scene. */
+export function getIntroFadeInOpacity(project, time = 0, duration = getDuration(project)) {
+  if (project.settings?.introFadeIn !== true || !(duration > 0)) return 0;
+  const requested = project.settings.introFadeInDuration;
+  const seconds = Math.min(duration, clamp(Number.isFinite(requested) ? requested : 2, 0.5, 10));
+  return 1 - ease(clamp((Number(time) || 0) / seconds));
+}
+
 export function getSceneAt(project, time = 0) {
   const timeline = snapshot(project);
   if (!timeline.scenes.length) return null;
@@ -339,7 +347,19 @@ export function renderFrame(ctx, project, assets, time = 0, width = ctx.canvas.w
     if (cue) drawCaption(ctx, cue.text, settings, width, height, notice ? notice.top - 10 * scale : undefined);
   }
   if (notice) drawAiImageNotice(ctx, notice);
+  const introOpacity = current ? getIntroFadeInOpacity(project, t, state.duration) : 0;
+  if (introOpacity > 0) {
+    ctx.save();ctx.globalCompositeOperation = 'source-over';ctx.globalAlpha = introOpacity;
+    ctx.fillStyle = '#000000';ctx.fillRect(0, 0, width, height);ctx.restore();
+  }
   ctx.restore();
+}
+
+/** Library covers stay recognizable even when the current video frame is fading in. */
+export function drawLibraryThumbnail(ctx, source, project, assets, time = 0) {
+  if (getIntroFadeInOpacity(project, time) > 0 && project.scenes?.length) {
+    renderFrame(ctx, {...project, settings: {...project.settings, introFadeIn: false}}, assets, time);
+  } else ctx.drawImage(source, 0, 0, ctx.canvas.width, ctx.canvas.height);
 }
 
 export async function getExportCapabilities() {

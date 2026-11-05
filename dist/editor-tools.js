@@ -201,6 +201,32 @@ export function setupEditorTools(api) {
   watch(crop, 'pointerup', event => finishDrag(event, false));
   watch(crop, 'pointercancel', event => finishDrag(event, true));
 
+  // A video-wide opening fade changes pixels only; source timing stays intact.
+  const introType = field('introFadeInSelect', '인트로', {select: [['false', '사용 안 함'], ['true', '어둠에서 서서히 밝아짐']]});
+  const introDuration = field('introFadeInDuration', '밝아지는 시간 · 초', {min: 0.5, max: 10, step: 0.1});
+  introType.classList.add('editor-control-wide');introDuration.classList.add('editor-control-wide');
+  const introHelp = node('p', {id: 'introFadeInHelp', className: 'editor-help editor-control-wide'});
+  const introError = node('p', {id: 'introFadeInError', className: 'editor-error editor-control-wide', role: 'alert'});
+  const introPreview = button('previewIntroFadeInBtn', '인트로 미리보기', () => api.previewIntro?.(), 'outline small editor-control-wide');
+  for (const id of ['introFadeInSelect', 'introFadeInDuration']) fields.get(id).setAttribute('aria-describedby', 'introFadeInHelp introFadeInError');
+  const introControls = node('section', {id: 'introFadeInControls', className: 'editor-details', 'aria-label': '인트로 설정'},
+    node('div', {className: 'editor-details-body editor-grid'}, introType, introDuration, introPreview, introHelp, introError));
+  document.querySelector('.video-settings').append(introControls);
+  watch(fields.get('introFadeInSelect'), 'change', event => {
+    if (!['false', 'true'].includes(event.target.value)) throw new Error('인트로 효과를 다시 선택해 주세요.');
+    introError.textContent = '';
+    api.mutate(project => {project.settings.introFadeIn = event.target.value === 'true';});
+  });
+  watch(fields.get('introFadeInDuration'), 'change', event => {
+    const raw = event.target.value.trim(), value = Number(raw);
+    if (!raw || !Number.isFinite(value) || value < 0.5 || value > 10) {
+      introError.textContent = '밝아지는 시간은 0.5~10초로 입력해 주세요.';
+      event.target.setAttribute('aria-invalid', 'true');throw new Error(introError.textContent);
+    }
+    introError.textContent = '';event.target.removeAttribute('aria-invalid');
+    api.mutate(project => {project.settings.introFadeInDuration = value;});
+  });
+
   // Caption typography and local reusable style presets.
   const presetSelect = node('select', {id: 'captionPresetSelect', 'aria-label': '저장된 자막 스타일'});
   const presetName = node('input', {id: 'captionPresetName', className: 'editor-preset-name', type: 'text', maxLength: 40, placeholder: '스타일 이름', 'aria-label': '자막 스타일 이름'});
@@ -497,6 +523,16 @@ export function setupEditorTools(api) {
   }
   function render() {
     const project = api.getProject(), settings = project.settings;
+    const introEnabled = settings.introFadeIn === true, introSeconds = settings.introFadeInDuration ?? 2;
+    set('introFadeInSelect', String(introEnabled));set('introFadeInDuration', introSeconds);
+    introDuration.hidden = !introEnabled;
+    fields.get('introFadeInSelect').disabled = Boolean(api.canMutate && !api.canMutate());
+    fields.get('introFadeInDuration').disabled = fields.get('introFadeInSelect').disabled || !introEnabled;
+    introPreview.disabled = !introEnabled || !project.scenes.length || fields.get('introFadeInSelect').disabled || typeof api.previewIntro !== 'function';
+    introHelp.textContent = introEnabled
+      ? `영상 시작부터 ${introSeconds}초 동안 어둠에서 서서히 밝아져요. 영상이 더 짧으면 그 길이에 맞춰요. 장면과 음성 시간은 그대로예요.`
+      : '영상 시작을 어둠에서 서서히 밝아지도록 설정해요.';
+    if (!introEnabled) {introError.textContent = '';fields.get('introFadeInDuration').removeAttribute('aria-invalid');}
     const scene = project.scenes.find(item => item.id === api.getSelectedId());
     const targetCount = effectTargets().length;
     const canEditEffects = Boolean(scene) && (typeof api.canUseSceneImages !== 'function' || api.canUseSceneImages());
