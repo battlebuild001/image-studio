@@ -63,7 +63,7 @@ const {chromium} = require('playwright');
     return route.fulfill({status: 500, headers, body: JSON.stringify({error: {message: 'Unexpected direct provider request in fixture'}})});
   });
   const ready = () => page.waitForFunction(() => document.querySelector('#addWorkspaceBtn') && !document.querySelector('#addWorkspaceBtn').disabled);
-  const meta = () => page.evaluate(async () => {const {getDirectSettings} = await import('/direct-openai.js');return getDirectSettings();});
+  const meta = () => page.evaluate(async () => {const {getDirectSettings} = await import('./direct-openai.js');return getDirectSettings();});
   async function waitMeta(predicate) {
     for (let attempt = 0; attempt < 150; attempt++) {const value = await meta();if (predicate(value)) return value;await page.waitForTimeout(50);}
     assert.fail('Direct settings metadata did not reach the expected state');
@@ -74,7 +74,7 @@ const {chromium} = require('playwright');
   const closeSettings = async () => {await page.locator('#closeApiSettingsBtn').click();await page.locator('#apiSettingsDialog').waitFor({state: 'hidden'});};
   const saved = async () => {
     await page.waitForFunction(() => /자동 저장됨|작업 복원됨|자동 저장 준비/.test(document.querySelector('#saveState').textContent));
-    return page.evaluate(async () => {const {loadProject} = await import('/project.js');return (await loadProject()).project;});
+    return page.evaluate(async () => {const {loadProject} = await import('./project.js');return (await loadProject()).project;});
   };
   const imageDone = () => page.waitForFunction(() => document.querySelector('#imageStudioDialog').getAttribute('aria-busy') === 'false');
   const noKeyOutsideProvider = () => {
@@ -157,7 +157,7 @@ const {chromium} = require('playwright');
     await page.locator('#cancelImageGenerationBtn').click();releaseImage();await imageDone();
     assert.equal(await page.locator('#generatedReferenceImage').getAttribute('src'), preview);
     imageMode = 'held';holdImage();await page.locator('#generateReferenceImageBtn').click();await imageSeen;
-    await page.evaluate(async () => {const {clearDirectSettings} = await import('/direct-openai.js');clearDirectSettings();});releaseImage();
+    await page.evaluate(async () => {const {clearDirectSettings} = await import('./direct-openai.js');clearDirectSettings();});releaseImage();
     await page.waitForFunction(() => document.querySelector('#imageStudioDialog').getAttribute('aria-busy') === 'false' && document.querySelector('#imageServiceState').dataset.state === 'unavailable');
     assert.equal(await page.locator('#generatedReferenceImage').getAttribute('src'), preview);assert.equal(await page.locator('.image-reference-card').count(), 2);
     assert.equal(await page.locator('#imageBackground').inputValue(), '고정 배경: 항구 도시의 지형과 빛');
@@ -172,7 +172,7 @@ const {chromium} = require('playwright');
     assert.equal(JSON.parse(backupText).project.scriptDraft.draftScript, spokenNarrative);
     await reveal(page, '#libraryBtn');await page.locator('#libraryBtn').click();await page.locator('#saveLibraryBtn').click();
     await page.waitForFunction(() => document.querySelectorAll('.library-project').length >= 1);
-    const library = await page.evaluate(async () => {const {listLibraryProjects, loadLibraryProject} = await import('/project.js');const entries = await listLibraryProjects();return (await loadLibraryProject(entries[0].id)).project;});
+    const library = await page.evaluate(async () => {const {listLibraryProjects, loadLibraryProject} = await import('./project.js');const entries = await listLibraryProjects();return (await loadLibraryProject(entries[0].id)).project;});
     assert.equal(JSON.stringify(library).includes(keyTwo), false);
     await page.reload({waitUntil: 'networkidle'});await ready();
     assert.equal((await meta()).hasKey, false);assert.equal(JSON.stringify(await stored()).includes(keyTwo), false);

@@ -74,6 +74,7 @@ const {reveal} = require('./ui-navigation.browser.cjs');
       window.tracker = createOperationStatus({container: document.querySelector('#testMount'), region: document.querySelector('#testRegion'), slowAfterMs: 80, id: 'testOperation'});
       window.oldJob = window.tracker.start('응답 기다리는 중');
     });
+    await page.locator('#testOperation .operation-status-icon').waitFor({state: 'visible'});
     await running('#testOperation', '#testRegion');
     await page.waitForFunction(() => document.querySelector('#testOperation').dataset.delayed === 'true');
     assert.match(await page.locator('#testOperation .operation-status-elapsed').innerText(), /[1-9]\d*초/u);
