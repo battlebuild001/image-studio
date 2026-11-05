@@ -1,5 +1,5 @@
 import {filterMiniatureTags} from './miniature-tags.js';
-import {SUPPORT_BLOCK, getDescriptionSummary, composeSupportBlock} from './description-preferences.js';
+import {SUPPORT_BLOCK, CHANNEL_INTRO_BLOCK, getDescriptionFooterParts, composeManagedDescriptionFooters} from './description-preferences.js';
 
 const encoder = new TextEncoder();
 const MAX_HASHTAGS = 5;
@@ -41,14 +41,13 @@ export function normalizeOwnedHashtagLine(value = '') {
   return value;
 }
 
-function supportParts(text) {
-  const body = getDescriptionSummary(text);
-  return {body, tail: body === text ? '' : text.slice(body.length)};
+function footerPayload(tail) {
+  const indices=[tail.indexOf(CHANNEL_INTRO_BLOCK),tail.indexOf(SUPPORT_BLOCK)].filter(index=>index>=0),index=indices.length?Math.min(...indices):-1;
+  return index<0?{leading:'',payload:tail}:{leading:tail.slice(0,index),payload:tail.slice(index)};
 }
-function supportPayload(tail) {const index=tail.indexOf(SUPPORT_BLOCK);return index<0?{leading:'',payload:tail}:{leading:tail.slice(0,index),payload:tail.slice(index)};}
-function appendSupport(body, tail) {
+function appendFooters(body, tail) {
   if (!tail) return body;
-  // A support-only description has no body separator until a hashtag line is inserted.
+  // A footer-only description has no body separator until a hashtag line is inserted.
   if (!body) return tail.replace(/^\n{1,2}/u, '');
   return body + (/^\n/u.test(tail) ? tail : '\n\n' + tail);
 }
@@ -67,15 +66,15 @@ function removeOwnedLine(body, line) {
 export function stripOwnedDescriptionHashtags(text, ownedLine = '') {
   text = descriptionText(text);const line = normalizeOwnedHashtagLine(ownedLine);
   if (!line) return text;
-  const {body, tail} = supportParts(text);
+  const {body, tail} = getDescriptionFooterParts(text);
   if (tail) {
     const candidate=body.replace(/\s+$/u,''),offset=candidate.length-line.length;
     if(offset>=0&&candidate.slice(offset)===line&&/^\s*$/u.test(candidate.slice(0,offset))) {
-      return candidate.slice(0,offset)+supportPayload(tail).payload;
+      return candidate.slice(0,offset)+footerPayload(tail).payload;
     }
   }
   const next=removeOwnedLine(body,line);
-  return next.removed ? appendSupport(next.body, tail) : text;
+  return next.removed ? appendFooters(next.body, tail) : text;
 }
 
 function manualHashtags(text) {
@@ -91,7 +90,7 @@ function manualHashtags(text) {
   return found;
 }
 
-/** The returned line records only text added by this action, before the exact support footer. */
+/** The returned line records only text added by this action, before exact managed footers. */
 export function composeDescriptionHashtags(text, tags, {enabled = true, ownedLine = ''} = {}) {
   if (typeof enabled !== 'boolean') fail('설명 해시태그 표시를 다시 선택해 주세요.');
   const stripped = stripOwnedDescriptionHashtags(text, ownedLine);
@@ -99,18 +98,30 @@ export function composeDescriptionHashtags(text, tags, {enabled = true, ownedLin
   const desired = deriveDescriptionHashtags(tags), existing = manualHashtags(stripped);
   const hashtagLine = normalizeOwnedHashtagLine(desired.filter(token => !existing.has(tokenKey(token))).join(' '));
   if (!hashtagLine) return {description: checkBudget(stripped), hashtagLine: ''};
-  const {body, tail} = supportParts(stripped);
+  const {body, tail} = getDescriptionFooterParts(stripped);
   if(tail&&body.trim()==='') {
-    const {leading,payload}=supportPayload(tail);
+    const {leading,payload}=footerPayload(tail);
     return {description:checkBudget(body+leading+hashtagLine+'\n\n'+payload),hashtagLine};
   }
   const withLine=body?body+'\n\n'+hashtagLine:hashtagLine;
-  return {description: checkBudget(appendSupport(withLine, tail)), hashtagLine};
+  return {description: checkBudget(appendFooters(withLine, tail)), hashtagLine};
 }
 
-/** Support changes never compact manual prose or delete hashtags the user wrote directly. */
-export function composeDescriptionSupport(text, support, tags, {enabled = true, ownedLine = ''} = {}) {
+/** Fixed-footer changes preserve manual prose, manual hashtags and any omitted footer choice. */
+export function composeDescriptionFooters(text, preferences, tags, {enabled = true, ownedLine = ''} = {}) {
   const withoutOwnedLine = stripOwnedDescriptionHashtags(text, ownedLine);
-  const supported = composeSupportBlock(withoutOwnedLine, support);
-  return composeDescriptionHashtags(supported, tags, {enabled, ownedLine: ''});
+  const withFooters = composeManagedDescriptionFooters(withoutOwnedLine, preferences);
+  return composeDescriptionHashtags(withFooters, tags, {enabled, ownedLine: ''});
+}
+
+/** Support changes never compact manual prose or remove an existing channel introduction. */
+export function composeDescriptionSupport(text, support, tags, options = {}) {
+  if(typeof support!=='boolean')fail('제작 지원 표시를 다시 선택해 주세요.');
+  return composeDescriptionFooters(text, {support}, tags, options);
+}
+
+/** Channel-introduction changes retain sponsorship independently and keep it last. */
+export function composeDescriptionChannelIntro(text, channelIntro, tags, options = {}) {
+  if(typeof channelIntro!=='boolean')fail('채널 소개 표시를 다시 선택해 주세요.');
+  return composeDescriptionFooters(text, {channelIntro}, tags, options);
 }
