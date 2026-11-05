@@ -41,7 +41,7 @@ const {reveal} = require('./ui-navigation.browser.cjs');
     const gate = gates.get(kind);if (gate) {gates.delete(kind);gate.observe();await gate.pending;}
     if (kind === 'script') {
       if (scriptFails) return fulfill(route, {error: '모의 대본 응답 실패'}, 502);
-      return fulfill(route, {title: '항성을 향한 탐사', summary: '읽지 않는 조사 요약', script: scriptLatin ? fixtureScript.replace('나사', 'NASA') : fixtureScript,
+      return fulfill(route, {title: '항성을 향한 탐사', summary: '읽지 않는 조사 요약', script: scriptLatin ? fixtureScript.replace('나사', 'UnmappedProgressName') : fixtureScript,
         sources: [{title: '별도 출처 정보', url: 'https://example.org/research-fixture'}], notes: ['조사 메모는 내레이션과 분리합니다.'],
         targetMinutes: body.targetMinutes, charsPerMinute: body.charsPerMinute, searchedAt: new Date().toISOString(), webSearchUsed: true});
     }
@@ -119,7 +119,7 @@ const {reveal} = require('./ui-navigation.browser.cjs');
     assert.equal(await page.locator('#generatedScript').inputValue(), manual);assert.match(await page.locator('#scriptStudioError').innerText(), /모의 대본 응답 실패/u);
     scriptFails = false;scriptLatin = true;await page.locator('#generateScriptBtn').click();
     await page.waitForFunction(() => document.querySelector('#scriptOperation').dataset.state === 'error');
-    assert.equal(await page.locator('#generatedScript').inputValue(), manual);assert.match(await page.locator('#scriptStudioError').innerText(), /한글 발음/u);
+    assert.equal(await page.locator('#generatedScript').inputValue(), manual);assert.match(await page.locator('#scriptStudioError').innerText(), /UnmappedProgressName/u);assert.match(await page.locator('#scriptStudioError').innerText(), /발음 사전/u);
     scriptLatin = false;await page.locator('#generateScriptBtn').click();
     await page.waitForFunction(() => document.querySelector('#scriptOperation').dataset.state === 'done');
     const clean = await page.locator('#generatedScript').inputValue();

@@ -17,12 +17,19 @@ test('Node script API reexports the same protocol functions used by direct brows
 test('complete shared script protocol runs without Node or provider globals and retains research guards', async () => {
   const source = await readFile(new URL('../dist/script-protocol.js', import.meta.url), 'utf8');
   const dictionary = await readFile(new URL('../dist/pronunciation.js', import.meta.url),'utf8');
-  assert.equal(/\bBuffer\b|\bprocess\b|\brequire\b/u.test(source + dictionary), false);
+  const pronunciation = await readFile(new URL('../dist/narration-pronunciation.js', import.meta.url),'utf8');
+  assert.equal(/\bBuffer\b|\bprocess\b|\brequire\b/u.test(source + dictionary + pronunciation), false);
   assert.equal(/\bimport\s/u.test(dictionary), false);
-  const importLine = "import {normalizePronunciations, applyPronunciationDictionary} from './pronunciation.js';";
-  assert.ok(source.includes(importLine));
+  function removeLocalImports(value, allowed) {
+    const result = value.replace(/^import\s+\{[^}]+\}\s+from\s+(['"])([^'"]+)\1;?[ \t]*$/gmu, (_line, _quote, target) => {
+      assert.ok(allowed.includes(target), `Unexpected browser dependency: ${target}`);return '';
+    });
+    assert.equal(/\bimport\s/u.test(result), false);return result;
+  }
+  const helperBody = removeLocalImports(pronunciation, ['./pronunciation.js']);
+  const protocolBody = removeLocalImports(source, ['./pronunciation.js','./narration-pronunciation.js']);
   const context = vm.createContext({URL});
-  const code = dictionary.replace(/^export /gmu,'') + '\n' + source.replace(importLine,'').replace(/^export /gmu, '') + '\n globalThis.protocol = {ScriptApiError, scriptCharacters, validateScriptRequest, buildScriptRequest, parseScriptResponse};';
+  const code = [dictionary,helperBody,protocolBody].map(value=>value.replace(/^export /gmu,'')).join('\n') + '\n globalThis.protocol = {ScriptApiError, scriptCharacters, validateScriptRequest, buildScriptRequest, parseScriptResponse};';
   new vm.Script(code, {filename: 'script-protocol.js'}).runInContext(context);
   const browser = context.protocol;
   const input = browser.validateScriptRequest({sourceText: 'A fictional chronology describes a mysterious radio signal, a political authority, and a conflict at an orbital elevator.', targetMinutes: 8, instructions: '흥미로운 한국어 로어 설명 위주로'});
@@ -42,4 +49,7 @@ test('complete shared script protocol runs without Node or provider globals and 
   assert.throws(() => browser.parseScriptResponse(noSearch, input), {code: 'WEB_SEARCH_REQUIRED'});
   const noSources = response(narration);noSources.output[0].action.sources = [];
   assert.throws(() => browser.parseScriptResponse(noSources, input), {code: 'WEB_SOURCES_REQUIRED'});
+  const phonetic = {...input,narrationStyle:'korean'};
+  assert.equal(browser.parseScriptResponse(response('2077년 NASA와 UN 탐사대가 새로운 신호를 관측했습니다.'),phonetic).script,'이천칠십칠년 나사와 유엔 탐사대가 새로운 신호를 관측했습니다.');
+  assert.throws(() => browser.parseScriptResponse(response('미확인 ZORG 탐사대가 새로운 신호를 관측했습니다.'),phonetic),{code:'PRONUNCIATION_REQUIRED'});
 });

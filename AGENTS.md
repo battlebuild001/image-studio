@@ -532,6 +532,8 @@ regressions and test:dual-scripts-browser for visible subtitle/voice separation.
   delayed-response and terminal feedback; stale handles cannot complete newer jobs.
 - `dist/narration-text.js`: browser-safe spoken-text helper exports; the shared
   script protocol implements styles, conservative cleanup and numeric reading.
+- `dist/narration-pronunciation.js`: pure bounded numeric reading and recovery of
+  known/generated pronunciation aliases shared by browser and optional server.
 - `dist/workspace-store.js`: category records, per-workspace project/media saves,
   legacy autosave migration and safe active-workspace transitions.
 - `dist/workspace-tabs.js` / `.css`: category tabs, add/rename/reorder and reversible
@@ -727,8 +729,20 @@ for credential values in chat. Inspect configured presence without exposing valu
   standard. Persist the chosen style with schema-version-1 scriptDraft/results.
   Selection alone never rewrites an existing draft. Explicit local numeric/markup
   cleanup may map digits to 영일이삼사오육칠팔구 or 공하나둘셋넷다섯여섯일곱여덟아홉;
-  lexical English-name/acronym phonetics require actual AI generation. The korean
-  mode requests contextual Korean number readings. Preserve meaning and evidence.
+  korean also converts clear numeric values locally (2077→이천칠십칠,
+  10만→십만), preserving values/zero order and existing selected digit vocabularies.
+  Generated narration may recover established NASA/UN readings, explicit user
+  dictionary entries and clear Hangul(Latin) aliases without guessing unknown
+  names. Existing Hangul names and supplied research source text remain intact.
+  Shared normalizeGeneratedNarration/assertGeneratedNarrationPronunciation apply
+  the same rules in direct/server parsing and frontend checkedResult. Unknown
+  Latin still rejects with bounded actionable term/dictionary guidance; never
+  delete it, blindly spell unknown names or loosen the strict phonetic guard.
+  Keep the original Korean-language, search/evidence and raw-copy guards. Constrain
+  only the generated script field in nonstandard JSON schemas, not displayScript.
+  Do not auto-retry paid generation or overwrite drafts on selection/load. Verify
+  test:script-pronunciation-recovery-browser and the shared protocol/backup tests.
+  Preserve meaning and evidence.
   Copy/TXT and voice/timing handoffs use narration-only cleaned text; source URLs,
   citation marks and research-method explanations belong outside the spoken script.
   Keep genuine story events about finding/verifying facts. Keep summary, notes and

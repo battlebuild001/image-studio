@@ -88,7 +88,8 @@ test('faithful mode retains raw-copy, real-search and phonetic validation instea
   assert.throws(() => parseScriptResponse(response(input.sourceText), settings), {code: 'SOURCE_NOT_REWRITTEN'});
   const noSearch = response();noSearch.output.shift();assert.throws(() => parseScriptResponse(noSearch, settings), {code: 'WEB_SEARCH_REQUIRED'});
   const noEvidence = response();noEvidence.output[0].action.sources = [];assert.throws(() => parseScriptResponse(noEvidence, settings), {code: 'WEB_SOURCES_REQUIRED'});
-  assert.throws(() => parseScriptResponse(response('연구 함대 NASA가 출발했습니다.'), {...settings, narrationStyle: 'korean'}), {code: 'PRONUNCIATION_REQUIRED'});
+  assert.equal(parseScriptResponse(response('연구 함대 NASA가 출발했습니다.'), {...settings, narrationStyle: 'korean'}).script, '연구 함대 나사가 출발했습니다.');
+  assert.throws(() => parseScriptResponse(response('연구 함대 ZORG가 출발했습니다.'), {...settings, narrationStyle: 'korean'}), {code: 'PRONUNCIATION_REQUIRED'});
 });
 
 test('schema-one backups preserve independent draft/result choices and legacy text/media unchanged', async () => {

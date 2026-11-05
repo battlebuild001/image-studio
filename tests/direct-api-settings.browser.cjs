@@ -94,7 +94,7 @@ const {chromium} = require('playwright');
   }
   try {
     await page.goto(base.href, {waitUntil: 'networkidle'});await ready();
-    await settings();assert.equal(await page.locator('#apiSettingsBtn').innerText(), '설정');
+    await settings();assert.equal(await page.locator('#apiSettingsBtn').innerText(), 'API 연결');
     assert.equal(await page.locator('#openAiSettingsTab').getAttribute('aria-selected'), 'true');
     assert.equal(await page.locator('#openAiApiKey').getAttribute('type'), 'password');
     assert.equal(await page.locator('#rememberOpenAiKey').isChecked(), false);

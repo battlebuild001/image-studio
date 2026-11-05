@@ -127,11 +127,15 @@ test('parsed narration and duration use cleaned spoken text while tool evidence 
   assert.throws(() => parseScriptResponse(response('아래 대본은 온라인에서 확인한 내용입니다.\nThe expedition reached the distant observation station and discovered a mysterious radio signal in the quiet sky.'), input), {code: 'KOREAN_NARRATION_REQUIRED'});
 });
 
-test('phonetic requests reject unconverted foreign spellings rather than silently claim phonetic output', () => {
+test('phonetic requests recover known readings and matching number values while keeping unknown names strict', () => {
+  const years = {korean: '천구백구십일', 'korean-digits': '일구구일', 'korean-native-digits': '하나아홉아홉하나'};
   for (const narrationStyle of ['korean', 'korean-digits', 'korean-native-digits']) {
-    assert.throws(() => parseScriptResponse(response('나사와 NASA 탐사대가 신호를 관측했습니다.'), {...input, narrationStyle}), {code: 'PRONUNCIATION_REQUIRED'});
+    const original = response('1991년 NASA와 UN 탐사대가 신호를 관측했습니다.'), before = structuredClone(original);
+    const result = parseScriptResponse(original, {...input, narrationStyle});
+    assert.equal(result.script, `${years[narrationStyle]}년 나사와 유엔 탐사대가 신호를 관측했습니다.`);
+    assert.match(result.summary, /1991년 NASA/);assert.deepEqual(original, before);
+    assert.throws(() => parseScriptResponse(response('미확인 ZORG 탐사대가 신호를 관측했습니다.'), {...input, narrationStyle}), {code: 'PRONUNCIATION_REQUIRED'});
   }
-  assert.throws(() => parseScriptResponse(response('1991년 나사 탐사대가 신호를 관측했습니다.'), {...input, narrationStyle: 'korean'}), {code: 'PRONUNCIATION_REQUIRED'});
 });
 
 test('style roundtrips through portable backups without rewriting old manual or researched narration', async () => {
