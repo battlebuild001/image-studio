@@ -1,3 +1,4 @@
+import {YOUTUBE_PLAYLIST_SCOPE, normalizePlaylistSelection, normalizePlaylistPageToken, validatePlaylistId, validatePlaylistVideoId, validatePlaylistChannelId, validatePlaylistItemId} from './youtube-playlist-protocol.js';
 import {YOUTUBE_SCOPES, normalizeYouTubeClientId, normalizeYouTubeMetadata, buildYouTubeVideoResource, normalizeYouTubeUploadRecord, validateYouTubeVideoFile, validateYouTubeThumbnailFile} from './youtube-protocol.js';
 import {assertYouTubeScheduleFuture, normalizePublishAt, YOUTUBE_SCHEDULE_TRANSFER_LEAD_MS} from './youtube-schedule.js';
 
@@ -7,11 +8,13 @@ const UPLOAD_ENDPOINT = 'https://www.googleapis.com/upload/youtube/v3/videos?upl
 const CHANNEL_ENDPOINT = 'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true&maxResults=50';
 const IDENTITY_URL = 'https://accounts.google.com/gsi/client';
 const THUMBNAIL_ENDPOINT = 'https://www.googleapis.com/upload/youtube/v3/thumbnails/set';
+const PLAYLIST_ENDPOINT = 'https://www.googleapis.com/youtube/v3/playlists';
+const PLAYLIST_ITEM_ENDPOINT = 'https://www.googleapis.com/youtube/v3/playlistItems';
 
 function failure(code, message, status, reason, phase) {const error = new Error(message);error.code = code;if (status) error.status = status;if (reason) error.reason = reason;if (phase) error.phase = phase;return error;}
 // Keep only recognized public reason codes. Google messages, metadata, credentials
 // and capability URLs must never become a displayed error or persisted state.
-const GOOGLE_REASONS = new Set(['accessNotConfigured','serviceDisabled','SERVICE_DISABLED','insufficientPermissions','ACCESS_TOKEN_SCOPE_INSUFFICIENT','quotaExceeded','dailyLimitExceeded','dailyLimitExceededUnreg','userRateLimitExceeded','rateLimitExceeded','RATE_LIMIT_EXCEEDED','uploadLimitExceeded','youtubeSignupRequired','channelNotFound','channelClosed','channelSuspended','authenticatedUserAccountClosed','authenticatedUserAccountSuspended','accountDelegationForbidden','forbidden','invalidImage','mediaBodyRequired','videoNotFound','uploadRateLimitExceeded']);
+const GOOGLE_REASONS = new Set(['accessNotConfigured','serviceDisabled','SERVICE_DISABLED','insufficientPermissions','ACCESS_TOKEN_SCOPE_INSUFFICIENT','quotaExceeded','dailyLimitExceeded','dailyLimitExceededUnreg','userRateLimitExceeded','rateLimitExceeded','RATE_LIMIT_EXCEEDED','uploadLimitExceeded','youtubeSignupRequired','channelNotFound','channelClosed','channelSuspended','authenticatedUserAccountClosed','authenticatedUserAccountSuspended','accountDelegationForbidden','forbidden','invalidImage','mediaBodyRequired','videoNotFound','uploadRateLimitExceeded','playlistNotFound','playlistItemsNotAccessible','playlistOperationUnsupported','playlistContainsMaximumNumberOfVideos','videoAlreadyInPlaylist','playlistForbidden']);
 function googleReason(body) {
   const errors=Array.isArray(body?.error?.errors)?body.error.errors.slice(0,20):[],details=Array.isArray(body?.error?.details)?body.error.details.slice(0,20):[];
   return [...errors,...details].map(item=>item?.reason).find(value=>typeof value==='string'&&GOOGLE_REASONS.has(value))||'';
@@ -64,7 +67,16 @@ async function json(response, max = 1024 * 1024, signal, timeout = 120000) {
 async function responseFailure(response, signal, timeout, phase='upload') {
   let reason = '';try {reason=googleReason(await json(response, 32000, signal, timeout));} catch (cause) {if (cause?.name === 'AbortError') throw cause;}
   const status = Number(response.status);
-  const prefix=phase==='channel'?'YouTube 채널 확인 중':phase==='thumbnail'?'YouTube 썸네일 적용 중':'YouTube 업로드 요청 중',make=(code,message)=>failure(code,`${prefix} ${message}${reason?` (Google: ${reason}, HTTP ${status})`:''}`,status,reason,phase);
+  const prefix=phase==='channel'?'YouTube 채널 확인 중':phase==='thumbnail'?'YouTube 썸네일 적용 중':phase==='playlist'?'YouTube 재생목록 처리 중':'YouTube 업로드 요청 중',make=(code,message)=>failure(code,`${prefix} ${message}${reason?` (Google: ${reason}, HTTP ${status})`:''}`,status,reason,phase);
+  if(phase==='playlist'){
+    if(status===401)return make('YOUTUBE_AUTH_EXPIRED','Google 연결이 만료됐어요. 같은 채널로 다시 연결한 뒤 재생목록 추가만 확인해 주세요. 영상은 다시 올리지 않아요.');
+    if(['insufficientPermissions','ACCESS_TOKEN_SCOPE_INSUFFICIENT'].includes(reason))return make('YOUTUBE_PLAYLIST_SCOPE_REQUIRED','재생목록 추가 권한이 필요해요. 재생목록 권한 연결을 눌러 같은 채널에서 동의해 주세요.');
+    if(status===404||reason==='playlistNotFound')return make('YOUTUBE_PLAYLIST_NOT_FOUND','선택한 재생목록이나 영상을 찾지 못했어요. 내 재생목록을 새로 불러오고 소유 채널을 확인해 주세요.');
+    if(['playlistOperationUnsupported','playlistItemsNotAccessible','playlistForbidden'].includes(reason)||status===403&&reason==='forbidden')return make('YOUTUBE_PLAYLIST_PERMISSION','이 재생목록에 추가할 권한이 없거나 수정할 수 없는 목록이에요. 현재 채널이 만든 재생목록을 선택해 주세요.');
+    if(reason==='playlistContainsMaximumNumberOfVideos')return make('YOUTUBE_PLAYLIST_FULL','재생목록에 더 이상 영상을 추가할 수 없어요. 다른 재생목록을 선택해 주세요.');
+    if(reason==='videoAlreadyInPlaylist')return make('YOUTUBE_PLAYLIST_ALREADY_PRESENT','영상이 이미 목록에 있을 수 있어요. 추가 상태를 다시 확인해 주세요. 영상을 다시 업로드하지 않아요.');
+    if(status>=500)return make('YOUTUBE_PLAYLIST_UNCERTAIN','추가 완료 여부를 확인하지 못했어요. 재시도하면 먼저 목록을 조회해 중복 추가를 확인해요. 영상 업로드 결과는 유지돼요.');
+  }
   if(phase==='thumbnail'){
     if(['invalidImage','mediaBodyRequired'].includes(reason))return make('YOUTUBE_THUMBNAIL_IMAGE','Google이 썸네일 이미지 내용을 받아들이지 않았어요. 미리보기를 다시 확인하고 PNG·JPEG 썸네일만 다시 적용해 주세요. 영상은 다시 업로드하지 않아요.');
     if(status===404||reason==='videoNotFound')return make('YOUTUBE_THUMBNAIL_VIDEO_NOT_FOUND','해당 영상을 찾지 못했어요. 영상 링크와 연결한 소유 채널을 확인해 주세요. 새 영상을 자동으로 만들지 않았어요.');
@@ -80,11 +92,13 @@ async function responseFailure(response, signal, timeout, phase='upload') {
   if(reason==='uploadLimitExceeded')return make('YOUTUBE_UPLOAD_LIMIT','채널의 영상 업로드 한도에 도달했어요. YouTube Studio에서 채널 업로드 제한을 확인하고 제한이 해제된 뒤 다시 시도해 주세요.');
   if(['quotaExceeded','dailyLimitExceeded','dailyLimitExceededUnreg'].includes(reason))return make('YOUTUBE_QUOTA','Google Cloud API 프로젝트의 사용 한도에 도달했어요. 해당 프로젝트의 YouTube Data API 할당량을 확인해 주세요. 다시 로그인해도 할당량은 늘어나지 않아요.');
   if(['userRateLimitExceeded','rateLimitExceeded','RATE_LIMIT_EXCEEDED'].includes(reason))return make('YOUTUBE_RATE_LIMIT','사용자 또는 프로젝트의 요청 빈도 한도에 도달했어요. 잠시 뒤 상태를 확인하고 이어 올려 주세요. 요청을 자동 재시도하지 않았어요.');
+  if (phase === 'playlist' && status === 429) return make('YOUTUBE_RATE_LIMIT', '요청이 잠시 제한됐어요. 잠시 뒤 재생목록 상태를 다시 확인해 주세요. 요청을 자동 재시도하지 않았어요.');
   if (status === 401) return failure('YOUTUBE_AUTH_EXPIRED', '유튜브 연결이 만료됐어요. 같은 채널로 다시 연결한 뒤 이어 올려 주세요.', status);
   if (status === 404 || status === 410) return failure('YOUTUBE_UPLOAD_EXPIRED', '이어 올리기 세션이 만료됐거나 없어졌어요. 채널에 영상이 있는지 확인한 뒤 새 업로드를 시작해 주세요.', status);
   if (status === 403) return make('YOUTUBE_PERMISSION','Google이 접근을 허용하지 않았지만 이 응답만으로 API 비활성화·권한 부족·계정 제한 중 어느 원인인지 확정할 수 없어요. 저장한 OAuth 클라이언트의 프로젝트 설정과 해당 계정의 채널 접근 권한을 확인해 주세요.');
   if (status === 429) return failure('YOUTUBE_RATE_LIMIT', '유튜브 요청이 잠시 제한됐어요. 잠시 뒤 상태를 확인하고 이어 올려 주세요.', status);
   if (status >= 500) return failure('YOUTUBE_SERVER', '유튜브 서버가 응답하지 못했어요. 새 업로드 대신 상태 확인 후 이어 올리기를 사용해 주세요.', status);
+  if (phase === 'playlist') return make('YOUTUBE_PLAYLIST_REQUEST_FAILED', '재생목록 요청을 처리하지 못했어요. 선택한 목록과 연결 권한을 확인해 주세요. 영상 업로드 결과는 유지돼요.');
   return failure('YOUTUBE_REQUEST_FAILED', `유튜브 요청을 처리하지 못했어요 (HTTP ${status || '오류'}). 제목·설명·파일과 연결 권한을 확인해 주세요.`, status);
 }
 
@@ -114,7 +128,7 @@ export function createYouTubeClient(options = {}) {
   let credential = null, identity = null, identityPromise = null, connecting = null, job = null, upload = null, revision = 0, expiryTimer = null;
   const subscribers = new Set();
   function getSettings() {return {clientId};}
-  function getSession() {const connected = Boolean(credential && credential.clientId === clientId && now() < credential.expiresAt - 5000);return {connected, clientId, channelId: connected ? credential.channelId : '', channelTitle: connected ? credential.channelTitle : '', expiresAt: connected ? credential.expiresAt : 0, busy: Boolean(connecting || job), connecting: Boolean(connecting), uploading: Boolean(job)};}
+  function getSession() {const connected = Boolean(credential && credential.clientId === clientId && now() < credential.expiresAt - 5000);return {connected, clientId, channelId: connected ? credential.channelId : '', channelTitle: connected ? credential.channelTitle : '', expiresAt: connected ? credential.expiresAt : 0, busy: Boolean(connecting || job), connecting: Boolean(connecting), uploading: Boolean(job), playlistAccess: connected && credential.playlistAccess === true};}
   function getUploadState() {return {available: Boolean(upload?.location && !upload.complete), paused: Boolean(upload?.location && !upload.complete && !job), uploadedBytes: upload?.uploadedBytes || 0, totalBytes: upload?.blob.size || 0, fileName: upload?.fileName || '', channelId: upload?.channelId || '', channelTitle: upload?.channelTitle || '', metadata: upload ? copy(upload.metadata) : null, uncertain: Boolean(upload?.uncertain), complete: Boolean(upload?.complete), expired: Boolean(upload?.expired)};}
   function emit(type) {const event = {type, session: getSession(), upload: getUploadState(), settings: getSettings()};for (const callback of subscribers) {try {callback(event);} catch {}}}
   function clearCredential() {clearTimeout(expiryTimer);expiryTimer = null;credential = null;}
@@ -154,7 +168,7 @@ export function createYouTubeClient(options = {}) {
     const stopped = new Promise((_resolve, reject) => {onAbort = () => reject(cancelled());signal.addEventListener('abort', onAbort, {once: true});timer = setTimeout(() => reject(failure('YOUTUBE_IDENTITY_UNAVAILABLE', 'Google 연결 도구를 기다리는 시간이 길어졌어요. 네트워크를 확인한 뒤 다시 연결해 주세요.')), Math.min(20000, oauthTimeout));});
     return Promise.race([prepareIdentity(), stopped]).finally(() => {clearTimeout(timer);signal.removeEventListener('abort', onAbort);});
   }
-  function grant(api, signal) {
+  function grant(api, signal, requestedScopes = YOUTUBE_SCOPES) {
     return new Promise((resolve, reject) => {
       let settled = false, timer;
       const finish = (cause, value) => {if (settled) return;settled = true;clearTimeout(timer);signal.removeEventListener('abort', onAbort);cause ? reject(cause) : resolve(value);};
@@ -162,7 +176,7 @@ export function createYouTubeClient(options = {}) {
       if (signal.aborted) {onAbort();return;}
       timer = setTimeout(() => finish(failure('YOUTUBE_OAUTH_TIMEOUT', 'Google 연결 응답을 기다리는 시간이 길어졌어요. 연결 창을 확인하고 다시 연결해 주세요.')), oauthTimeout);
       try {
-        const tokenClient = api.initTokenClient({client_id: clientId, scope: YOUTUBE_SCOPES, include_granted_scopes: false,
+        const tokenClient = api.initTokenClient({client_id: clientId, scope: requestedScopes, include_granted_scopes: false,
           callback: response => {
             if (response?.error) {finish(oauthFailure(response));return;}
             finish(null, response);
@@ -172,17 +186,20 @@ export function createYouTubeClient(options = {}) {
       } catch {finish(failure('YOUTUBE_OAUTH_POPUP', 'Google 연결 창을 열지 못했어요. 팝업을 허용한 뒤 연결 버튼을 다시 눌러 주세요.'));}
     });
   }
-  function connect({signal} = {}) {
+  function connect({signal, playlistAccess = false} = {}) {
+    if (typeof playlistAccess !== 'boolean') return Promise.reject(failure('YOUTUBE_PLAYLIST_SCOPE_REQUIRED','재생목록 연결 옵션을 확인해 주세요.'));
     if (connecting || job) return Promise.reject(failure('YOUTUBE_BUSY', '진행 중인 유튜브 작업을 마치거나 중지한 뒤 연결해 주세요.'));
     if (!clientId) return Promise.reject(failure('YOUTUBE_CLIENT_ID_REQUIRED', 'Google 웹 애플리케이션의 공개 OAuth 클라이언트 ID를 먼저 저장해 주세요.'));
+    const requestedScopes = playlistAccess ? `${YOUTUBE_SCOPES} ${YOUTUBE_PLAYLIST_SCOPE}` : YOUTUBE_SCOPES;
     const scope = controlled(signal), controller = scope.controller, expected = revision, selectedClient = clientId;
     connecting = controller;clearCredential();emit('connecting');
     // An already loaded SDK reaches requestAccessToken synchronously in the click.
-    const granted = identity ? grant(identity, controller.signal) : identityReady(controller.signal).then(api => grant(api, controller.signal));
+    const granted = identity ? grant(identity, controller.signal, requestedScopes) : identityReady(controller.signal).then(api => grant(api, controller.signal, requestedScopes));
     return granted.then(async response => {
       if (controller.signal.aborted || expected !== revision || selectedClient !== clientId) throw cancelled();
       const grantedScopes = new Set(typeof response?.scope === 'string' ? response.scope.split(/\s+/u) : []);
       if (!YOUTUBE_SCOPES.split(/\s+/u).every(item => grantedScopes.has(item))) throw failure('YOUTUBE_SCOPE_REQUIRED', '유튜브 업로드와 내 채널 확인 권한을 모두 허용해 주세요. 허용하지 않은 권한으로 업로드하지 않았어요.');
+      if (playlistAccess && !grantedScopes.has(YOUTUBE_PLAYLIST_SCOPE)) throw failure('YOUTUBE_PLAYLIST_SCOPE_REQUIRED','재생목록 추가 권한이 허용되지 않았어요. 재생목록 권한 연결에서 동의해 주세요.');
       if (typeof response.access_token !== 'string' || !response.access_token || response.access_token.length > 8192 || /[\r\n]/u.test(response.access_token)) throw failure('YOUTUBE_OAUTH_RESPONSE', 'Google 연결 정보를 확인하지 못했어요. 다시 연결해 주세요.');
       const expiresAt = now() + expirySeconds(response.expires_in) * 1000;
       const channelResponse = await send(CHANNEL_ENDPOINT, {method: 'GET', headers: {Authorization: `Bearer ${response.access_token}`}}, controller.signal);
@@ -192,7 +209,7 @@ export function createYouTubeClient(options = {}) {
       if (items.length !== 1) throw failure('YOUTUBE_CHANNEL_AMBIGUOUS', '업로드할 채널을 하나로 확인하지 못했어요. Google 연결에서 사용할 유튜브 채널을 선택해 다시 연결해 주세요.');
       const channel = items[0];if (!/^UC[A-Za-z0-9_-]{22}$/u.test(channel?.id || '') || typeof channel?.snippet?.title !== 'string' || Array.from(channel.snippet.title).length > 150) throw failure('YOUTUBE_CHANNEL_RESPONSE', 'Google이 반환한 채널 정보를 확인하지 못했어요. 다시 연결해 주세요.');
       if (controller.signal.aborted || expected !== revision || selectedClient !== clientId) throw cancelled();
-      credential = {token: response.access_token, clientId, channelId: channel.id, channelTitle: channel.snippet.title.replace(/[\x00-\x1f\x7f]/gu, ''), expiresAt};
+      credential = {token: response.access_token, clientId, channelId: channel.id, channelTitle: channel.snippet.title.replace(/[\x00-\x1f\x7f]/gu, ''), expiresAt, playlistAccess: playlistAccess && grantedScopes.has(YOUTUBE_PLAYLIST_SCOPE)};
       expiryTimer = setTimeout(() => {if (credential?.expiresAt === expiresAt) {clearCredential();emit('expired');}}, Math.max(0, expiresAt - now() - 5000));expiryTimer.unref?.();emit('connected');return getSession();
     }).finally(() => {scope.release();if (connecting === controller) {connecting = null;emit('connection-finished');}});
   }
@@ -289,10 +306,73 @@ export function createYouTubeClient(options = {}) {
       throw cause;
     }finally{scope.release();if(job===controller){job=null;emit('thumbnail-finished');}}
   }
+  function playlistAuth(channelId, write = false) {
+    const auth=requireAuth();
+    if(channelId&&auth.channelId!==channelId)throw failure('YOUTUBE_PLAYLIST_CHANNEL_CHANGED','재생목록을 선택한 채널과 현재 연결한 채널이 달라요. 같은 채널로 다시 연결해 주세요.',undefined,undefined,'playlist');
+    if(write&&!auth.playlistAccess)throw failure('YOUTUBE_PLAYLIST_SCOPE_REQUIRED','재생목록 추가 권한이 필요해요. 재생목록 권한 연결에서 같은 채널에 동의해 주세요.',undefined,undefined,'playlist');
+    return auth;
+  }
+  async function playlistJob({signal,channelId,write=false}, action) {
+    if(job||connecting)throw failure('YOUTUBE_BUSY','진행 중인 YouTube 작업을 마친 뒤 재생목록을 확인해 주세요.');
+    if(write&&upload?.location&&!upload.complete)throw failure('YOUTUBE_UPLOAD_PENDING','중단한 영상 전송을 먼저 확인한 뒤 재생목록에 추가해 주세요.');
+    const initial=playlistAuth(channelId,write),targetChannel=initial.channelId,scope=controlled(signal),controller=scope.controller,expected=revision;
+    const checkPlaylist=()=>{if(controller.signal.aborted||expected!==revision)throw cancelled();return playlistAuth(targetChannel,write);};
+    job=controller;emit(write?'playlist-add-started':'playlist-list-started');
+    try{return await action(controller,checkPlaylist);}
+    finally{scope.release();if(job===controller){job=null;emit(write?'playlist-add-finished':'playlist-list-finished');}}
+  }
+  async function playlistJson(url,init,controller,checkPlaylist) {
+    const auth=checkPlaylist(),response=await send(url,{...init,headers:{Authorization:`Bearer ${auth.token}`,...init.headers}},controller.signal);checkPlaylist();
+    if(!response.ok)throw await uploadResponseError(response,controller.signal,'playlist');
+    const value=await json(response,1024*1024,controller.signal,requestTimeout);checkPlaylist();return value;
+  }
+  function playlistEntry(item) {
+    try{return normalizePlaylistSelection({id:item?.id,title:item?.snippet?.title,channelId:item?.snippet?.channelId});}
+    catch{throw failure('YOUTUBE_PLAYLIST_RESPONSE','Google이 반환한 재생목록 정보를 확인하지 못했어요. 목록을 다시 불러와 주세요.',undefined,undefined,'playlist');}
+  }
+  function playlistItems(body,limit) {
+    if(!Array.isArray(body?.items)||body.items.length>limit)throw failure('YOUTUBE_PLAYLIST_RESPONSE','재생목록 응답 형식을 확인하지 못했어요. 기존 영상과 선택은 유지돼요.',undefined,undefined,'playlist');
+    return body.items;
+  }
+  function playlistItem(item,playlistId,videoId,channelId) {
+    try{validatePlaylistItemId(item?.id);if(item?.snippet?.playlistId!==playlistId||item?.snippet?.resourceId?.kind!=='youtube#video'||item.snippet.resourceId.videoId!==videoId||item.snippet.channelId!==undefined&&item.snippet.channelId!==channelId)throw Error('mismatch');return item.id;}
+    catch{throw failure('YOUTUBE_PLAYLIST_UNCERTAIN','영상의 재생목록 추가 결과를 확인하지 못했어요. 상태를 다시 확인해 주세요. 영상 업로드 결과는 유지돼요.',undefined,undefined,'playlist');}
+  }
+  async function listPlaylists({pageToken,signal}={}) {
+    let token;try{token=normalizePlaylistPageToken(pageToken);}catch{throw failure('YOUTUBE_PLAYLIST_PAGE','재생목록의 다음 페이지 정보를 확인해 주세요.',undefined,undefined,'playlist');}
+    try{return await playlistJob({signal},async(controller,checkPlaylist)=>{
+      const auth=checkPlaylist(),url=new URL(PLAYLIST_ENDPOINT);url.searchParams.set('part','snippet');url.searchParams.set('mine','true');url.searchParams.set('maxResults','50');if(token)url.searchParams.set('pageToken',token);
+      const body=await playlistJson(url.href,{method:'GET'},controller,checkPlaylist),entries=playlistItems(body,50).map(playlistEntry),items=entries.filter(item=>item.channelId===auth.channelId),seen=new Set();
+      for(const item of items){if(seen.has(item.id))throw failure('YOUTUBE_PLAYLIST_RESPONSE','재생목록 응답에 중복된 항목이 있어요. 목록을 다시 불러와 주세요.',undefined,undefined,'playlist');seen.add(item.id);}
+      let nextPageToken;try{nextPageToken=normalizePlaylistPageToken(body.nextPageToken);}catch{throw failure('YOUTUBE_PLAYLIST_RESPONSE','재생목록의 다음 페이지 응답을 확인하지 못했어요.',undefined,undefined,'playlist');}
+      return{items,nextPageToken};
+    });}catch(cause){if(cause?.code==='YOUTUBE_PLAYLIST_SCOPE_REQUIRED')throw failure('YOUTUBE_SCOPE_REQUIRED','내 재생목록을 불러올 읽기 권한을 확인하지 못했어요. Google 계정 연결에서 내 채널 확인 권한을 다시 허용해 주세요.',cause.status,cause.reason,'playlist');throw cause;}
+  }
+  async function addVideoToPlaylist({playlistId,videoId,channelId,signal}={}) {
+    try{validatePlaylistId(playlistId);validatePlaylistVideoId(videoId);validatePlaylistChannelId(channelId);}catch{throw failure('YOUTUBE_PLAYLIST_TARGET','재생목록과 추가할 영상·채널을 확인해 주세요.',undefined,undefined,'playlist');}
+    let posted=false;
+    try{return await playlistJob({signal,channelId,write:true},async(controller,checkPlaylist)=>{
+      const ownedUrl=new URL(PLAYLIST_ENDPOINT);ownedUrl.searchParams.set('part','snippet');ownedUrl.searchParams.set('id',playlistId);ownedUrl.searchParams.set('maxResults','1');
+      const owned=playlistItems(await playlistJson(ownedUrl.href,{method:'GET'},controller,checkPlaylist),1);
+      if(!owned.length)throw failure('YOUTUBE_PLAYLIST_NOT_FOUND','선택한 재생목록을 찾지 못했어요. 내 재생목록을 다시 불러와 주세요.',undefined,undefined,'playlist');
+      const selection=playlistEntry(owned[0]);if(selection.id!==playlistId||selection.channelId!==channelId)throw failure('YOUTUBE_PLAYLIST_OWNERSHIP','현재 채널이 만든 재생목록만 선택할 수 있어요. 재생목록과 연결 채널을 다시 확인해 주세요.',undefined,undefined,'playlist');
+      const lookup=new URL(PLAYLIST_ITEM_ENDPOINT);lookup.searchParams.set('part','snippet');lookup.searchParams.set('playlistId',playlistId);lookup.searchParams.set('videoId',videoId);lookup.searchParams.set('maxResults','1');
+      const existing=playlistItems(await playlistJson(lookup.href,{method:'GET'},controller,checkPlaylist),1);
+      if(existing.length)return{playlistItemId:playlistItem(existing[0],playlistId,videoId,channelId),playlistId,videoId,alreadyPresent:true};
+      checkPlaylist();const insert=new URL(PLAYLIST_ITEM_ENDPOINT);insert.searchParams.set('part','snippet');const resource={snippet:{playlistId,resourceId:{kind:'youtube#video',videoId}}};posted=true;
+      const inserted=await playlistJson(insert.href,{method:'POST',headers:{'Content-Type':'application/json; charset=UTF-8'},body:JSON.stringify(resource)},controller,checkPlaylist);
+      if(inserted?.kind!=='youtube#playlistItem')throw failure('YOUTUBE_PLAYLIST_UNCERTAIN','재생목록 추가 완료 응답을 확인하지 못했어요. 같은 영상의 상태를 다시 확인해 주세요.',undefined,undefined,'playlist');
+      const result={playlistItemId:playlistItem(inserted,playlistId,videoId,channelId),playlistId,videoId,alreadyPresent:false};emit('playlist-add-complete');return result;
+    });}catch(cause){
+      if(posted&&cause?.name==='AbortError'){cause.uncertain=true;cause.phase='playlist';throw cause;}
+      if(['YOUTUBE_NETWORK','YOUTUBE_TIMEOUT','YOUTUBE_BAD_RESPONSE'].includes(cause?.code))throw failure(posted?'YOUTUBE_PLAYLIST_UNCERTAIN':'YOUTUBE_PLAYLIST_REQUEST_FAILED',posted?'재생목록 추가 완료 여부를 확인하지 못했어요. 재시도하면 먼저 목록을 조회하며, 영상을 다시 업로드하지 않아요.':'재생목록을 확인하지 못했어요. 연결을 확인한 뒤 다시 불러와 주세요. 영상은 다시 업로드하지 않았어요.',cause.status,undefined,'playlist');
+      throw cause;
+    }
+  }
   const storageTarget = options.eventTarget ?? (typeof window !== 'undefined' ? window : null);
   const changedElsewhere = event => {if (event.key !== SETTINGS_KEY && event.key !== null) return;let next = '';try {next = normalizeYouTubeClientId(getStorage()?.getItem(SETTINGS_KEY) || '');} catch {}if (next !== clientId) {revision++;stopActive();clearCredential();upload = null;clientId = next;emit('settings');}};
   storageTarget?.addEventListener?.('storage', changedElsewhere);
-  return {getSettings, saveClientId, getSession, subscribe, prepareIdentity, connect, disconnect, uploadVideo, getUploadState, resumeUpload, clearUpload, setThumbnail,
+  return {getSettings, saveClientId, getSession, subscribe, prepareIdentity, connect, disconnect, uploadVideo, getUploadState, resumeUpload, clearUpload, setThumbnail, listPlaylists, addVideoToPlaylist,
     dispose() {revision++;stopActive();clearCredential();upload = null;storageTarget?.removeEventListener?.('storage', changedElsewhere);subscribers.clear();}};
 }
 

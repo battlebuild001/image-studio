@@ -18,3 +18,10 @@
 .miniature-tag-picker :focus-visible{outline:2px solid #e4c28c;outline-offset:3px}.miniature-tag-picker [hidden]{display:none!important}.miniature-tag-picker :is(input,select,button){max-width:100%}
 @media(max-width:650px){.miniature-tag-picker{padding:12px}.miniature-tag-picker .miniature-tag-grid{grid-template-columns:minmax(0,1fr)}.miniature-tag-picker .miniature-tag-option{min-height:54px}.miniature-tag-picker .miniature-tag-field input,.miniature-tag-picker .miniature-tag-field select,.miniature-tag-picker .miniature-tag-actions button,.miniature-tag-picker>button.primary{min-height:44px}.miniature-tag-picker .miniature-tag-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.miniature-tag-picker .miniature-tag-actions button{padding:8px 7px;font-size:11px}.miniature-tag-picker button.miniature-tag-chip{min-height:40px}.miniature-tag-picker .miniature-tag-more>summary,.miniature-tag-picker .miniature-tag-presets>summary{min-height:44px;box-sizing:border-box}}
 @media(prefers-reduced-motion:reduce){.miniature-tag-picker *{scroll-behavior:auto}}
+
+.miniature-tag-hashtags{margin:14px 0 0;padding:12px 0 0;border-top:1px solid #34464a;min-width:0}
+.miniature-tag-hashtag-check{display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.7;cursor:pointer}
+.miniature-tag-hashtag-check input{flex:0 0 16px;width:16px;min-width:16px;height:16px;accent-color:var(--accent,#dfbb84);margin:2px 0 0}
+.miniature-tag-hashtag-preview{margin:9px 0;padding:9px 10px;background:#102025;border-radius:4px;color:#dcc79d;font-size:12px;line-height:1.8;overflow-wrap:anywhere}
+.miniature-tag-hashtags button{min-height:40px;font-size:11px;max-width:100%;white-space:normal}
+@media(max-width:650px){.miniature-tag-hashtag-check{min-height:44px}.miniature-tag-hashtags button{min-height:44px;width:100%}}

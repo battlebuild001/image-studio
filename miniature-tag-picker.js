@@ -1,3 +1,4 @@
+import {deriveDescriptionHashtags} from './description-hashtags.js';
 import {MINIATURE_GAME_GROUPS, recommendMiniatureTags, normalizeMiniatureTags, filterMiniatureTags, createMiniatureTagPresetStore} from './miniature-tags.js';
 import {youtubeTagCharacterCount} from './youtube-protocol.js';
 
@@ -6,7 +7,7 @@ const makeButton = (id, text, className = 'outline') => {const value = element('
 const signature = value => JSON.stringify(value);
 
 /** Local suggestions and reusable presets. Only Apply changes the surrounding editor. */
-export function setupMiniatureTagPicker({container, prefix, getContext, getTags, onApply, getOwnerKey, canEdit} = {}) {
+export function setupMiniatureTagPicker({container, prefix, getContext, getTags, onApply, getOwnerKey, canEdit, getHashtagsEnabled, onHashtagsChange, onApplyHashtags} = {}) {
   if (!container?.append || !/^[A-Za-z][A-Za-z0-9_-]*$/u.test(prefix || '') || typeof onApply !== 'function') throw new Error('미니어처 게임 태그 선택기를 준비하지 못했어요.');
   if (!document.getElementById('miniatureTagPickerStyles')) {const style = element('link');style.id = 'miniatureTagPickerStyles';style.rel = 'stylesheet';style.href = new URL('./miniature-tag-picker.css', import.meta.url).href;document.head.append(style);}
   const id = suffix => prefix + suffix;
@@ -27,6 +28,9 @@ export function setupMiniatureTagPicker({container, prefix, getContext, getTags,
   const legacy = element('p', 'miniature-tag-legacy');legacy.id = id('TagLegacyNotice');legacy.hidden = true;
   const apply = makeButton(id('ApplyMiniatureTagsBtn'), '선택 태그 적용', 'primary'), status = element('p', 'miniature-tag-status'), error = element('p', 'miniature-tag-error');status.id = id('TagPickerStatus');status.setAttribute('role', 'status');status.setAttribute('aria-live', 'polite');error.id = id('TagPickerError');error.setAttribute('role', 'alert');
 
+  const hashtagSection = element('section', 'miniature-tag-hashtags'), hashtagLabel = element('label', 'miniature-tag-hashtag-check'), hashtagsEnabled = element('input'), hashtagPreview = element('p', 'miniature-tag-hashtag-preview'), hashtagHelp = element('p', 'miniature-tag-help', '검색용 태그는 YouTube의 별도 항목이에요. 이 옵션은 적용한 게임 태그 중 최대 5개를 설명에 #해시태그로 표시해요.'), applyHashtags = makeButton(id('ApplyDescriptionHashtagsBtn'), '설명에 해시태그 반영');
+  hashtagSection.id = id('DescriptionHashtagOptions');hashtagsEnabled.id = id('DescriptionHashtags');hashtagsEnabled.type = 'checkbox';hashtagLabel.htmlFor = hashtagsEnabled.id;hashtagLabel.append(hashtagsEnabled, element('span', '', '선택한 태그를 설명에 #해시태그로 표시'));hashtagPreview.id = id('DescriptionHashtagPreview');hashtagPreview.setAttribute('role', 'status');hashtagPreview.setAttribute('aria-live', 'polite');hashtagPreview.setAttribute('aria-atomic', 'true');hashtagsEnabled.setAttribute('aria-describedby', hashtagPreview.id);hashtagSection.append(hashtagLabel, hashtagHelp, hashtagPreview, applyHashtags);hashtagSection.hidden = typeof onHashtagsChange !== 'function' && typeof onApplyHashtags !== 'function';
+
   const presets = element('details', 'miniature-tag-presets');presets.id = id('TagPresetDetails');const presetsSummary = element('summary', '', '태그 프리셋'), presetsBody = element('div', 'miniature-tag-preset-body');presets.append(presetsSummary, presetsBody);
   const presetHelp = element('p', 'miniature-tag-help', '선택한 태그 조합을 이 브라우저에 저장해 다른 영상에서도 불러와요. 불러온 뒤 ‘선택 태그 적용’을 눌러야 영상에 반영돼요.');
   const presetLabel = element('label', 'miniature-tag-field'), presetSelect = element('select');presetSelect.id = id('TagPresetSelect');presetLabel.htmlFor = presetSelect.id;presetLabel.append(element('span', '', '저장된 프리셋'), presetSelect);
@@ -35,9 +39,9 @@ export function setupMiniatureTagPicker({container, prefix, getContext, getTags,
   const nameLabel = element('label', 'miniature-tag-field'), name = element('input');name.id = id('TagPresetName');name.type = 'text';name.maxLength = 80;name.autocomplete = 'off';name.placeholder = '예: 블랙아웃 세계관';nameLabel.htmlFor = name.id;nameLabel.append(element('span', '', '프리셋 이름'), name);
   const save = makeButton(id('SaveTagPresetBtn'), '새 프리셋 저장'), update = makeButton(id('UpdateTagPresetBtn'), '선택 프리셋 수정');const saveRow = element('div', 'miniature-tag-actions');saveRow.append(save, update);
   const presetStatus = element('p', 'miniature-tag-status'), presetError = element('p', 'miniature-tag-error');presetStatus.id = id('TagPresetStatus');presetStatus.setAttribute('role', 'status');presetStatus.setAttribute('aria-live', 'polite');presetError.id = id('TagPresetError');presetError.setAttribute('role', 'alert');presetsBody.append(presetHelp, presetLabel, presetPreview, loadRow, nameLabel, saveRow, presetStatus, presetError);
-  root.append(title, help, gameLabel, reason, candidates, quickRow, selectedHeading, selectedList, legacy, apply, status, error, presets);container.append(root);
+  root.append(title, help, gameLabel, reason, candidates, quickRow, selectedHeading, selectedList, legacy, apply, status, error, hashtagSection, presets);container.append(root);
 
-  let generation = 0, owner = '', sourceKey = '', selected = new Set(), dirty = false, applying = false, disposed = false, rendering = false, store = null, unsubscribe = null, storeFailure = '', presetList = [], presetKey = '', selectedKey = '', recommendation = {items: [], gameIds: [], reason: ''};
+  let generation = 0, owner = '', sourceKey = '', selected = new Set(), dirty = false, applying = false, applyingToken = null, disposed = false, rendering = false, store = null, unsubscribe = null, storeFailure = '', presetList = [], presetKey = '', selectedKey = '', recommendation = {items: [], gameIds: [], reason: ''};
   const candidateNodes = new Map();
   const readTags = () => {const value = getTags?.();return (Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : []).filter(value => typeof value === 'string' && value.trim()).map(value => value.trim());};
   const context = () => getContext?.() || {};
@@ -98,7 +102,9 @@ export function setupMiniatureTagPicker({container, prefix, getContext, getTags,
     }
     const countText = `${values.length}개 선택 · ${countValue} / 500자`;if (count.textContent !== countText) count.textContent = countText;count.classList.toggle('is-invalid', !valid);
     const raw = readTags(), unknown = raw.filter(value => safeKnown([value]).length === 0).length;legacy.hidden = unknown === 0;legacy.textContent = unknown ? `현재 태그 중 추천 목록 밖의 태그 ${unknown}개는 그대로 두었어요. ‘선택 태그 적용’을 누르면 선택한 미니어처 게임 태그로 교체해요.` : '';
-    const disabled = !editable(), changed = signature(values) !== signature(raw);game.disabled = disabled;quick.disabled = disabled || !recommendation.items?.length;clear.disabled = disabled || !values.length;apply.disabled = disabled || !valid || !changed;apply.textContent = applying ? '태그 적용 중…' : '선택 태그 적용';root.setAttribute('aria-busy', String(applying));
+    const enabled = getHashtagsEnabled?.() !== false, hashtags = deriveDescriptionHashtags(raw);hashtagsEnabled.checked = enabled;const hashtagText = !enabled ? '설명 해시태그 표시는 꺼져 있어요. 검색용 태그는 유지돼요.' : hashtags.length ? hashtags.join(' ') + (dirty ? ' · 후보 선택을 바꾸었다면 먼저 ‘선택 태그 적용’을 누르세요.' : '') : '적용한 게임 태그가 없어요. 태그를 선택·적용하면 해시태그도 반영할 수 있어요.';if (hashtagPreview.textContent !== hashtagText) hashtagPreview.textContent = hashtagText;
+    const disabled = !editable(), changed = signature(values) !== signature(raw);hashtagsEnabled.disabled = disabled || typeof onHashtagsChange !== 'function';applyHashtags.disabled = disabled || typeof onApplyHashtags !== 'function';
+game.disabled = disabled;quick.disabled = disabled || !recommendation.items?.length;clear.disabled = disabled || !values.length;apply.disabled = disabled || !valid || !changed;apply.textContent = applying ? '태그 적용 중…' : '선택 태그 적용';root.setAttribute('aria-busy', String(applying));
     for (const chip of selectedList.querySelectorAll('button')) chip.disabled = disabled;
     presetSelect.disabled = name.disabled = disabled || Boolean(storeFailure);load.disabled = remove.disabled = disabled || Boolean(storeFailure) || !chosenPreset();save.disabled = disabled || Boolean(storeFailure) || !values.length;update.disabled = save.disabled || !chosenPreset();
   }
@@ -106,7 +112,7 @@ export function setupMiniatureTagPicker({container, prefix, getContext, getTags,
     if (disposed || rendering) return;rendering = true;
     try {
       const nextOwner = currentOwner(), raw = readTags(), nextSource = signature(raw);
-      if (owner !== nextOwner) {generation++;owner = nextOwner;sourceKey = nextSource;selected = new Set(safeKnown(raw));dirty = false;game.value = 'auto';selectedKey = '';status.textContent = error.textContent = presetStatus.textContent = '';presetSelect.value = '';name.value = '';}
+      if (owner !== nextOwner) {generation++;applyingToken = null;applying = false;owner = nextOwner;sourceKey = nextSource;selected = new Set(safeKnown(raw));dirty = false;game.value = 'auto';selectedKey = '';status.textContent = error.textContent = presetStatus.textContent = '';presetSelect.value = '';name.value = '';}
       else if (sourceKey !== nextSource) {if (!dirty) selected = new Set(safeKnown(raw));else if (!applying) status.textContent = '현재 입력 태그가 바뀌었어요. 선택 내용을 확인한 뒤 적용하세요.';sourceKey = nextSource;}
       recommendation = recommendMiniatureTags(context(), {gameId: game.value || 'auto'});renderPresets();renderCandidates();renderSelection();
     } catch (cause) {showError(cause);}
@@ -116,11 +122,18 @@ export function setupMiniatureTagPicker({container, prefix, getContext, getTags,
   quick.addEventListener('click', () => {try {requireEdit();selected = new Set(normalizeMiniatureTags((recommendation.items || []).slice(0, 6).map(item => item.tag)));dirty = true;error.textContent = '';status.textContent = '추천 조합을 선택했어요. 내용을 확인한 뒤 ‘선택 태그 적용’을 누르세요.';render();} catch (cause) {showError(cause);}});
   clear.addEventListener('click', () => {try {requireEdit();selected.clear();dirty = true;error.textContent = '';status.textContent = '선택을 비웠어요. 기존 입력 태그는 아직 바뀌지 않았어요.';render();} catch (cause) {showError(cause);}});
   apply.addEventListener('click', async () => {
-    if (applying) return;let actionOwner, actionGeneration;
-    try {requireEdit();actionOwner = currentOwner();actionGeneration = generation;const values = selectedValues();error.textContent = '';applying = true;render();const result = await onApply(values);if (result === false) throw new Error('선택한 태그를 적용하지 못했어요. 입력 내용을 확인해 주세요.');if (disposed || generation !== actionGeneration || currentOwner() !== actionOwner) return;dirty = false;sourceKey = signature(readTags());selected = new Set(safeKnown(readTags()));status.textContent = `${values.length}개 미니어처 게임 태그를 적용했어요.`;}
+    if (applying) return;let actionOwner, actionGeneration, actionToken;
+    try {requireEdit();actionOwner = currentOwner();actionGeneration = generation;const values = selectedValues();error.textContent = '';actionToken = {};applyingToken = actionToken;applying = true;render();const result = await onApply(values);if (result === false) throw new Error('선택한 태그를 적용하지 못했어요. 입력 내용을 확인해 주세요.');if (disposed || generation !== actionGeneration || currentOwner() !== actionOwner) return;dirty = false;sourceKey = signature(readTags());selected = new Set(safeKnown(readTags()));status.textContent = `${values.length}개 미니어처 게임 태그를 적용했어요.`;}
     catch (cause) {if (!disposed && (!actionOwner || generation === actionGeneration && currentOwner() === actionOwner)) showError(cause);}
-    finally {applying = false;render();}
+    finally {if (applyingToken === actionToken) {applyingToken = null;applying = false;}render();}
   });
+  async function applyHashtagAction(toggle) {
+    if (applying) return;let actionOwner, actionGeneration, actionToken;
+    try {requireEdit();actionOwner = currentOwner();actionGeneration = generation;const enabled = hashtagsEnabled.checked;actionToken = {};applyingToken = actionToken;applying = true;error.textContent = '';status.textContent = '설명 해시태그를 반영하고 있어요.';render();const outcome = toggle ? await onHashtagsChange?.(enabled) : await onApplyHashtags?.();if (outcome === false) throw new Error('설명 해시태그를 반영하지 못했어요. 현재 설명을 확인해 주세요.');if (disposed || actionGeneration !== generation || actionOwner !== currentOwner()) return;status.textContent = getHashtagsEnabled?.() === false ? '설명의 앱 해시태그를 해제했어요. 검색용 태그는 유지돼요.' : '적용한 게임 태그의 해시태그를 설명에 반영했어요.';}
+    catch (cause) {if (!disposed && (!actionOwner || actionGeneration === generation && actionOwner === currentOwner())) showError(cause);}
+    finally {if (applyingToken === actionToken) {applyingToken = null;applying = false;}render();}
+  }
+  hashtagsEnabled.addEventListener('change', () => applyHashtagAction(true));applyHashtags.addEventListener('click', () => applyHashtagAction(false));
   presetSelect.addEventListener('change', () => {const value = chosenPreset();name.value = value?.name || '';presetStatus.textContent = '';if (!storeFailure) presetError.textContent = '';updatePresetPreview();renderSelection();});
   load.addEventListener('click', () => {try {requireEdit();const value = chosenPreset();if (!value) throw new Error('불러올 프리셋을 선택해 주세요.');selected = new Set(normalizeMiniatureTags(value.tags));dirty = true;name.value = value.name;presetError.textContent = '';presetStatus.textContent = '프리셋을 선택 목록에 불러왔어요. ‘선택 태그 적용’을 눌러 영상에 반영하세요.';render();} catch (cause) {presetError.textContent = cause?.message || '프리셋을 불러오지 못했어요.';}});
   async function savePreset(replace) {
@@ -129,5 +142,5 @@ export function setupMiniatureTagPicker({container, prefix, getContext, getTags,
   }
   save.addEventListener('click', () => savePreset(false));update.addEventListener('click', () => savePreset(true));
   remove.addEventListener('click', () => {try {requireEdit();const value = chosenPreset();if (!value) throw new Error('삭제할 프리셋을 선택해 주세요.');ensureStore().remove(value.id);presetKey = '';renderPresets();name.value = '';presetError.textContent = '';presetStatus.textContent = '선택한 프리셋을 삭제했어요. 영상의 입력 태그와 현재 선택은 유지돼요.';renderSelection();} catch (cause) {presetError.textContent = cause?.message || '태그 프리셋을 삭제하지 못했어요.';}});
-  render();return {render, reset() {generation++;owner = '';sourceKey = '';selectedKey = '';dirty = false;selected.clear();status.textContent = error.textContent = presetStatus.textContent = '';render();}, dispose() {disposed = true;unsubscribe?.();unsubscribe = null;root.remove();}};
+  render();return {render, reset() {generation++;applyingToken = null;applying = false;owner = '';sourceKey = '';selectedKey = '';dirty = false;selected.clear();status.textContent = error.textContent = presetStatus.textContent = '';render();}, dispose() {disposed = true;unsubscribe?.();unsubscribe = null;root.remove();}};
 }

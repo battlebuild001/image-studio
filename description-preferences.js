@@ -11,11 +11,11 @@ const plain=value=>value!==null&&typeof value==='object'&&!Array.isArray(value)&
 function fail(message){throw new Error(message);}
 function descriptionText(value){if(typeof value!=='string'||value.length>300000)fail('영상 설명의 형식과 길이를 확인해 주세요.');return value;}
 export function normalizeDescriptionPreferences(input){
-  if(input===undefined)return{length:'short',support:false};
-  if(!plain(input)||Object.keys(input).some(key=>!['length','support'].includes(key)))fail('영상 설명 설정의 형식을 확인해 주세요.');
-  const length=input.length===undefined?'short':input.length,support=input.support===undefined?false:input.support;
-  if(!['short','standard'].includes(length)||typeof support!=='boolean')fail('설명 길이와 제작 지원 표시를 다시 선택해 주세요.');
-  return{length,support};
+  if(input===undefined)return{length:'short',support:false,hashtags:true};
+  if(!plain(input)||Object.keys(input).some(key=>!['length','support','hashtags'].includes(key)))fail('영상 설명 설정의 형식을 확인해 주세요.');
+  const length=input.length===undefined?'short':input.length,support=input.support===undefined?false:input.support,hashtags=input.hashtags===undefined?true:input.hashtags;
+  if(!['short','standard'].includes(length)||typeof support!=='boolean'||typeof hashtags!=='boolean')fail('설명 길이와 제작 지원 표시를 다시 선택해 주세요.');
+  return{length,support,hashtags};
 }
 export function getDescriptionPreferences(project){return normalizeDescriptionPreferences(project?.production?.description);}
 export function setDescriptionPreferences(project,input){

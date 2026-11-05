@@ -153,7 +153,7 @@ async function clearYouTubeStoredHistory(){
  if(exportController||importing||!workspaceReady)throw new Error('현재 작업이 끝난 뒤 업로드 기록을 지워 주세요.');
  await persist();await saveChain;
  const count=await clearStoredYouTubeUploadHistory();
- const clearRecords=value=>{if(value.production?.youtube?.uploads)value.production.youtube.uploads=[];};
+ const clearRecords=value=>{const youtube=value.production?.youtube;if(!youtube)return;if(youtube.uploads)youtube.uploads=[];delete youtube.playlistSelection;delete youtube.playlistTransfers;};
  clearRecords(project);history.forEach(clearRecords);redoHistory.forEach(clearRecords);
  renderProjectExtensions();scheduleSave();await persist();window.dispatchEvent(new Event('studio-youtube-history-cleared'));return count;
 }
@@ -587,9 +587,9 @@ async function applyGeneratedImage({blob,name='생성 이미지.png',sceneId=nul
 
 function restoreHistory(stack,destination){
  if(!stack.length||exportController||importing||uploadBatchBusy)return;
- pause();const accounting=project.production?.budget?clone(project.production.budget):null,uploads=project.production?.youtube?.uploads?clone(project.production.youtube.uploads):null,voicePreferences=project.production?.speech?.voicePreferences?clone(project.production.speech.voicePreferences):null,voiceSamples=project.production?.speech?.voiceSamples?clone(project.production.speech.voiceSamples):null,voiceDraft=project.production?.speech?.voiceDraft?clone(project.production.speech.voiceDraft):null,uploadSeries=project.production?.uploadSeries?clone(project.production.uploadSeries):null,referenceDiscovery=project.production?.referenceMedia?clone(project.production.referenceMedia):null,musicDiscovery=project.production?.music?clone(project.production.music):null;destination.push(clone(project));project=stack.pop();
+ pause();const accounting=project.production?.budget?clone(project.production.budget):null,uploads=project.production?.youtube?.uploads?clone(project.production.youtube.uploads):null,playlistTransfers=project.production?.youtube?.playlistTransfers?clone(project.production.youtube.playlistTransfers):null,voicePreferences=project.production?.speech?.voicePreferences?clone(project.production.speech.voicePreferences):null,voiceSamples=project.production?.speech?.voiceSamples?clone(project.production.speech.voiceSamples):null,voiceDraft=project.production?.speech?.voiceDraft?clone(project.production.speech.voiceDraft):null,uploadSeries=project.production?.uploadSeries?clone(project.production.uploadSeries):null,referenceDiscovery=project.production?.referenceMedia?clone(project.production.referenceMedia):null,musicDiscovery=project.production?.music?clone(project.production.music):null;destination.push(clone(project));project=stack.pop();
  if(accounting)project.production={version:1,...project.production,budget:accounting};
- if(uploads)project.production={version:1,...project.production,youtube:{...project.production?.youtube,uploads}};
+ if(uploads||playlistTransfers)project.production={version:1,...project.production,youtube:{...project.production?.youtube,...(uploads?{uploads}:{}),...(playlistTransfers?{playlistTransfers}:{})}};
  if(voicePreferences||voiceSamples||voiceDraft)project.production={version:1,...project.production,speech:{...project.production?.speech,...(voicePreferences?{voicePreferences}:{}),...(voiceSamples?{voiceSamples}:{}),...(voiceDraft?{voiceDraft}:{})}};
  if(uploadSeries)project.production={version:1,...project.production,uploadSeries};
  if(referenceDiscovery)project.production={version:1,...project.production,referenceMedia:{...referenceDiscovery,imports:project.production?.referenceMedia?.imports||[]}};
