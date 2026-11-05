@@ -289,6 +289,14 @@ publish user media as a regression check or claim authenticated upload success.
   memory-only, explicit and consumed once. Preserve it through video export and
   closing the setup dialog; cancel on content/project/workspace/channel changes.
   Root delivers an actual exported Blob only after exportController is cleared.
+  Keep upload readiness and recovery beside the upload button. A connected
+  channel/thumbnail is not a completed video; exported Blobs are page-memory only
+  and missing/stale/foreign exports must not be reused silently. The video-create
+  recovery action strictly saves drafts, closes delivery and opens existing export
+  setup, without starting rendering, arming or uploading. File recovery opens the
+  native chooser. Preserve existing explicit auto-arm and selected thumbnails
+  through export setup. Guidance for connection/schedule/resume/thumbnail states
+  must not bypass the actual transfer guards or initialize duplicate uploads.
   Closing active upload cancels transmission, not remote video deletion.
   Clear stale SDK-readiness/success on the next attempt and show connection errors
   beside connection controls. SDK preparation is not an authenticated channel.
