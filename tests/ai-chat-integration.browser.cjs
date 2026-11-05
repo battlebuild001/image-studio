@@ -34,7 +34,7 @@ const {chromium} = require('playwright');
   }
   const ready = () => page.waitForFunction(() => document.querySelector('#aiAssistantBtn') && !document.querySelector('#aiAssistantBtn').disabled);
   async function openChat() {
-    if (!await page.locator('#aiAssistantDialog').isVisible()) await page.locator('#aiAssistantBtn').click();
+    if (!await page.locator('#aiAssistantDialog').isVisible()) await require('./ui-navigation.browser.cjs').clickToolLauncher(page,'#aiAssistantBtn');
     await page.locator('#aiAssistantTab-chat').click();
     await page.locator('#aiAssistantPanel-chat').waitFor({state: 'visible'});
   }

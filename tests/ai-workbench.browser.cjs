@@ -7,7 +7,7 @@ const {chromium} = require('playwright');
   const browser = await chromium.launch({executablePath: '/usr/bin/chromium', headless: true}), page = await browser.newPage({viewport: {width: 1440, height: 1050}});page.setDefaultTimeout(22000);
   const errors = [], providers = [], posts = [];page.on('pageerror', error => errors.push(error.message));page.on('request', request => {if (request.method() === 'POST') posts.push(request.url());});
   for (const host of ['api.openai.com', 'api.typecast.ai', 'www.googleapis.com']) await page.route('https://' + host + '/**', route => {providers.push(route.request().url());return route.abort();});
-  const open = async tab => {await page.locator('#aiAssistantBtn').click();await page.locator('#aiAssistantDialog').waitFor({state: 'visible'});if (tab) await page.locator('#aiAssistantTab-' + tab).click();};
+  const open = async tab => {await require('./ui-navigation.browser.cjs').clickToolLauncher(page,'#aiAssistantBtn');await page.locator('#aiAssistantDialog').waitFor({state: 'visible'});if (tab) await page.locator('#aiAssistantTab-' + tab).click();};
   try {
     await page.goto(process.env.STUDIO_URL || 'http://127.0.0.1:4173/', {waitUntil: 'networkidle'});await page.waitForFunction(() => document.querySelector('#aiAssistantBtn') && !document.querySelector('#addWorkspaceBtn').disabled);
     await open();assert.deepEqual(await page.locator('#aiAssistantDialog [role=tab]').allTextContents(), ['영상 자동 검수', '원본·대본 비교', '채팅으로 편집']);

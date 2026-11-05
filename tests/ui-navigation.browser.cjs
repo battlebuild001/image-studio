@@ -2,6 +2,31 @@
 async function reveal(page, selector) {
   const target = typeof selector === 'string' ? page.locator(selector) : selector;
   await target.first().waitFor({state: 'attached'});
+  const location = await target.first().evaluate(element => {
+    const panel = element.closest('[id^="productionPanel-"]');
+    return {pane: element.closest('.center-stage') ? 'preview' : element.closest('.scenes-panel') ? 'scenes' : element.closest('.inspector') ? 'inspector' : '',
+      project: element.id.startsWith('productionTab-') ? element.id.slice(14) : panel?.id.slice(16),
+      series: Boolean(element.closest('#uploadSeriesSection,#uploadPanel-series')),
+      create: Boolean(element.closest('#uploadShortsTools'))};
+  });
+  if (location.pane && await page.locator('#mobileEditorTabs').isVisible()) {
+    const tab = page.locator('#mobileEditorTab-' + location.pane);
+    if (await tab.getAttribute('aria-selected') !== 'true') await tab.click();
+  }
+  if (location.project && await page.locator('#productionWorkbenchDialog').isVisible()) {
+    const groups = {basics:'project',budget:'project',speech:'speech',changes:'review',visual:'review',versions:'review',diagrams:'design',channels:'design'};
+    const group = page.locator('#productionGroup-' + groups[location.project]);
+    if (await group.count() && await group.getAttribute('aria-pressed') !== 'true') await group.click();
+    if (!(await target.first().getAttribute('id') || '').startsWith('productionTab-')) {
+      const tab = page.locator('#productionTab-' + location.project);
+      if (await tab.getAttribute('aria-selected') !== 'true') await tab.click();
+    }
+  }
+  if ((location.series || location.create) && await page.locator('#videoUploadDialog').isVisible()) {
+    const top = page.locator('#uploadTab-shorts');if (await top.getAttribute('aria-selected') !== 'true') await top.click();
+    const inner = page.locator(location.series ? '#shortsSection-series' : '#shortsSection-create');
+    if (await inner.count() && await inner.getAttribute('aria-selected') !== 'true') await inner.click();
+  }
   const ancestors = await target.first().locator('xpath=ancestor::details').all();
   const ordered = await Promise.all(ancestors.map(async locator => ({locator, depth: await locator.evaluate(element => {
     let depth = 0;for (let parent = element.parentElement; parent; parent = parent.parentElement) depth++;
@@ -15,6 +40,8 @@ async function reveal(page, selector) {
 }
 
 module.exports = {reveal};
+async function clickToolLauncher(page, selector) {await reveal(page, selector);await page.locator(selector).click();}
+module.exports.clickToolLauncher = clickToolLauncher;
 
 /** Delivery tools live outside the per-project settings dialog. */
 async function closeStudioWorkbench(page) {
@@ -31,8 +58,11 @@ async function openProductionSection(page, section) {
   const target=delivery?'#videoUploadDialog':'#productionWorkbenchDialog';
   const other=delivery?'#productionWorkbenchDialog':'#videoUploadDialog';
   if (await page.locator(other).isVisible()) await closeStudioWorkbench(page);
-  if (!await page.locator(target).isVisible()) await page.locator(delivery?'#videoUploadBtn':'#productionToolsBtn').click();
-  await page.locator((delivery?'#uploadTab-':'#productionTab-')+(section==='series'?'shorts':section)).click();
+  if (!await page.locator(target).isVisible()) await clickToolLauncher(page,delivery?'#videoUploadBtn':'#productionToolsBtn');
+  const tabSelector=(delivery?'#uploadTab-':'#productionTab-')+(section==='series'?'shorts':section);
+  await clickToolLauncher(page,tabSelector);
+  const inner=page.locator(section==='series'?'#shortsSection-series':'#shortsSection-create');
+  if(['shorts','series'].includes(section)&&await inner.count())await inner.click();
   if(section==='series'){
     const series=page.locator('#uploadSeriesSection');
     if(!(await series.evaluate(element=>element.open)))await series.locator(':scope > summary').click();

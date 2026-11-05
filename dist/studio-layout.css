@@ -81,3 +81,76 @@
 @media(prefers-reduced-motion:reduce){.studio-layout .studio-drawer-summary::before{transition:none}.studio-layout .studio-drawer{scroll-behavior:auto}}
 
 .studio-layout .studio-whole-video-action {margin:0 14px 11px;width:calc(100% - 28px);min-height:38px;font-size:11px;white-space:normal;}
+
+/* Task navigation supplements the four-step workflow, without another toolbar. */
+.studio-layout .project-tools{gap:8px}
+.studio-layout .project-title{flex:1;min-width:0}
+.studio-layout .project-title input{width:min(540px,100%);max-width:100%}
+.studio-layout .project-tools{flex-shrink:0}
+.studio-layout .project-tools>button{min-height:40px}
+.studio-layout .studio-storage-note{display:block;padding:10px 11px 5px;border-top:1px solid #30434a;margin-top:5px;font-size:10px;line-height:1.7;color:#93a6a4;white-space:normal}
+.studio-layout #apiSettingsBtn{white-space:nowrap;min-height:36px;padding:7px 10px;font-size:11px}
+.studio-layout .studio-mobile-editor-tabs,.studio-layout .studio-selected-scene-action{display:none}
+.studio-layout #inspectorContent[hidden],.studio-layout .studio-selected-scene-action[hidden]{display:none!important}
+.studio-layout #sceneEffectsDrawer{margin-top:16px}
+.studio-layout #sceneEffectsDrawer>.studio-drawer-summary{font-size:12px;padding:10px}
+.studio-layout #sceneEffectsDrawer .scene-effects-controls{border:0;margin:0;padding:12px 0 0;background:transparent}
+.studio-layout #sceneEffectsDrawer .scene-effects-heading{display:none}
+.studio-layout #sceneEffectsDrawer>.studio-drawer-body{padding-bottom:12px}
+.studio-layout .studio-skip-link{position:fixed;left:12px;top:-80px;z-index:1000;padding:10px 15px;background:#dfbb84;color:#151d1d;border-radius:6px;font-weight:600}
+.studio-layout .studio-skip-link:focus{top:12px}
+.studio-layout [data-editor-pane]{scroll-margin-top:16px}
+
+@media(max-width:720px){
+  .studio-layout .topbar{height:58px;padding:0 12px;gap:6px}
+  .studio-layout .brand{gap:0;flex-shrink:0}
+  .studio-layout .brand-mark{display:none}
+  .studio-layout .brand strong{font-size:9px;letter-spacing:.5px}
+  .studio-layout .brand em{font-size:8px;letter-spacing:.7px}
+  .studio-layout .top-actions{gap:3px;min-width:0}
+  .studio-layout .top-actions .icon-button{width:28px;min-width:28px;height:36px;font-size:19px}
+  .studio-layout #apiSettingsBtn{font-size:10px;min-height:36px;padding:7px 8px}
+  .studio-layout .studio-project-menu>.studio-drawer-summary{min-height:36px;padding:7px 8px}
+  .studio-layout #exportBtn{padding:8px 9px;min-height:36px;font-size:10px;gap:4px}
+  .studio-layout #exportBtn>span{display:none}
+  .studio-layout .workspace-tabs-bar{padding:8px 12px 6px}
+  .studio-layout .workspace-tabs-row{gap:6px;flex-wrap:nowrap}
+  .studio-layout .workspace-tab-list{padding-bottom:3px}
+  .studio-layout .workspace-tab{padding:7px 10px;min-height:34px}
+  .studio-layout .workspace-tab-controls{gap:2px}
+  .studio-layout .workspace-tab-controls button{padding:6px;font-size:9px;min-height:34px}
+  .studio-layout .workspace-tabs-status{display:none}
+  .studio-layout .projectbar:has(#videoUploadBtn){padding:12px 12px 11px;gap:8px;flex-wrap:wrap}
+  .studio-layout .project-title .eyebrow{display:none}
+  .studio-layout .projectbar:has(#videoUploadBtn)>.project-title{flex-basis:100%}
+  .studio-layout .project-title input{font-size:18px;line-height:1.4}
+  .studio-layout .projectbar .project-tools:has(#videoUploadBtn){display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;max-width:none;gap:6px;flex:1 1 100%}
+  .studio-layout .projectbar .project-tools:has(#videoUploadBtn)>button{min-height:38px;padding:8px 6px;font-size:11px;line-height:1.35}
+  .studio-layout .production-flow{margin-bottom:11px;padding:5px}
+  .studio-layout .production-step{padding:6px 4px}
+  .studio-layout .production-step small{display:none}
+  .studio-layout .production-number{width:20px;height:20px;font-size:10px;margin-bottom:4px}
+  .studio-layout .workspace{gap:10px;padding:0 12px 18px}
+  .studio-layout .studio-mobile-editor-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;order:0;background:#111d21;padding:5px;border:1px solid #30434a;border-radius:8px}
+  .studio-layout .studio-mobile-editor-tab{min-width:0;min-height:44px;padding:8px 5px;border-radius:5px;font-size:11px;color:#9eb4b4;border:1px solid transparent;line-height:1.4}
+  .studio-layout .studio-mobile-editor-tab[aria-selected=true]{background:#302e23;color:#f0d3a4;border-color:#9f8759}
+  .studio-layout .studio-mobile-editor-tab:focus-visible{outline:2px solid #e6bf82;outline-offset:2px}
+  .studio-layout .workspace[data-mobile-pane=preview]>.scenes-panel,.studio-layout .workspace[data-mobile-pane=preview]>.inspector,
+  .studio-layout .workspace[data-mobile-pane=scenes]>.center-stage,.studio-layout .workspace[data-mobile-pane=scenes]>.inspector,
+  .studio-layout .workspace[data-mobile-pane=inspector]>.center-stage,.studio-layout .workspace[data-mobile-pane=inspector]>.scenes-panel{display:none!important}
+  .studio-layout .workspace[data-mobile-pane=preview]>.center-stage,.studio-layout .workspace[data-mobile-pane=scenes]>.scenes-panel,.studio-layout .workspace[data-mobile-pane=inspector]>.inspector{width:100%;max-width:100%;min-width:0}
+  .studio-layout .stage-header{display:flex;flex-wrap:wrap;gap:5px;min-height:38px;padding-bottom:7px}
+  .studio-layout .stage-header>.stage-options{margin-left:auto;gap:6px}
+  .studio-layout .stage-options>span{display:none}
+  .studio-layout .studio-selected-scene-action{display:inline-flex;min-height:32px;font-size:10px;padding:6px 8px;margin-left:auto}
+  .studio-layout .stage-header:has(.studio-selected-scene-action:not([hidden]))>.stage-options{margin-left:0}
+  .studio-layout .scene-list{max-height:min(480px,60dvh);grid-template-columns:minmax(0,1fr)}
+  .studio-layout .scenes-panel>.panel-heading,.studio-layout .inspector>.panel-heading{padding:12px 14px}
+  .studio-layout #sceneEffectsDrawer>.studio-drawer-summary{min-height:44px}
+  .studio-layout .empty-preview h1{font-size:21px;line-height:1.4;margin:6px 0}
+  .studio-layout .empty-preview .eyebrow{display:none}
+  .studio-layout .empty-preview p{font-size:10px;line-height:1.5;padding:0 8px}
+  .studio-layout .empty-preview>div:last-child{margin-top:10px}
+}
+
+@media(prefers-reduced-motion:reduce){.studio-layout :is(.studio-mobile-editor-tab,.studio-selected-scene-action){transition:none}}

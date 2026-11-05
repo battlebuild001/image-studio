@@ -75,7 +75,12 @@
     "test:ai-assistant-export-browser": "node tests/ai-assistant-export.browser.cjs",
     "test:ai-chat-integration-browser": "node tests/ai-chat-integration.browser.cjs",
     "test:youtube-schedule-single-browser": "node tests/youtube-schedule-single.browser.cjs",
-    "test:youtube-schedule-series-browser": "node tests/youtube-schedule-series.browser.cjs"
+    "test:youtube-schedule-series-browser": "node tests/youtube-schedule-series.browser.cjs",
+    "test:tool-navigation-browser": "node tests/tool-navigation.browser.cjs",
+    "test:tool-routing-browser": "node tests/tool-routing.browser.cjs",
+    "test:project-tool-groups-browser": "node tests/project-tool-groups.browser.cjs",
+    "test:delivery-categories-browser": "node tests/delivery-categories.browser.cjs",
+    "test:editor-layout-categories-browser": "node tests/editor-layout-categories.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

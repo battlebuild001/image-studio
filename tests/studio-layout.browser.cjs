@@ -151,8 +151,10 @@ const {chromium} = require('playwright');
       const metrics = await dimensions(mobile);
       assert.ok(metrics.width <= metrics.viewport + 1, 'Mobile overflow: ' + JSON.stringify(metrics));
       assert.ok(metrics.height < 2225, 'Collapsed mobile editor must be at least 25% shorter than the old 2966px layout: ' + JSON.stringify(metrics));
+      await mobile.locator('#mobileEditorTab-inspector').click();
       const emptyInspector = await mobile.locator('.inspector').boundingBox();
       assert.ok(emptyInspector && emptyInspector.width >= metrics.viewport - 40, 'The mobile inspector must fill the workspace instead of leaving an empty right column');
+      await mobile.locator('#mobileEditorTab-preview').click();
       for (const id of primaryIds) {
         assert.equal(await mobile.locator('#' + id).isVisible(), true);
         const bounds = await mobile.locator('#' + id).boundingBox();
@@ -167,6 +169,7 @@ const {chromium} = require('playwright');
       await mobile.locator('#workflowTimingBtn').click();await mobile.locator('#scriptUseDuration').check();await mobile.locator('#scriptGoalMinutes').fill('1');await mobile.locator('#imageChangeInterval').fill('20');
       await mobile.waitForFunction(() => document.querySelector('#sceneTimingPreview').children.length === 3);
       await mobile.locator('#applyScriptBtn').click();await mobile.locator('#scriptDialog').waitFor({state: 'hidden'});
+      await mobile.locator('#mobileEditorTab-inspector').click();
       const selectedInspector = await mobile.locator('.inspector').boundingBox();
       assert.ok(selectedInspector && selectedInspector.width >= metrics.viewport - 40, 'A selected scene keeps the full mobile inspector width');
       for (const id of ['selectedImage', 'sceneCaption', 'sceneDuration']) {

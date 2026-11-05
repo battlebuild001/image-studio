@@ -8,7 +8,7 @@ const {chromium}=require('playwright');
  const project=()=>page.evaluate(async()=>(await(await import('./project.js')).loadProject())?.project);
  async function durable(predicate){for(let n=0;n<250;n++){const value=await project();if(value&&predicate(value))return value;await page.waitForTimeout(35);}assert.fail('Expected durable 10-second outro');}
  async function ready(){await page.waitForFunction(()=>document.querySelector('#productionToolsBtn')&&!document.querySelector('#productionToolsBtn').disabled);}
- async function open(){await page.locator('#productionToolsBtn').click();await page.locator('#productionTab-channels').click();}
+ async function open(){await require('./ui-navigation.browser.cjs').clickToolLauncher(page,'#productionToolsBtn');await require('./ui-navigation.browser.cjs').clickToolLauncher(page,'#productionTab-channels');}
  try{
   await page.goto(process.env.STUDIO_URL||'http://127.0.0.1:4173/',{waitUntil:'networkidle'});await ready();
   const fixtures=await Promise.all(['image-test-1.png','image-test-2.png'].map(async name=>(await fs.readFile(require('node:path').join(__dirname,'fixtures',name))).toString('base64')));

@@ -423,7 +423,7 @@ export function setupEditorTools(api) {
   }
 
   // Explicit cue editing leaves imported SRT timings untouched until Apply.
-  let draftCues = [], draftProjectId = null;
+  let draftCues = [], draftProjectId = null, captionDraftBaseline = '';
   const cueRows = node('tbody');
   const cueError = node('p', {id: 'captionEditorError', className: 'editor-error', role: 'alert'});
   const cueNotice = node('p', {className: 'editor-help'});
@@ -465,7 +465,7 @@ export function setupEditorTools(api) {
       : project.captionMode === 'speech'
         ? '음성 분석 자막을 영상 시간으로 표시해요. 적용하면 수동 자막으로 전환되어, 이후 내레이션 자르기·시작 위치 변경에는 따라가지 않아요. 다시 분석하면 음성에 맞출 수 있어요.'
         : 'SRT·수동 자막 시간을 그대로 표시해요. 적용을 누를 때만 변경 사항을 저장해요.';
-    cueError.textContent = '';offsetInput.value = '0';renderCueRows();dialog.showModal();
+    cueError.textContent = '';offsetInput.value = '0';renderCueRows();captionDraftBaseline = captionDraftSignature();dialog.showModal();
   }, 'ghost small');
   document.querySelector('.caption-strip').append(captionEditorBtn);
   function renderCueRows() {
@@ -483,6 +483,17 @@ export function setupEditorTools(api) {
       row.append(node('td', {text: String(index + 1)}), node('td', {}, start), node('td', {}, end), node('td', {}, text), node('td', {}, remove));
       cueRows.append(row);
     });
+  }
+  // Keep staged caption edits explicit: switching tools must never act as Cancel.
+  // Raw values also protect a temporarily empty/invalid numeric field.
+  function captionDraftSignature() {
+    return JSON.stringify([offsetInput.value, ...[...cueRows.querySelectorAll('input, textarea')].map(input => input.value)]);
+  }
+  function canOpenToolNavigation() {
+    const message = '수정한 자막이 아직 적용되지 않았어요. ‘자막 적용’ 또는 ‘취소’를 누른 뒤 다른 도구를 열어 주세요.';
+    if (!dialog.open || captionDraftSignature() === captionDraftBaseline) {if (cueError.textContent === message) cueError.textContent = '';return true;}
+    cueError.textContent = message;
+    cueError.tabIndex = -1;cueError.focus();return false;
   }
   function render() {
     const project = api.getProject(), settings = project.settings;
@@ -533,5 +544,5 @@ export function setupEditorTools(api) {
     if (dialog.open) dialog.close();
     waveformAsset = null;waveformGeneration++;
   }
-  return {render, getLoopRange, reset};
+  return {render, getLoopRange, reset, canOpenToolNavigation};
 }

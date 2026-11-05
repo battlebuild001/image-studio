@@ -56,8 +56,8 @@ const voices = [
     await page.waitForFunction(() => document.querySelector('#voiceServiceState').dataset.state === 'ready');
   }
   async function openChanges() {
-    if (!await page.locator('#productionWorkbenchDialog').isVisible()) await page.locator('#productionToolsBtn').click();
-    await page.locator('#productionTab-changes').click();
+    if (!await page.locator('#productionWorkbenchDialog').isVisible()) await require('./ui-navigation.browser.cjs').clickToolLauncher(page,'#productionToolsBtn');
+    await require('./ui-navigation.browser.cjs').clickToolLauncher(page,'#productionTab-changes');
     await page.waitForFunction(() => document.querySelector('#changesVoiceConnectionState').textContent.includes('Typecast') && !document.querySelector('#changesRefreshVoiceBtn').disabled);
   }
   const ids = prefix => ({search: '#' + prefix + 'SpeakerSearch', clear: '#' + prefix + 'ClearSpeakerSearchBtn', status: '#' + prefix + 'SpeakerSearchStatus', select: '#' + prefix + 'Speaker'});

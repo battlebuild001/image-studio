@@ -37,10 +37,23 @@ with images, narration, BGM and captions. Do not replace this with a DOM overlay
 
 ## Project settings, saving and video delivery
 
-The header has separate 프로젝트 기본 설정, 프로젝트 저장 and 영상 업로드 buttons.
+The project row has three actions: 전체 도구, 프로젝트 저장 and 영상 업로드.
+API 연결 stays visible in the top bar. The 프로젝트 menu also contains
+프로젝트 설정 and 검사·AI 편집, preserving their legacy button IDs.
+The searchable 전체 도구 catalog groups existing tools into 자료·대본, 음성·자막,
+이미지·장면, 편집·검수, 게시·업로드 and 프로젝트·연결. Ctrl/Cmd+K opens it.
+`tool-navigation-data.js`, `tool-navigation.js` and `tool-routes.js` own this
+page-memory navigation. Routes only open existing screens, flush drafts strictly
+and guide missing prerequisites; never generate, analyze, connect or upload on navigation.
+On mobile, studio-layout exposes 미리보기/장면 목록/장면 설정 panes using the same
+DOM and Canvas. Desktop keeps all three columns. Pane/category preferences are
+not project metadata. Keep all controls, media, Undo and keyboard behavior reachable.
 Project settings contain basics, speech/dictionary, partial changes, budget,
 history, image review, information cards and channel presets. The separate upload
 dialog follows four steps: 업로드 설정 → 게시 자료 → 영상 업로드 → 쇼츠 업로드.
+Project tools show four goal groups: 프로젝트 설정, 대본·음성, 검토·수정 and
+디자인·템플릿, with only the active group's feature tabs visible. Shorts keeps
+쇼츠 제작 and 시리즈 업로드 as two inner tabs inside the fourth delivery step.
 Keep the drama-series queue inside the shorts step and preserve reviewed title,
 description and thumbnail selection across Previous/Next navigation.
 Preserve the four primary workflow steps and route legacy section openers to the
@@ -158,7 +171,7 @@ describe these fixtures as live AI quality or actual billing verification.
 
 ## Optional AI review and editing
 
-The visible AI 도우미 header button composes quality, fidelity and chat in
+The 검사·AI 편집 project-menu action and 전체 도구 review routes compose quality, fidelity and chat in
 `dist/ai-workbench.js`, without changing the primary workflow or delivery order.
 Keep keyboard tab behavior, modal focus, strict editor flush, owner-scoped resets,
 mobile/landscape footer access and export → review → export navigation.
@@ -925,6 +938,11 @@ tools, project menu actions, summary keyboard handling, modal return focus, reta
 drawer state across rerenders/workspaces, and mobile access without horizontal
 overflow. Presentation changes must not affect project/media persistence, provider
 request authorization, API-key lifetime or the image batch confirmation gate.
+Categorized navigation additionally requires test:tool-navigation-browser,
+test:tool-routing-browser, test:project-tool-groups-browser,
+test:delivery-categories-browser and test:editor-layout-categories-browser.
+Existing browser fixtures should use ui-navigation.browser.cjs to reveal actual
+mobile panes, group tabs and project-menu actions rather than force-clicking hidden controls.
 For fixed references, verify original Blob roundtrips, disabled-reference retention,
 shared scene/reference IDs, undo/redo and reference-only archives. Inspect mocked
 provider requests for real image bytes and ordered roles. Verify preview download,
