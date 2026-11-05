@@ -87,7 +87,8 @@
     "test:description-options-browser": "node tests/description-options.browser.cjs",
     "test:youtube-upload-readiness-browser": "node tests/youtube-upload-readiness.browser.cjs",
     "test:description-hashtags-browser": "node tests/description-hashtags.browser.cjs",
-    "test:youtube-playlists-browser": "node tests/youtube-playlists.browser.cjs"
+    "test:youtube-playlists-browser": "node tests/youtube-playlists.browser.cjs",
+    "test:channel-intro-description-browser": "node tests/channel-intro-description.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

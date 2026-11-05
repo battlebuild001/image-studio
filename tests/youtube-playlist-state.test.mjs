@@ -14,7 +14,7 @@ function transfer(n=1,status='pending',patch={}){return{videoId:videoId(n),playl
 function receipt(n=1){return normalizeYouTubeUploadRecord({videoId:videoId(n),title:'블랙아웃 이야기',privacyStatus:'unlisted',channelId:CHANNEL,channelTitle:'직접 선택한 채널',uploadedAt:'2026-11-05T11:00:00.000Z',fileName:'synthetic.webm',bytes:4096});}
 const state=youtube=>({version:1,youtube});
 const draft=normalizeYouTubeUploadDraft({title:'블랙아웃 이야기',description:'  희망으로 시작한 이주는 새로운 갈등을 맞습니다.\r\n\r\n직접 검토한 문장입니다.\n\n'+ownedLine+'\n\n'+SUPPORT_BLOCK,tags:['블랙아웃','BLKOUT','미니어처 게임'],privacyStatus:'unlisted'});
-function fixture(){return createProject({id:'playlist-project',title:'재생목록과 해시태그 복원',scenes:[createScene({id:'first',imageId:'image',caption:'블랙아웃 세계관 이야기',duration:2})],production:{version:1,description:{length:'short',support:true,hashtags:true},publishing:{hashtagLine:ownedLine},youtube:{draft,uploads:[receipt()],hashtagLine:ownedLine,playlistSelection:selection,playlistTransfers:[transfer(1,'added'),transfer(2,'needs-check'),transfer(3,'skipped')]}}});}
+function fixture(){return createProject({id:'playlist-project',title:'재생목록과 해시태그 복원',scenes:[createScene({id:'first',imageId:'image',caption:'블랙아웃 세계관 이야기',duration:2})],production:{version:1,description:{length:'short',support:true,hashtags:true,channelIntro:false},publishing:{hashtagLine:ownedLine},youtube:{draft,uploads:[receipt()],hashtagLine:ownedLine,playlistSelection:selection,playlistTransfers:[transfer(1,'added'),transfer(2,'needs-check'),transfer(3,'skipped')]}}});}
 
 // These are state/backup tests only; no Google SDK, network, upload, or permission grant runs here.
 test('legacy project and YouTube metadata remain absent of new playlist and hashtag fields',()=>{

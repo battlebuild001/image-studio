@@ -172,18 +172,28 @@ correct dialog; never put delivery tools back inside project settings.
   Selected tags remain normal project metadata; preset definitions stay separate.
   Run npm test, test:miniature-tags-browser and relevant publishing/upload tests.
 - Optional production.description stores strict {length:'short'|'standard',
-  support:boolean,hashtags:boolean}, missing defaults short/false/true. Old two-field
-  preference objects remain valid. Shared description-preferences
+  support:boolean,hashtags:boolean,channelIntro:boolean}, missing defaults
+  short/false/true/false. Old two-/three-field preference objects remain valid.
+  Shared description-preferences
   helpers bound generated summaries to350characters/3sentences or800/5 while
   retaining facts, then append the exact user-supplied sponsorship block only
   when explicitly enabled. composeSupportBlock changes only the owned exact
   suffix; toggling options must never compact a manually edited body or call AI.
   Sponsor copy/links must stay intact and outside the summary cap. Keep the5000
   UTF8-byte upload limit; reject oversized manual composition without truncation.
-  This explicit sponsorship option is the sole fixed-name exception: never
-  restore that name as the channel, project title, video overlay or default output.
+  Explicit sponsorship and MNN channel-intro description options are the only
+  fixed-name exceptions: never restore those names as the channel, project title,
+  intro/outro, video overlay or default output.
   Options are shared per project but separate manual publishing/upload drafts
   stay editable; explicit support reapply handles the current draft only.
+  channelIntro defaults off and is independent of support/hashtags. Use the exact
+  user-supplied MNN block, preserving its paragraph breaks and no final period
+  after "MNN | Miniature News Network". Compose body, owned hashtag row, MNN block,
+  then sponsorship last. Explicit MNN toggle/reapply changes only the exact owned
+  block and preserves manual body bytes, edited/unknown text, support and hashtags;
+  support changes also preserve MNN. Generation reflects both selected footer
+  options. Never insert on open/load or upload dispatch. Persist this boolean in
+  project/workspace/backup data; add no provider call or video branding.
   description-hashtags.js derives at most5 canonical selected miniature-game
   hashtags, separately from YouTube snippet.tags search metadata. NFKC normalize,
   join words without whitespace/punctuation, deduplicate case-insensitively and
@@ -191,7 +201,7 @@ correct dialog; never put delivery tools back inside project settings.
   toggle/reapply, generation or publishing import may compose the actual visible
   textarea; never silently transform description at upload dispatch or on open/load.
   Optional publishing.hashtagLine and youtube.hashtagLine record only the exact
-  app-owned terminal hashtag row, before an exact sponsorship suffix. Never put
+  app-owned terminal hashtag row, before exact MNN/sponsorship suffixes. Never put
   ownership into production.description or the API resource. Replace/remove only
   that exact owned row; preserve unknown/manual/edited hashtags and body bytes,
   skip duplicates already in manual text, keep support last and reject UTF8 overflow
@@ -199,8 +209,9 @@ correct dialog; never put delivery tools back inside project settings.
   Hashtag display off preserves snippet.tags. Existing YouTube videos are never
   retroactively edited. Do not promise all hashtags appear near the YouTube title.
   Generation/source keys and armed upload review must include preference changes.
-  Verify test:description-options-browser plus metadata, description and backup
-  tests; provider mocks are not proof of live summary quality or real posting.
+  Verify test:description-options-browser, test:channel-intro-description-browser
+  plus metadata, description and backup tests; provider mocks are not proof of
+  live summary quality or real posting.
 
 `dist/media-search-protocol.js`, `media-search-client.js`, `reference-media.js` and
 `music-recommendations.js` use actual Wikimedia Commons public catalog metadata

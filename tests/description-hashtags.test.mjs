@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {deriveDescriptionHashtags,normalizeOwnedHashtagLine,stripOwnedDescriptionHashtags,composeDescriptionHashtags,composeDescriptionSupport} from '../dist/description-hashtags.js';
-import {SUPPORT_BLOCK,getDescriptionPreferences,normalizeDescriptionPreferences,setDescriptionPreferences,composeVideoDescription} from '../dist/description-preferences.js';
+import {deriveDescriptionHashtags,normalizeOwnedHashtagLine,stripOwnedDescriptionHashtags,composeDescriptionHashtags,composeDescriptionSupport,composeDescriptionChannelIntro,composeDescriptionFooters} from '../dist/description-hashtags.js';
+import {SUPPORT_BLOCK,CHANNEL_INTRO_BLOCK,getDescriptionPreferences,normalizeDescriptionPreferences,setDescriptionPreferences,composeVideoDescription} from '../dist/description-preferences.js';
 import {createProject,createScene,getTimeline,getCaptions} from '../dist/project.js';
 const selected=['블랙아웃','BLKOUT','미니어처 게임 세계관','미니어처 게임','미니어처 워게임','테이블탑 워게임'];
 const expected='#블랙아웃 #BLKOUT #미니어처게임세계관 #미니어처게임 #미니어처워게임';
@@ -70,8 +70,43 @@ test('the complete visible description respects the real YouTube UTF8 budget and
 });
 test('visible-hashtag preference defaults on for old projects but supports strict explicit off without mutating source media or timing',()=>{
   const project=createProject({scenes:[createScene({duration:4,imageId:'source',caption:'자막입니다.'})],audio:{narrationId:'voice',bgmId:'bgm'}}),before=structuredClone(project),timeline=getTimeline(project),captions=getCaptions(project);
-  assert.deepEqual(getDescriptionPreferences(project),{length:'short',support:false,hashtags:true});assert.deepEqual(normalizeDescriptionPreferences({length:'standard',support:true}),{length:'standard',support:true,hashtags:true});assert.deepEqual(project,before);
+  assert.deepEqual(getDescriptionPreferences(project),{length:'short',support:false,hashtags:true,channelIntro:false});assert.deepEqual(normalizeDescriptionPreferences({length:'standard',support:true}),{length:'standard',support:true,hashtags:true,channelIntro:false});assert.deepEqual(project,before);
   setDescriptionPreferences(project,{length:'short',support:false,hashtags:false});assert.equal(getDescriptionPreferences(project).hashtags,false);assert.deepEqual(project.scenes,before.scenes);assert.deepEqual(project.audio,before.audio);assert.deepEqual(getTimeline(project),timeline);assert.deepEqual(getCaptions(project),captions);
   assert.deepEqual(composeDescriptionHashtags(body,selected,{enabled:getDescriptionPreferences(project).hashtags}),{description:body,hashtagLine:''});assert.equal(composeVideoDescription('요약입니다.',getDescriptionPreferences(project)),'요약입니다.');
   for(const bad of[{hashtags:'true'},{hashtags:null},{hashtags:1},{hashtags:true,ownedLine:'#BLKOUT'}])assert.throws(()=>normalizeDescriptionPreferences(bad));
+});
+test('hashtags precede channel introduction and support while exact managed footer bytes survive on and off',()=>{
+  for(const footers of[CHANNEL_INTRO_BLOCK,CHANNEL_INTRO_BLOCK+'\n\n'+SUPPORT_BLOCK]){
+    const original=body+'\n\n'+footers+'\n\t',next=composeDescriptionHashtags(original,['BLKOUT']);
+    assert.equal(next.description,body+'\n\n#BLKOUT\n\n'+footers+'\n\t');assert.equal(next.hashtagLine,'#BLKOUT');
+    assert.equal(stripOwnedDescriptionHashtags(next.description,next.hashtagLine),original);assert.deepEqual(composeDescriptionHashtags(next.description,['BLKOUT'],{ownedLine:next.hashtagLine}),next);
+    assert.deepEqual(composeDescriptionHashtags(next.description,[],{enabled:false,ownedLine:next.hashtagLine}),{description:original,hashtagLine:''});
+    for(const leading of['','\n','  \n\n','\r\n']){
+      const only=leading+footers+'\n ',withTags=composeDescriptionHashtags(only,['BLKOUT']);assert.equal(withTags.description,leading+'#BLKOUT\n\n'+footers+'\n ');assert.equal(stripOwnedDescriptionHashtags(withTags.description,withTags.hashtagLine),only);
+    }
+  }
+});
+test('channel introduction and support toggles independently preserve hashtags and canonical footer order',()=>{
+  const manual=body+' #수동태그',intro=composeDescriptionChannelIntro(manual,true,['BLKOUT']);
+  assert.deepEqual(intro,{description:manual+'\n\n#BLKOUT\n\n'+CHANNEL_INTRO_BLOCK,hashtagLine:'#BLKOUT'});
+  const both=composeDescriptionSupport(intro.description,true,['BLKOUT'],{ownedLine:intro.hashtagLine});assert.equal(both.description,intro.description+'\n\n'+SUPPORT_BLOCK);
+  const withoutSupport=composeDescriptionSupport(both.description,false,['BLKOUT'],{ownedLine:both.hashtagLine});assert.deepEqual(withoutSupport,intro);
+  const withoutIntro=composeDescriptionChannelIntro(both.description,false,['BLKOUT'],{ownedLine:both.hashtagLine});assert.equal(withoutIntro.description,manual+'\n\n#BLKOUT\n\n'+SUPPORT_BLOCK);
+  assert.deepEqual(composeDescriptionChannelIntro(withoutIntro.description,true,['BLKOUT'],{ownedLine:withoutIntro.hashtagLine}),both);
+  assert.equal(composeDescriptionFooters(both.description,{channelIntro:false,support:false},[],{enabled:false,ownedLine:both.hashtagLine}).description,manual);
+  assert.deepEqual(composeDescriptionFooters(manual,{channelIntro:true,support:true},['BLKOUT']),both);
+  for(const bad of['false',null,1]){assert.throws(()=>composeDescriptionChannelIntro(manual,bad,[]));assert.throws(()=>composeDescriptionSupport(manual,bad,[]));}
+});
+test('edited introductions and manual mentions remain untouched when the optional exact suffix is removed',()=>{
+  const edited=CHANNEL_INTRO_BLOCK.replace('댓글로 남겨 주세요.','다음에 알려 주세요.'),manual='MNN을 소개합니다.\n'+edited+'\n\n#수동태그';
+  const next=composeDescriptionChannelIntro(manual,true,['BLKOUT']);assert.equal(next.description,manual+'\n\n#BLKOUT\n\n'+CHANNEL_INTRO_BLOCK);
+  const off=composeDescriptionChannelIntro(next.description,false,['BLKOUT'],{ownedLine:next.hashtagLine});assert.equal(off.description,manual+'\n\n#BLKOUT');
+  const owned=composeDescriptionChannelIntro(body,true,['BLKOUT']),editedOwned=owned.description.replace('댓글로 남겨 주세요.','직접 알려 주세요.');
+  const unchanged=composeDescriptionHashtags(editedOwned,[],{enabled:false,ownedLine:owned.hashtagLine});assert.equal(unchanged.description,editedOwned);assert.equal(unchanged.hashtagLine,'');
+});
+test('complete channel footer and hashtag composition rejects overflow atomically without changing media or manual text',()=>{
+  const manual='가'.repeat(1666);assert.throws(()=>composeDescriptionChannelIntro(manual,true,['BLKOUT']),/5,000바이트/u);assert.equal(manual,'가'.repeat(1666));
+  const encoder=new TextEncoder(),prefix='가'.repeat(1200),fits=composeDescriptionFooters(prefix,{channelIntro:true,support:true},['BLKOUT']);assert.ok(encoder.encode(fits.description).byteLength<=5000);assert.ok(fits.description.endsWith(SUPPORT_BLOCK));
+  const nearLimit='x'.repeat(5000-encoder.encode('\n\n'+CHANNEL_INTRO_BLOCK).byteLength);assert.equal(encoder.encode(nearLimit+'\n\n'+CHANNEL_INTRO_BLOCK).byteLength,5000);
+  assert.throws(()=>composeDescriptionChannelIntro(nearLimit,true,['BLKOUT']),/5,000바이트/u);assert.equal(composeDescriptionChannelIntro(nearLimit,true,[],{enabled:false}).description,nearLimit+'\n\n'+CHANNEL_INTRO_BLOCK);
 });
