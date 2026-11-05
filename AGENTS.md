@@ -146,7 +146,8 @@ correct dialog; never put delivery tools back inside project settings.
   projects. Reloaded unresolved uploading must immediately block fresh uploads and
   show needs-check, never create a duplicate POST while async recovery is pending.
   Recheck the reviewed destination after rendering; guard source/workspace changes
-  and block editing during the queue. No hidden Google calls or playlist scopes.
+  and block editing during the queue. No hidden Google calls or implicit playlist
+  scopes. Series uploads do not inherit the optional normal-upload playlist choice.
 - `dist/production-publishing.js` and `production-delivery-utils.js` create real
   PNG/ZIP materials; users can import those drafts into the separate upload form.
   Preserve optional publishing.thumbnail version1 items: <=3 unique candidate
@@ -171,7 +172,8 @@ correct dialog; never put delivery tools back inside project settings.
   Selected tags remain normal project metadata; preset definitions stay separate.
   Run npm test, test:miniature-tags-browser and relevant publishing/upload tests.
 - Optional production.description stores strict {length:'short'|'standard',
-  support:boolean}, missing defaults short/false. Shared description-preferences
+  support:boolean,hashtags:boolean}, missing defaults short/false/true. Old two-field
+  preference objects remain valid. Shared description-preferences
   helpers bound generated summaries to350characters/3sentences or800/5 while
   retaining facts, then append the exact user-supplied sponsorship block only
   when explicitly enabled. composeSupportBlock changes only the owned exact
@@ -182,6 +184,20 @@ correct dialog; never put delivery tools back inside project settings.
   restore that name as the channel, project title, video overlay or default output.
   Options are shared per project but separate manual publishing/upload drafts
   stay editable; explicit support reapply handles the current draft only.
+  description-hashtags.js derives at most5 canonical selected miniature-game
+  hashtags, separately from YouTube snippet.tags search metadata. NFKC normalize,
+  join words without whitespace/punctuation, deduplicate case-insensitively and
+  retain Unicode letters/numbers/underscore. Only explicit tag Apply, hashtag
+  toggle/reapply, generation or publishing import may compose the actual visible
+  textarea; never silently transform description at upload dispatch or on open/load.
+  Optional publishing.hashtagLine and youtube.hashtagLine record only the exact
+  app-owned terminal hashtag row, before an exact sponsorship suffix. Never put
+  ownership into production.description or the API resource. Replace/remove only
+  that exact owned row; preserve unknown/manual/edited hashtags and body bytes,
+  skip duplicates already in manual text, keep support last and reject UTF8 overflow
+  without truncation. Missing ownership never authorizes deleting old hashtags.
+  Hashtag display off preserves snippet.tags. Existing YouTube videos are never
+  retroactively edited. Do not promise all hashtags appear near the YouTube title.
   Generation/source keys and armed upload review must include preference changes.
   Verify test:description-options-browser plus metadata, description and backup
   tests; provider mocks are not proof of live summary quality or real posting.
@@ -270,7 +286,10 @@ publish user media as a regression check or claim authenticated upload success.
   truncate description facts. Include captionAnalysis in export signatures.
 - `dist/youtube-client.js`: official Google Identity Services token model and
   direct resumable YouTube REST transport. Require upload + readonly scopes for
-  uploads and channel identity. Only public clientID is locally stored; tokens,
+  uploads and channel identity; this remains the default OAuth request. Optional
+  playlist insertion may add youtube.force-ssl only through its separate explicit
+  user gesture and consent, never to diagnose a failure or silently widen access.
+  Only public clientID is locally stored; tokens,
   channel auth state and resumable capability URLs stay in memory. SDK loading is
   explicit; separate cold SDK preparation from the popup's user gesture.
   Validate exact Google session hosts/paths before forwarding credentials. Keep
@@ -302,6 +321,24 @@ publish user media as a regression check or claim authenticated upload success.
   beside connection controls. SDK preparation is not an authenticated channel.
   Use test:youtube-diagnostics-browser with intercepted responses; never claim
   those tests proved actual Google authorization or successful public posting.
+- `dist/youtube-playlist-protocol.js` and `youtube-playlist-picker.js/.css` support
+  existing playlists on the connected channel for normal uploads only. Explicit
+  list/page actions use playlists.list GET mine=true under existing readonly access;
+  opening/rendering the form must not fetch. Filter and recheck exact owned channel,
+  validate IDs/titles/page tokens and ignore raw provider metadata. Optional explicit
+  playlist consent is separate from list access and base upload+readonly scopes.
+  Snapshot reviewed selection with auto-upload; channel/project/selection changes
+  disarm or cancel safely. No playlist create/delete, implicit scope upgrade or
+  changes to shorts/series behavior. After durable video receipt and pending-transfer
+  persistence, recheck ownership and playlistItems.list for that exact video before
+  playlistItems.insert. Preserve completed video/thumbnail receipts if insertion
+  fails or becomes uncertain. Explicit retry checks/adds only the same already
+  uploaded video, never re-uploads media or blindly repeats a POST. Require matching
+  channel/receipt on reload, show needs-check recovery and keep pending results until
+  confirmed or explicitly skipped. Store only validated playlistSelection and bounded
+  playlistTransfers beside the YouTube draft, never credentials/scope grants or API
+  response bodies. Verify pure/state and test:youtube-playlists-browser mocks; do not
+  claim live Google authorization, real playlist insertion or public posting.
 - `dist/upload-metadata.js`: explicit separate title/description AI actions based
   on actual project display script, timed scenes/cues and research sources. Update
   only the clicked field and preserve manual siblings/tags/privacy. External files
@@ -314,12 +351,16 @@ publish user media as a regression check or claim authenticated upload success.
   boundary; retain mixed factual content or reject ambiguous output, never silently
   delete story facts. Do not clean saved/manual text on load/edit. Summary-only
   regeneration preserves titles/chapters/tags/thumbnail edits; YouTube handoff
-  copies the exact description without auto-appending separate chapter lists.
+  preserves body text without auto-appending separate chapter lists. Explicit
+  publishing import composes only the selected hashtag display in the visible form;
+  dispatch sends the reviewed description exactly, with no hidden composition.
 - `dist/youtube-storage.js`: atomic receipt cleanup across saved current projects,
   workspace projects and library records. Preserve draft text/media/timestamps.
   Root serializes saves and clears live Undo/Redo copies as well. Disconnect
-  revokes access and removes stored API history; a separate clear-history action
-  never deletes YouTube videos. Preserve actual upload receipts through ordinary
+  revokes access and removes stored API history and playlist selection/transfers;
+  a separate clear-history action also removes those local playlist records.
+  Neither action deletes YouTube videos/playlists/items or cancels remote schedules.
+  Preserve manual draft text, owned hashtag markers and actual upload receipts through ordinary
   Undo/Redo. New shorts projects must not inherit original upload records.
 - `dist/youtube-privacy.html`: public OAuth privacy notice, actual data handling,
   local deletion and Google permission controls, YouTube Terms/GooglePrivacy links.
@@ -346,7 +387,8 @@ changes. Synthetic/mocked transport checks are not live Google account publishin
 User requested time-based reservations. Use the official initial videos.insert
 status.publishAt mechanism: upload now privately, YouTube publishes at the reviewed
 future time after accepted upload. Do not imply this static app can start uploading
-new bytes after the browser closes. No new OAuth scopes or videos.update calls.
+new bytes after the browser closes. Scheduling itself adds no OAuth scopes or
+videos.update calls; optional normal-upload playlist consent is separate.
 
 - `youtube-schedule.js` handles explicit IANA timezone conversion (default Asia/Seoul),
   calendar validation, DST gaps/folds and reviewed interval/daily time slots. Persist

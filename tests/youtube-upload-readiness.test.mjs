@@ -60,3 +60,13 @@ test('guidance is deterministic and readonly, with no project changes or transpo
   const first = getYouTubeUploadReadiness(input), second = getYouTubeUploadReadiness(input);
   assert.deepEqual(first, second);assert.equal(called, 0);assert.equal(project.title, '보존할 제목');
 });
+
+
+test('playlist and visible hashtag review must complete before a new prepared upload',()=>{
+  const ready={connected:true,videoReady:true};
+  assert.equal(getYouTubeUploadReadiness({...ready,receiptPending:true}).action,'receipt');
+  assert.equal(getYouTubeUploadReadiness({...ready,playlistError:'재생목록 추가 권한을 연결해 주세요.'}).action,'playlist');
+  assert.equal(getYouTubeUploadReadiness({...ready,hashtagError:'선택한 태그를 설명란에 반영해 주세요.'}).action,'hashtags');
+  assert.equal(getYouTubeUploadReadiness({...ready,playlistError:'목록 확인',hashtagError:'태그 확인'}).action,'playlist');
+  assert.equal(getYouTubeUploadReadiness({...ready,playlistError:'목록 확인',pausedUpload:true}).action,'resume');
+});

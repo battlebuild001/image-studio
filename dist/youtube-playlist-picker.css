@@ -1,0 +1,17 @@
+.youtube-playlist-picker{margin:14px 0;padding:14px;border:1px solid #35494e;border-radius:8px;background:#122126;min-width:0;overflow-wrap:anywhere}
+.youtube-playlist-picker h4{margin:0 0 8px;font-size:14px;color:#e5e9e5}
+.youtube-playlist-picker .youtube-playlist-help{margin:7px 0;color:#9db0b1;font-size:12px;line-height:1.75}
+.youtube-playlist-field{display:grid;gap:7px;margin:12px 0;font-size:12px;color:#bbccca}
+.youtube-playlist-field select,.youtube-playlist-pending select{width:100%;max-width:100%;min-height:42px;font:inherit;white-space:normal}
+.youtube-playlist-picker .production-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.youtube-playlist-picker button{min-height:40px;white-space:normal;text-align:left;font-size:12px;line-height:1.5}
+.youtube-playlist-status{margin:10px 0 0;font-size:12px;line-height:1.75;color:#c9d4c3}
+.youtube-playlist-error{margin:8px 0 0;font-size:12px;line-height:1.75;color:#efb5a5}
+.youtube-playlist-picker[aria-busy=true]>.youtube-playlist-status:before{content:'';display:inline-block;vertical-align:-2px;width:11px;height:11px;border:2px solid #d9bc8c;border-right-color:transparent;border-radius:50%;margin-right:8px;animation:youtube-playlist-spin .9s linear infinite}
+.youtube-playlist-pending{margin-top:13px;padding:12px;border:1px solid #917148;border-radius:7px;background:#29271f}
+.youtube-playlist-pending strong{font-size:12px;line-height:1.65;color:#ecd2a6}
+.youtube-playlist-pending a{display:inline-block;color:#dfbf86;font-size:12px;margin-top:5px;text-underline-offset:3px}
+.youtube-playlist-pending select{margin-top:9px}
+@keyframes youtube-playlist-spin{to{transform:rotate(360deg)}}
+@media(max-width:600px){.youtube-playlist-picker{padding:12px}.youtube-playlist-picker .production-actions{display:grid;grid-template-columns:minmax(0,1fr)}.youtube-playlist-picker button{min-height:44px;width:100%}}
+@media(prefers-reduced-motion:reduce){.youtube-playlist-picker[aria-busy=true]>.youtube-playlist-status:before{animation:none}}

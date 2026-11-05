@@ -18,7 +18,7 @@ export function setupDescriptionOptions({container, prefix, getPreferences, onCh
   const status = element('p', 'description-options-status'), error = element('p', 'description-options-error');status.id = id('DescriptionOptionsStatus');status.setAttribute('role', 'status');status.setAttribute('aria-live', 'polite');status.setAttribute('aria-atomic', 'true');error.id = id('DescriptionOptionsError');error.setAttribute('role', 'alert');root.append(title, fields, help, applySupport, preview, status, error);container.append(root);
   let owner = '', generation = 0, pending = null, disposed = false, rendering = false;
   const currentOwner = () => {const value = getOwnerKey?.() ?? 'current';return typeof value === 'string' ? value : key(value);};
-  const readPreferences = () => {const value = getPreferences?.() || {};return {length: value.length === 'standard' ? 'standard' : 'short', support: value.support === true};};
+  const readPreferences = () => {const value = getPreferences?.() || {};return {length: value.length === 'standard' ? 'standard' : 'short', support: value.support === true, hashtags: value.hashtags !== false};};
   const editable = () => !disposed && !pending && (!canEdit || canEdit());
   function render() {
     if (disposed || rendering) return;rendering = true;

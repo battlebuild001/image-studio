@@ -85,7 +85,9 @@
     "test:intro-fade-export-browser": "node tests/intro-fade-export.browser.cjs",
     "test:miniature-tags-browser": "node tests/miniature-tags.browser.cjs",
     "test:description-options-browser": "node tests/description-options.browser.cjs",
-    "test:youtube-upload-readiness-browser": "node tests/youtube-upload-readiness.browser.cjs"
+    "test:youtube-upload-readiness-browser": "node tests/youtube-upload-readiness.browser.cjs",
+    "test:description-hashtags-browser": "node tests/description-hashtags.browser.cjs",
+    "test:youtube-playlists-browser": "node tests/youtube-playlists.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

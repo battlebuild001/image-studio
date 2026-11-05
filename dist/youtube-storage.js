@@ -11,10 +11,12 @@ export async function clearStoredYouTubeUploadHistory() {
     request.onsuccess = () => {
       const cursor = request.result;if (!cursor) return;
       try {
-        const record = cursor.value, uploads = record?.project?.production?.youtube?.uploads;
-        if (Array.isArray(uploads) && uploads.length) {
-          removed += uploads.length;
-          record.project.production.youtube.uploads = [];
+        const record = cursor.value, youtube = record?.project?.production?.youtube, uploads = youtube?.uploads;
+        if ((Array.isArray(uploads) && uploads.length) || (youtube && (Object.hasOwn(youtube, 'playlistSelection') || Object.hasOwn(youtube, 'playlistTransfers')))) {
+          removed += Array.isArray(uploads) ? uploads.length : 0;
+          if (Array.isArray(uploads)) youtube.uploads = [];
+          delete youtube.playlistSelection;
+          delete youtube.playlistTransfers;
           cursor.update(record);
         }
         cursor.continue();

@@ -1,3 +1,5 @@
+import {normalizeOwnedHashtagLine} from './description-hashtags.js';
+import {normalizePlaylistSelection,normalizePlaylistTransfer} from './youtube-playlist-protocol.js';
 import {normalizeDescriptionPreferences} from './description-preferences.js';
 import {normalizePronunciations} from './pronunciation.js';
 import {normalizeDiagramCard, normalizeVisualReview, DIAGRAM_TYPES} from './production-visual-protocol.js';
@@ -119,6 +121,7 @@ function validateShorts(value) {
   if (!result.segments.length || total > (value.targetSeconds ?? 60) + .5) fail('쇼츠 구간 합계가 목표 길이를 넘어요.');
 }
 function validatePublishing(value) {
+  if(value.hashtagLine!==undefined)value.hashtagLine=normalizeOwnedHashtagLine(value.hashtagLine);
   optionalText(value, 'sourceKey', 250000);
   if (value.selectedTitle !== undefined && (!Number.isInteger(value.selectedTitle) || value.selectedTitle < 0 || value.selectedTitle > 4)) fail('게시 제목 선택을 확인해 주세요.');
   if(value.thumbnail!==undefined){const thumbnail=value.thumbnail;if(!plain(thumbnail)||Object.keys(thumbnail).some(key=>!['version','items'].includes(key))||thumbnail.version!==1)fail('썸네일 편집 자료를 확인해 주세요.');const seen=new Set();list(thumbnail.items,3,'썸네일 편집',item=>{if(!plain(item)||Object.keys(item).some(key=>!['index','title','layout','titlePosition'].includes(key))||!Number.isInteger(item.index)||item.index<0||item.index>2||seen.has(item.index))fail('썸네일 편집 대상을 확인해 주세요.');seen.add(item.index);text(item.title,120,'썸네일 문구');if(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(item.title)||!['overlay','split','band'].includes(item.layout)||!['top','center','bottom'].includes(item.titlePosition))fail('썸네일 문구와 배치를 확인해 주세요.');});}
@@ -192,8 +195,12 @@ function validateVersions(value) {
 }
 
 function validateYouTube(value) {
-  if (Object.keys(value).some(key => !['draft', 'uploads', 'sourceNotes'].includes(key))) fail('유튜브 설정에는 대본과 업로드 기록만 보관할 수 있어요.');
+  if (Object.keys(value).some(key => !['draft', 'uploads', 'sourceNotes', 'hashtagLine', 'playlistSelection', 'playlistTransfers'].includes(key))) fail('유튜브 설정에는 대본과 업로드 기록만 보관할 수 있어요.');
   optionalText(value, 'sourceNotes', 100000);
+  if(value.hashtagLine!==undefined)value.hashtagLine=normalizeOwnedHashtagLine(value.hashtagLine);
+  if(value.playlistSelection!==undefined)value.playlistSelection=normalizePlaylistSelection(value.playlistSelection);
+  if(value.playlistTransfers!==undefined){if(!Array.isArray(value.playlistTransfers)||value.playlistTransfers.length>20)fail('재생목록 추가 기록은 최대 20개 보관할 수 있어요.');value.playlistTransfers=value.playlistTransfers.map(normalizePlaylistTransfer);const keys=new Set(value.playlistTransfers.map(item=>JSON.stringify([item.videoId,item.playlistId])));if(keys.size!==value.playlistTransfers.length)fail('같은 영상의 재생목록 추가 기록이 중복돼요.');const active=value.playlistTransfers.filter(item=>!['added','skipped'].includes(item.status)).length;if(active>10)fail('확인하지 않은 재생목록 추가 기록을 먼저 정리해 주세요.');}
+
   if (value.draft !== undefined) value.draft = normalizeYouTubeUploadDraft(value.draft);
   if (value.uploads !== undefined) {
     if (!Array.isArray(value.uploads) || value.uploads.length > 10) fail('유튜브 업로드 기록은 최근 10개까지 보관할 수 있어요.');
