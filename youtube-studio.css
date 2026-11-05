@@ -4,3 +4,13 @@
 .youtube-studio #youtubeUploadError{overflow-wrap:anywhere;line-height:1.8}
 .youtube-studio .youtube-thumbnail{margin-top:20px}.youtube-studio .youtube-thumbnail-preview{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:contain;border:1px solid var(--line);border-radius:6px;background:#090d10;margin:12px 0}.youtube-studio .youtube-thumbnail-pending{margin-top:14px;border-color:var(--accent)}.youtube-studio .youtube-thumbnail-pending p{font-size:12px;line-height:1.8}.youtube-studio .youtube-thumbnail-pending a{display:block;margin:10px 0}.youtube-studio #youtubeConnectionOperation{margin-top:12px}
 .youtube-schedule{margin:14px 0;border-color:#6d6246}.youtube-schedule>.youtube-check{font-weight:700;min-height:44px;margin:0 0 10px}.youtube-schedule-fields{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}.youtube-schedule-fields .production-field{margin:0}.youtube-schedule-fields input,.youtube-schedule-fields select{width:100%;min-width:0;max-width:100%;box-sizing:border-box;min-height:44px}.youtube-schedule-summary{padding:10px 12px;border:1px solid #607247;border-radius:5px;background:#202e24;color:#d5e3c0;font-size:12px;line-height:1.8;overflow-wrap:anywhere;margin:0}.youtube-schedule-record{font-size:12px;color:#d5dfb8;line-height:1.8;overflow-wrap:anywhere;margin:6px 0}.youtube-schedule [hidden]{display:none!important}.youtube-schedule .production-error:empty,.youtube-schedule-summary:empty{display:none}.youtube-schedule :focus-visible{outline:2px solid #e4c28c;outline-offset:3px}@media(max-width:650px){.youtube-schedule{padding:12px}.youtube-schedule-fields input[type=datetime-local]{font-size:14px}.youtube-schedule-fields select{font-size:12px}}
+
+.youtube-readiness{margin:12px 0;padding:13px;border:1px solid #796447;border-radius:8px;background:#29271f;overflow-wrap:anywhere}
+.youtube-readiness strong{display:block;font-size:13px;color:#ecd2a6;line-height:1.5}
+.youtube-readiness p{margin:7px 0 0;font-size:12px;line-height:1.8;color:#bdc7c2}
+.youtube-readiness.is-ready{border-color:#476653;background:#192b24}
+.youtube-readiness.is-ready strong{color:#b9d7bf}
+.youtube-readiness .production-actions{margin-top:10px;gap:8px;flex-wrap:wrap}
+.youtube-readiness button{min-height:40px;white-space:normal;line-height:1.5;text-align:left}
+.youtube-readiness .production-error{color:#efb5a5}
+@media(max-width:600px){.youtube-readiness .production-actions{display:grid;grid-template-columns:minmax(0,1fr)}.youtube-readiness button{min-height:44px;width:100%}}
