@@ -5,14 +5,14 @@ import {TOOL_CATALOG} from '../dist/tool-navigation-data.js';
 import {TOOL_ROUTE_IDS,createToolRouter,getToolRouteAvailability} from '../dist/tool-routes.js';
 
 test('each discoverable feature has exactly one explicitly allowlisted navigation route',()=>{
- assert.equal(new Set(TOOL_ROUTE_IDS).size,38);assert.deepEqual(TOOL_ROUTE_IDS.slice().sort(),TOOL_CATALOG.map(tool=>tool.routeId).sort());
+ assert.equal(new Set(TOOL_ROUTE_IDS).size,40);assert.deepEqual(TOOL_ROUTE_IDS.slice().sort(),TOOL_CATALOG.map(tool=>tool.routeId).sort());
  for(const id of ['generateScriptBtn','uploadYouTubeBtn','runUploadSeriesBtn','generateVoiceBtn','__proto__','https://api.openai.com'])assert.equal(TOOL_ROUTE_IDS.includes(id),false);
 });
 function harness(project=createProject()){
  const calls=[],doc={querySelectorAll:()=>[],querySelector:()=>null,getElementById:id=>({disabled:false,click:()=>calls.push(['click',id])})};
  const api={getProject:()=>project,getAssets:()=>new Map(),getSelectedId:()=>project.scenes[0]?.id,canMutate:()=>true,flushProjectEditors:()=>calls.push(['flush']),pause:()=>calls.push(['pause']),toast:()=>{},
   openAudioTools:()=>calls.push(['audio']),openTimingPlan:()=>calls.push(['timing']),openSceneImageBatch:()=>calls.push(['batch-review']),hasConfirmedScenePlan:()=>false,
-  openProductionSection:id=>calls.push(['production',id]),openAiAssistant:id=>calls.push(['assistant',id]),openApiSettings:()=>calls.push(['api']),
+  openProductionRunStudio:()=>calls.push(['production-run-review']),openSceneImageReplace:()=>calls.push(['scene-replace-review']),openProductionSection:id=>calls.push(['production',id]),openAiAssistant:id=>calls.push(['assistant',id]),openApiSettings:()=>calls.push(['api']),
   generate:()=>assert.fail('Navigation must never generate'),upload:()=>assert.fail('Navigation must never upload')};
  return{calls,api,router:createToolRouter(api,doc)};
 }
@@ -36,4 +36,12 @@ test('categorized project, review and delivery navigation use existing section A
 test('readiness hints distinguish missing scenes, selected frames and confirmed timing without changing the project',()=>{
  const empty=createProject(),before=structuredClone(empty);assert.equal(getToolRouteAvailability('images-batch',empty).available,false);assert.equal(getToolRouteAvailability('scene-effects',empty).available,false);assert.equal(getToolRouteAvailability('api-settings',empty).available,true);assert.equal(getToolRouteAvailability('api-settings',empty,{canMutate:false}).available,false);assert.deepEqual(empty,before);
  const filled=createProject({scenes:[createScene({imageId:'image'})]});assert.equal(getToolRouteAvailability('scene-effects',filled,{hasSelection:true}).available,true);assert.equal(getToolRouteAvailability('images-batch',filled,{planValid:true}).available,true);
+});
+
+test('combined production and one-scene replacement routes only open reviewed screens',async()=>{
+ const project=createProject({scenes:[createScene({id:'selected',imageId:'original',caption:'이미지와 자막 보존'})]}),before=structuredClone(project),h=harness(project);
+ await h.router.open('production-run');assert.equal(h.calls.filter(call=>call[0]==='production-run-review').length,1);
+ await h.router.open('scene-image-replace');assert.equal(h.calls.filter(call=>call[0]==='scene-replace-review').length,1);
+ assert.equal(h.calls.some(call=>call[0]==='click'),false);assert.deepEqual(project,before);
+ assert.equal(getToolRouteAvailability('scene-image-replace',createProject()).available,false);assert.equal(getToolRouteAvailability('production-run',createProject()).available,true);
 });

@@ -89,7 +89,11 @@
     "test:description-hashtags-browser": "node tests/description-hashtags.browser.cjs",
     "test:youtube-playlists-browser": "node tests/youtube-playlists.browser.cjs",
     "test:channel-intro-description-browser": "node tests/channel-intro-description.browser.cjs",
-    "test:script-pronunciation-recovery-browser": "node tests/script-pronunciation-recovery.browser.cjs"
+    "test:script-pronunciation-recovery-browser": "node tests/script-pronunciation-recovery.browser.cjs",
+    "test:production-run-browser": "node tests/production-run.browser.cjs",
+    "test:scene-image-replace-browser": "node tests/scene-image-replace.browser.cjs",
+    "test:production-run-export-browser": "node tests/production-run-export.browser.cjs",
+    "test:scene-image-replace-main-browser": "node tests/scene-image-replace-main.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

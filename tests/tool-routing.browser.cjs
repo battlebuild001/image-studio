@@ -19,6 +19,8 @@ const {chromium}=require('playwright');
  async function upload(section){await oneDialog('videoUploadDialog');assert.equal(await page.locator('#uploadTab-'+section).getAttribute('aria-selected'),'true',currentRoute);}
  async function assertRoute(id){
   switch(id){
+   case 'production-run':await oneDialog('productionRunDialog');await page.waitForFunction(()=>!document.querySelector('#productionRunPreparing')||document.querySelector('#productionRunPreparing').hidden);assert.equal(await page.locator('#startProductionRunBtn').isDisabled(),true);break;
+   case 'scene-image-replace':await oneDialog('sceneImageReplaceDialog');assert.equal(await page.locator('#sceneImageReplaceSelect').inputValue(),'first');break;
    case 'script-draft':await oneDialog('scriptStudioDialog');break;
    case 'topic-research':await oneDialog('scriptStudioDialog');assert.equal(await page.locator('#researchTopic').isVisible(),true);break;
    case 'source-files':await oneDialog('scriptStudioDialog');assert.equal(await page.locator('#chooseResearchFilesBtn').isVisible(),true);break;
@@ -68,7 +70,7 @@ const {chromium}=require('playwright');
   });
   await page.locator('#projectInput').setInputFiles({name:'tool-routing.bth.json',mimeType:'application/json',buffer:Buffer.from(backup)});const original=await waitProject(project=>project.id==='tool-routing-main'&&project.scenes.length===2);await ready();const media=await hashes(),catalog=await page.evaluate(async()=>(await import('./tool-navigation-data.js')).TOOL_CATALOG.map(({id,categoryId})=>({id,categoryId})));
   for(const tool of catalog){await choose(tool.id,tool.categoryId);await assertRoute(tool.id);assert.equal(await page.locator('#toolNavigationDialog').isVisible(),false,tool.id);assert.equal(await page.locator('dialog[open]').count()<=1,true,tool.id);}
-  assert.deepEqual(await stored(),original);assert.deepEqual(await hashes(),media);assert.deepEqual(posts,[]);assert.deepEqual(external,[]);assert.deepEqual(filePickers,[]);console.log('PASS all38 real catalog routes reach the existing editor/dialog and correct feature without duplicate modals, paid generation, file picker, upload or data/media changes');
+  assert.deepEqual(await stored(),original);assert.deepEqual(await hashes(),media);assert.deepEqual(posts,[]);assert.deepEqual(external,[]);assert.deepEqual(filePickers,[]);console.log('PASS all40 real catalog routes reach the existing editor/dialog and correct feature without duplicate modals, paid generation, file picker, upload or data/media changes');
 
   await page.keyboard.press('Control+k');await page.locator('#toolNavigationDialog').waitFor({state:'visible'});await page.locator('#toolNavigationSearch').fill('예약 업로드');await page.locator('[data-tool-id="upload-video"]').click();await assertRoute('upload-video');assert.equal(await page.locator('#youtubeScheduleCard').count(),1);await choose('scene-layout','visual');assert.equal(await page.locator('#focusX').isVisible(),true);await choose('images-batch','visual');await oneDialog('scriptDialog');assert.equal(await page.locator('#sceneImageBatchDialog').isVisible(),false);assert.deepEqual(await stored(),original);assert.deepEqual(posts,[]);console.log('PASS keyword search opens actual scheduling controls, context editors remain reachable, and unconfirmed image timing opens review instead of generation');
 

@@ -70,6 +70,29 @@ description and thumbnail selection across Previous/Next navigation.
 Preserve the four primary workflow steps and route legacy section openers to the
 correct dialog; never put delivery tools back inside project settings.
 
+- `production-run-studio.js/.css`, `production-run-engine.js`, `production-run-protocol.js`
+  and `workflow-*-runner.js` provide the explicit combined production flow. Preserve the
+  four existing workflow steps and detailed tools. Opening or preparing the combined
+  screen performs no paid requests. One reviewed Run acknowledges concrete per-stage
+  request/image counts and timing/caption changes; no extra step dialogs or hidden
+  retries, video rendering or uploads. The recommended preset chooses applicable
+  tasks, but preserves numeric display captions with local sync when spoken/display
+  scripts differ. Precise sync explicitly replaces visible cues with recognized ASR
+  text and measured times. Free inspection selects no sync/image/paid tasks.
+  Save completed stages/images and bounded review metadata in production.run;
+  restore valid saved run options on reopen/reload without acknowledgment or autorun;
+  resume only after explicit re-preparation and reuse only matching saved inputs/media.
+  Cancel on source/workspace/settings/blob changes. Never serialize credentials or
+  raw provider bodies. Stale reports stay labeled previous and cannot navigate to
+  or replace scenes. Existing project/media archives, Undo and paid-budget locks apply.
+- `scene-image-replace.js/.css` stages a local file or one explicitly generated image
+  for exactly the chosen scene, with before/after preview and explicit Apply. Keep
+  every other image, scene timing, captions, narration and BGM intact; retain image
+  history/Undo. A failed save after applying must retry saving that same image, without
+  another provider request. Review findings may open this contextual editor only on
+  explicit action. Catalog routes production-run and scene-image-replace only open
+  their screens and never start production work.
+
 - `dist/production-workbench.js` / `.css` composes feature modules through toolsApi.
   Flush dirty speech fields before switching sections, projects or workspaces;
   closing cancels active jobs without deleting completed results or manual fields.

@@ -5,7 +5,7 @@ import {TOOL_CATEGORIES,TOOL_CATALOG,normalizeToolQuery,getToolCategory,searchTo
 const tool = id => TOOL_CATALOG.find(value => value.id === id);
 test('all tools have one unique route and exactly six meaningful task categories',()=>{
  assert.deepEqual(TOOL_CATEGORIES.map(value=>[value.id,value.title]),[['script','자료·대본'],['audio','음성·자막'],['visual','이미지·장면'],['review','편집·검수'],['delivery','게시·업로드'],['project','프로젝트·연결']]);
- assert.equal(TOOL_CATALOG.length,38);assert.equal(new Set(TOOL_CATALOG.map(value=>value.id)).size,38);
+ assert.equal(TOOL_CATALOG.length,40);assert.equal(new Set(TOOL_CATALOG.map(value=>value.id)).size,40);
  for(const value of TOOL_CATALOG){assert.equal(value.id,value.routeId);assert.ok(TOOL_CATEGORIES.some(category=>category.id===value.categoryId));assert.ok(value.title&&value.description&&value.keywords.length);assert.equal(Object.isFrozen(value),true);assert.equal(Object.isFrozen(value.keywords),true);}
  assert.equal(Object.isFrozen(TOOL_CATALOG),true);assert.equal(Object.isFrozen(TOOL_CATEGORIES),true);
 });
@@ -15,7 +15,7 @@ test('empty discovery shows one small category rather than every tool',()=>{
  assert.equal(getToolCategory('not-a-category').id,'script');assert.equal(searchToolCatalog('','not-a-category').length,6);
 });
 test('search normalizes Korean whitespace, English case and fullwidth characters',()=>{
- assert.equal(normalizeToolQuery('  ＴＴＳ  '),'tts');assert.equal(searchToolCatalog('ＴＴＳ')[0].id,'voice-generation');assert.equal(searchToolCatalog('BGM')[0].id,'music');
+ assert.equal(normalizeToolQuery('  ＴＴＳ  '),'tts');assert.equal(searchToolCatalog('ＴＴＳ')[0].id,'voice-generation');assert.equal(searchToolCatalog('BGM')[0].id,'music');assert.equal(searchToolCatalog('한 번에 제작')[0].id,'production-run');assert.equal(searchToolCatalog('이미지 교체')[0].id,'scene-image-replace');
  assert.deepEqual(searchToolCatalog('예약 업로드').map(value=>value.id),searchToolCatalog('예약업로드').map(value=>value.id));
  assert.equal(searchToolCatalog('  자막   문구 시간  ')[0].id,'captions-edit');assert.equal(normalizeToolQuery(null),'');assert.equal(normalizeToolQuery({}), '');
 });
@@ -27,8 +27,8 @@ test('aliases search across categories and prioritize the actual named task',()=
 });
 test('missing project prerequisites are explanatory hints and do not modify the project',()=>{
  const project={id:'original',scenes:[],audio:{},scriptDraft:null},before=structuredClone(project);
- for(const id of ['voice-generation','images-batch','transcript','scene-layout','image-review']){const value=toolAvailability(tool(id),project);assert.equal(value.available,false,id);assert.ok(value.reason,id);}
- for(const id of ['script-draft','api-settings','project-files'])assert.deepEqual(toolAvailability(tool(id),project),{available:true,reason:''});
+ for(const id of ['voice-generation','images-batch','transcript','scene-layout','image-review','scene-image-replace']){const value=toolAvailability(tool(id),project);assert.equal(value.available,false,id);assert.ok(value.reason,id);}
+ for(const id of ['production-run','script-draft','api-settings','project-files'])assert.deepEqual(toolAvailability(tool(id),project),{available:true,reason:''});
  assert.deepEqual(project,before);
 });
 test('actual saved script, scene selection and referenced media make matching tools available',()=>{
