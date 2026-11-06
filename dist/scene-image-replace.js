@@ -11,7 +11,7 @@ const short = (text, limit = 55) => {const chars = Array.from(String(text || '')
 /** Stage one reviewed image, then replace only that scene through the editor's normal history path. */
 export function setupSceneImageReplace(api) {
   if (!document.getElementById('sceneImageReplaceStyles')) {const style = node('link');style.id = 'sceneImageReplaceStyles';style.rel = 'stylesheet';style.href = new URL('./scene-image-replace.css', import.meta.url).href;document.head.append(style);}
-  const launcher = button('sceneImageReplaceBtn', '선택 장면 이미지 교체', 'outline full scene-image-replace-launch');
+  const launcher = button('sceneImageReplaceBtn', '이 장면만 AI로 다시 만들기', 'outline full scene-image-replace-launch');
   const anchor = document.getElementById('replaceImageBtn') || document.getElementById('sceneImageBatchBtn');if (api.launcherContainer?.append) api.launcherContainer.append(launcher);else if (anchor) anchor.after(launcher);
   const dialog = node('dialog', 'modal scene-image-replace-modal');dialog.id = 'sceneImageReplaceDialog';dialog.setAttribute('aria-labelledby', 'sceneImageReplaceTitle');
   const heading = node('div', 'dialog-heading'), titles = node('div');titles.append(node('span', 'eyebrow', 'SCENE IMAGE'));
