@@ -36,6 +36,10 @@ function timedPrompt(item, context = {}) {
   return prompt;
 }
 
+// Shared by the explicit batch coordinator and the one-screen production flow.
+// Importing this module never opens a dialog or starts a provider request.
+export {timedPrompt as buildTimedImagePrompt};
+
 async function request(path, options = {}) {
   const response = await apiFetch(path, options);let value;
   try {value = await response.json();} catch {throw new Error('이미지 API 응답을 읽지 못했어요. 완료한 이미지와 설정은 유지돼요.');}

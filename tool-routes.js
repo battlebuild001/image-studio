@@ -1,6 +1,6 @@
 /** Explicit navigation only. No route performs generation, analysis or an upload. */
 export const TOOL_ROUTE_IDS = Object.freeze([
-  'script-draft','topic-research','source-files','reference-images','speech-texts','pronunciation',
+  'production-run','scene-image-replace','script-draft','topic-research','source-files','reference-images','speech-texts','pronunciation',
   'voice-generation','voice-samples','audio-files','music','captions-edit','transcript','sync',
   'scene-timing','images-batch','image-reference','scene-layout','scene-effects','title-cards','diagrams',
   'quality','fidelity','chat-edit','partial-regenerate','image-review','version-history',
@@ -16,7 +16,7 @@ export function getToolRouteAvailability(id, project, {canMutate = true, narrati
   const hasScenes = Boolean(project?.scenes?.length), hasScript = Boolean(String(displayScript(project || {})).trim() || project?.scenes?.some(scene => scene.caption?.trim())), hasImages = Boolean(project?.scenes?.some(scene => scene.imageId));
   if (['image-review','shorts-framing'].includes(id) && !hasImages) return {available: false, reason: '장면에 이미지를 먼저 추가한 뒤 사용할 수 있어요.'};
   if (['voice-generation','fidelity'].includes(id) && !hasScript) return {available: false, reason: '대본을 준비하거나 도구에서 직접 입력해 주세요.'};
-  if (['shorts','chat-edit','partial-regenerate'].includes(id) && !hasScenes) return {available: false, reason: '장면을 먼저 추가한 뒤 사용할 수 있어요.'};
+  if (['shorts','chat-edit','partial-regenerate','scene-image-replace'].includes(id) && !hasScenes) return {available: false, reason: '장면을 먼저 추가한 뒤 사용할 수 있어요.'};
   if (id === 'images-batch' && !planValid) return {available: false, reason: '먼저 타이밍을 확인·확정하세요. 선택하면 타이밍 설정으로 이동해요.'};
   if (['transcript','sync'].includes(id) && !narrationPresent && !hasScenes) return {available: false, reason: '음성이나 장면을 먼저 추가하세요. 음성·자막 도구로 안내해요.'};
   if (id === 'transcript' && !narrationPresent) return {available: false, reason: '내레이션 파일을 먼저 추가하세요. 음성·자막 도구로 안내해요.'};
@@ -70,6 +70,8 @@ export function createToolRouter(api, doc = document) {
       case 'captions-edit': launch('captionEditorBtn');break;
       case 'transcript': if (!api.getAssets().get(api.getProject().audio?.narrationId)) {audio();api.toast?.('내레이션 파일을 추가한 뒤 음성 분석을 실행하세요.');} else api.openTranscriptStudio();break;
       case 'sync': if (!api.getProject().scenes.length) {audio();api.toast?.('장면과 음성을 추가한 뒤 싱크를 맞출 수 있어요.');} else api.openSyncStudio();break;
+      case 'production-run': api.openProductionRunStudio();break;
+      case 'scene-image-replace': api.openSceneImageReplace();break;
       case 'scene-timing': api.openTimingPlan();break;
       case 'images-batch': if (!api.hasConfirmedScenePlan?.()) {api.openTimingPlan();api.toast?.('이미지 전환 타이밍을 확인·확정한 뒤 장면 이미지를 만들 수 있어요.');} else api.openSceneImageBatch();break;
       case 'image-reference': api.openImageStudio();break;

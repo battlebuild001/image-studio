@@ -29,6 +29,12 @@ import {setupAiWorkbench} from './ai-workbench.js';
 import {createToolRouter} from './tool-routes.js';
 import {setupToolNavigation} from './tool-navigation.js';
 import {fitScenesToNarration,protectedTitleDurations} from './sync-timing.js';
+import {prepareWorkflowTimeline,workflowTimingKey} from './workflow-project.js';
+import {createProductionRunEngine} from './production-run-engine.js';
+import {setupProductionRunStudio} from './production-run-studio.js';
+import {setupSceneImageReplace} from './scene-image-replace.js';
+import {getDirectSettings} from './direct-openai.js';
+import {getApiSettings} from './api-client.js';
 
 const $=id=>document.getElementById(id);
 $('aiImageNoticeHelp').textContent=AI_IMAGE_NOTICE_TEXT;
@@ -38,6 +44,8 @@ let redoHistory=[],selectedIds=new Set(),copiedSettings=null,previewAudio=null,e
 let narration=new Audio(),bgm=new Audio(),saveTimer=0,saveChain=Promise.resolve(),revision=0,savedRevision=0,exportController=null,exportURL=null,exportedVideoRecord=null,importing=false;
 let workspaceCatalog=null,workspaceTabs=null,workspaceReady=false,changingWorkspace=false,workspaceError='';
 let videoUploadWorkbench=null,referenceMedia=null,musicRecommendations=null,uploadBatchBusy=false,manualSaveBusy=false,syncStudio=null,aiWorkbench=null,toolNavigation=null,toolRouter=null;
+let productionRunStudio=null,productionRunEngine=null,sceneImageReplace=null,productionRunBusy=false,sceneReplacementBusy=false;
+const productionMutationAuthority=Symbol('reviewed-production-work');
 const canvas=$('previewCanvas'),ctx=canvas.getContext('2d',{alpha:false});
 const editorStatusHost=el('div','editor-operation-host');editorStatusHost.id='editorOperationHost';document.querySelector('main.workspace').before(editorStatusHost);
 const editorProgress=createOperationStatus({container:editorStatusHost,region:document.querySelector('main.workspace'),id:'editorOperation'});
@@ -58,7 +66,7 @@ const total=()=>getTimeline(project).duration;
 const fileName=()=>((project.title||'BLKOUT 영상').replace(/[<>:"/\\|?*\x00-\x1F]/g,'_').slice(0,100)||'BLKOUT 영상');
 function el(tag,className,text){const n=document.createElement(tag);if(className)n.className=className;if(text!==undefined)n.textContent=text;return n;}
 function toast(message,error=false){const node=el('div',`toast${error?' error':''}`,message);$('toastArea').append(node);setTimeout(()=>node.remove(),error?9000:5500);}
-function on(id,event,fn){$(id).addEventListener(event,e=>{if(importing||uploadBatchBusy)return;try{Promise.resolve(fn(e)).catch(report);}catch(error){report(error);}});}
+function on(id,event,fn){$(id).addEventListener(event,e=>{if(importing||uploadBatchBusy||productionRunBusy||sceneReplacementBusy)return;try{Promise.resolve(fn(e)).catch(report);}catch(error){report(error);}});}
 function report(error){console.error(error);toast(error?.message||'작업을 마치지 못했어요. 다시 시도해 주세요.',true);}
 function pruneAssets(){
  const keep=new Set([project,...history,...redoHistory].flatMap(p=>[...referencedAssetIds(p)]));
@@ -68,15 +76,44 @@ function checkpoint(){history.push(clone(project));if(history.length>30)history.
 function markSaved(label){const element=$('saveState');element.replaceChildren(el('i'),document.createTextNode(label));element.setAttribute('role','status');element.setAttribute('aria-busy',String(label==='저장 중'));}
 function scheduleSave(){revision++;markSaved('저장 대기');clearTimeout(saveTimer);saveTimer=setTimeout(()=>persist().catch(()=>{}),650);}
 function flushProjectEditors(options={strict:true}){
- scriptStudio?.flush(options);imageStudio?.flush(options);sceneImageBatch?.flush(options);productionWorkbench?.flush(options);videoUploadWorkbench?.flush(options);referenceMedia?.flush?.(options);musicRecommendations?.flush?.(options);aiWorkbench?.flush?.(options);toolNavigation?.flush?.(options);
+ scriptStudio?.flush(options);imageStudio?.flush(options);sceneImageBatch?.flush(options);productionWorkbench?.flush(options);videoUploadWorkbench?.flush(options);referenceMedia?.flush?.(options);musicRecommendations?.flush?.(options);aiWorkbench?.flush?.(options);toolNavigation?.flush?.(options);productionRunStudio?.flush?.(options);sceneImageReplace?.flush?.(options);
 }
-function renderProjectExtensions(){productionWorkbench?.render();videoUploadWorkbench?.render();referenceMedia?.render();musicRecommendations?.render();syncStudio?.render();aiWorkbench?.render();toolNavigation?.render();}
-function resetProjectExtensions(){productionWorkbench?.reset();videoUploadWorkbench?.reset();referenceMedia?.reset();musicRecommendations?.reset();syncStudio?.reset();aiWorkbench?.reset();toolNavigation?.reset();}
-function canMutateProject(){return workspaceReady&&!importing&&!exportController&&!changingWorkspace&&!timingApplying&&!uploadBatchBusy&&!manualSaveBusy;}
+function renderProjectExtensions(){productionWorkbench?.render();videoUploadWorkbench?.render();referenceMedia?.render();musicRecommendations?.render();syncStudio?.render();aiWorkbench?.render();toolNavigation?.render();productionRunStudio?.render();sceneImageReplace?.render();}
+function resetProjectExtensions(){productionWorkbench?.reset();videoUploadWorkbench?.reset();referenceMedia?.reset();musicRecommendations?.reset();syncStudio?.reset();aiWorkbench?.reset();toolNavigation?.reset();productionRunEngine?.reset();productionRunStudio?.reset();sceneImageReplace?.reset();}
+function canMutateProject(){return workspaceReady&&!importing&&!exportController&&!changingWorkspace&&!timingApplying&&!uploadBatchBusy&&!manualSaveBusy&&!productionRunBusy&&!sceneReplacementBusy;}
 function setUploadBatchBusy(value){
  const next=value===true;if(next===uploadBatchBusy)return;uploadBatchBusy=next;if(next)pause();
  document.body.classList.toggle('upload-busy',next);workspaceTabs?.render();apiSettings?.render();renderProjectExtensions();renderWorkflow();$('exportBtn').disabled=next||!project.scenes.length;
 }
+function setProductionWorkBusy(kind,value){
+ const next=value===true,currentValue=kind==='run'?productionRunBusy:sceneReplacementBusy;if(next===currentValue)return;
+ if(next&&!canMutateProject())throw new Error('현재 작업이 끝난 뒤 한 번에 제작하거나 이미지를 교체해 주세요.');
+ if(kind==='run')productionRunBusy=next;else sceneReplacementBusy=next;if(next)pause();
+ document.body.classList.toggle('production-run-busy',productionRunBusy);document.body.classList.toggle('scene-replacement-busy',sceneReplacementBusy);
+ workspaceTabs?.render();apiSettings?.render();editorTools?.render();scriptStudio?.render();imageStudio?.render();transcriptStudio?.render();voiceStudio?.render();sceneImageBatch?.render();renderProjectExtensions();renderWorkflow();$('exportBtn').disabled=productionRunBusy||sceneReplacementBusy||!project.scenes.length;
+}
+async function prepareWorkflowProject(options,{signal,guard}={}){
+ const owner=project.id,workspace=workspaceCatalog?.activeId||null,key=JSON.stringify([workflowTimingKey(project),project.scriptDraft]);
+ if(signal?.aborted||guard&&guard()===false)throw new DOMException('제작 준비를 취소했어요.','AbortError');
+ if(project.audio.narrationId)await prepareSyncAudio({signal});
+ if(owner!==project.id||workspace!==(workspaceCatalog?.activeId||null)||key!==JSON.stringify([workflowTimingKey(project),project.scriptDraft])||signal?.aborted||guard&&guard()===false)throw new Error('제작할 대본이나 원본이 바뀌었어요. 작업 범위를 다시 확인해 주세요.');
+ return prepareWorkflowTimeline(project,assets,options);
+}
+async function applyWorkflowProject({project:incoming,guard}={}){
+ if(!productionRunBusy||exportController||uploadBatchBusy||changingWorkspace||sceneReplacementBusy)throw new Error('검토한 제작 작업 안에서 시간표를 적용해 주세요.');
+ const next=validateProject(incoming),owner=project.id,workspace=workspaceCatalog?.activeId||null,key=workflowTimingKey(project);
+ const valid=()=>owner===project.id&&workspace===(workspaceCatalog?.activeId||null)&&key===workflowTimingKey(project)&&(!guard||guard());
+ if(next.id!==owner||!valid())throw new Error('원본이 바뀌어 시간표를 적용하지 않았어요.');
+ const changed=key!==workflowTimingKey(next);if(!changed)return{changed:false};
+ pause();setMediaBusy(true);
+ try{await archiveCurrent();if(!valid())throw new Error('원본이 바뀌어 이전 제작 결과를 적용하지 않았어요.');
+  mutate(p=>{p.scenes=clone(next.scenes);p.audio.narrationOffset=next.audio.narrationOffset;p.captionMode=next.captionMode;p.captions=clone(next.captions);p.captionAnalysis=clone(next.captionAnalysis);p.scenePlan=clone(next.scenePlan);p.settings.subtitles=next.settings.subtitles;},{authority:productionMutationAuthority});
+  await persist();return{changed:true};
+ }finally{setMediaBusy(false);}
+}
+function productionConnectionKey(){const direct=getDirectSettings(),server=getApiSettings();return JSON.stringify({direct,server});}
+function productionApiConfigured(){const direct=getDirectSettings(),server=getApiSettings();return Boolean(direct.enabled&&direct.hasKey||server.baseUrl||['localhost','127.0.0.1'].includes(location.hostname));}
+function openSceneImageReplace(options={}){if(!canMutateProject())return;if($('productionRunDialog')?.open)$('productionRunDialog').close();if($('aiAssistantDialog')?.open)$('aiAssistantDialog').close();sceneImageReplace?.open(options);}
 function openProductionSection(id,context={}){
  if(['quality','fidelity','chat'].includes(id)){for(const id of ['productionWorkbenchDialog','videoUploadDialog'])if($(id)?.open)$(id).close();aiWorkbench.open(id,context);return;}
  if(['settings','shorts','publishing','youtube','series'].includes(id)){if($('productionWorkbenchDialog')?.open)$('productionWorkbenchDialog').close();videoUploadWorkbench.open(id,context);}
@@ -86,8 +123,8 @@ function persist(){
  flushProjectEditors({strict:false});clearTimeout(saveTimer);const rev=revision,snapshot=clone(project),media=new Map(assets),owner=workspaceReady?workspaceCatalog.activeId:null;markSaved('저장 중');
  saveChain=saveChain.catch(()=>{}).then(()=>{if(workspaceError)throw new Error('분야별 저장을 준비하지 못했어요. 파일 백업을 저장한 뒤 편집기를 다시 열어 주세요.');return owner?saveWorkspaceProject(owner,snapshot,media):saveProject(snapshot,media);}).then(()=>{savedRevision=Math.max(savedRevision,rev);if(rev===revision)markSaved('자동 저장됨');}).catch(error=>{markSaved('백업을 저장해 주세요');toast(`자동 저장 실패: ${error.message}`,true);throw error;});return saveChain;
 }
-function mutate(action,{refreshInspector=true}={}){
- if(exportController||uploadBatchBusy)return;pause();const before=clone(project),previousRedo=redoHistory,previousSelection=selectedId,previousSelections=new Set(selectedIds),previousCurrent=current;checkpoint();
+function mutate(action,{refreshInspector=true,authority=null}={}){
+ if(exportController||uploadBatchBusy||(productionRunBusy||sceneReplacementBusy)&&authority!==productionMutationAuthority)return;pause();const before=clone(project),previousRedo=redoHistory,previousSelection=selectedId,previousSelections=new Set(selectedIds),previousCurrent=current;checkpoint();
  try{action(project);project=validateProject(project);}catch(error){project=before;history.pop();redoHistory=previousRedo;selectedId=previousSelection;selectedIds=previousSelections;current=previousCurrent;renderAll();throw error;}
  if(!project.scenes.some(s=>s.id===selectedId))selectedId=project.scenes[0]?.id||null;
  selectedIds=new Set([...selectedIds].filter(id=>project.scenes.some(s=>s.id===id)));
@@ -162,7 +199,7 @@ function currentWorkspace(){return workspaceCatalog?.tabs.find(tab=>tab.id===wor
 function setMediaBusy(value){importing=value;document.body.classList.toggle('busy',value);workspaceTabs?.render();apiSettings?.render();sceneImageBatch?.render();editorTools?.render();renderProjectExtensions();renderWorkflow();}
 async function changeWorkspace(action){
  if(!workspaceReady)throw new Error('분야 탭을 불러온 뒤 다시 시도해 주세요.');
- if(importing||exportController||changingWorkspace||uploadBatchBusy||manualSaveBusy)throw new Error('현재 파일 처리나 영상 출력이 끝난 뒤 분야를 바꿔 주세요.');
+ if(importing||exportController||changingWorkspace||uploadBatchBusy||manualSaveBusy||productionRunBusy||sceneReplacementBusy)throw new Error('현재 파일 처리나 영상 출력이 끝난 뒤 분야를 바꿔 주세요.');
  changingWorkspace=true;workspaceTabs?.render();
  try{
   flushProjectEditors({strict:true});pause();setMediaBusy(true);clearTimeout(saveTimer);await persist();await saveChain;
@@ -211,7 +248,7 @@ function captureProductionVersion(kind,context={}){
  mutate(p=>{p.production=candidate.production;});return entry;
 }
 function renderWorkflow(){
- const hasScript=!!spokenScript().trim(),hasVoice=!!assets.get(project.audio.narrationId),hasScenes=project.scenes.length>0,blocked=importing||!!exportController||timingApplying||uploadBatchBusy||manualSaveBusy;
+ const hasScript=!!spokenScript().trim(),hasVoice=!!assets.get(project.audio.narrationId),hasScenes=project.scenes.length>0,blocked=importing||!!exportController||timingApplying||uploadBatchBusy||manualSaveBusy||productionRunBusy||sceneReplacementBusy;
  const planned=getScenePlanStatus(project),filled=project.scenes.filter(scene=>scene.imageId&&assets.has(scene.imageId)).length;
  $('workflowScriptBtn').disabled=blocked;$('workflowVoiceBtn').disabled=blocked||!hasScript;
  $('workflowTimingBtn').disabled=blocked||(!hasScript&&!project.scenes.some(scene=>scene.caption.trim()));
@@ -325,7 +362,7 @@ function renderTimeline(){
 }
 function renderInspector(){const scene=selected();$('inspectorEmpty').hidden=!!scene;$('inspectorContent').hidden=!scene;$('selectedId').textContent=scene?String(project.scenes.indexOf(scene)+1).padStart(2,'0'):'—';if(!scene)return;const holder=$('selectedImage');holder.replaceChildren();const asset=assets.get(scene.imageId);if(asset?.url){const image=el('img');image.src=asset.url;image.alt=`선택 장면 이미지: ${asset.name}`;holder.append(image);}else holder.append(el('span','','이미지가 없는 장면'));updateField('sceneCaption',scene.caption);$('sceneCaption').disabled=project.captionMode!=='auto';$('sceneCaption').title=project.captionMode!=='auto'?'별도 시간 자막을 사용 중이에요. 대본 자막으로 전환하면 이 문장이 표시돼요.':'';updateField('sceneDuration',Number(scene.duration.toFixed(2)));updateField('sceneMotion',scene.motion);updateField('sceneFit',scene.fit);$('moveUpBtn').disabled=project.scenes.indexOf(scene)===0;$('moveDownBtn').disabled=project.scenes.indexOf(scene)===project.scenes.length-1;}
 function renderAudio(){const voice=assets.get(project.audio.narrationId),music=assets.get(project.audio.bgmId);$('narrationInfo').textContent=voice?`${time(voice.duration)} · ${voice.name}`:'MP3 · WAV 파일을 넣어주세요';$('narrationBtn').textContent=voice?'음성 파일 교체':'음성 파일 추가';$('removeNarrationBtn').hidden=!voice;$('bgmInfo').textContent=music?`${time(music.duration)} · ${music.name}`:'설명 뒤에 잔잔하게 깔아주세요';$('bgmBtn').textContent=music?'음악 교체':'음악 추가';$('removeBgmBtn').hidden=!music;updateField('bgmVolume',Math.round(project.settings.bgmVolume*100));$('bgmVolumeLabel').textContent=`${Math.round(project.settings.bgmVolume*100)}%`;const length=total(),outro=protectedTitleDurations(project,assets).outroSeconds;if(voice&&Math.abs(length-((project.audio.narrationOffset||0)+getAudioWindow(project,assets,'narration').duration+outro))>0.15)$('timingState').textContent=`영상 ${time(length)} / 음성 ${time((project.audio.narrationOffset||0)+getAudioWindow(project,assets,'narration').duration)} · 시간 조절 필요`;else $('timingState').textContent=voice?'음성 길이에 맞춰져 있어요':project.scenes.length?'장면 시간을 자유롭게 조절하세요':'이미지를 추가해 시작하세요';}
-function renderAll(refreshInspector=true){updateField('projectTitle',project.title);updateField('aspectSelect',project.aspect);$('previewMode').textContent=`${project.aspect} · PREVIEW`;const portrait=project.aspect==='9:16';$('viewerShell').classList.toggle('portrait',portrait);const width=portrait?720:1280,height=portrait?1280:720;if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}$('emptyPreview').hidden=project.scenes.length>0;$('viewerBadge').hidden=!project.scenes.length;$('playBtn').disabled=!project.scenes.length;$('exportBtn').disabled=!project.scenes.length;$('autoDurationBtn').disabled=!project.scenes.length||!project.audio.narrationId;$('downloadSrtBtn').disabled=!getCaptions(project).length;$('subtitlesToggle').checked=project.settings.subtitles;$('brandingToggle').checked=project.settings.branding;$('aiImageNoticeToggle').checked=project.settings.aiImageNotice===true;$('aiImageNoticeHelp').hidden=project.settings.aiImageNotice!==true;$('aiImageNoticePositionRow').hidden=project.settings.aiImageNotice!==true;$('aiImageNoticePosition').disabled=project.settings.aiImageNotice!==true;updateField('aiImageNoticePosition',project.settings.aiImageNoticePosition||'bottom-center');updateField('transitionSelect',project.settings.transition);updateField('fontSizeSelect',project.settings.fontSize);$('seekSlider').max=String(Math.max(0.01,total()));$('totalTime').textContent=time(total());$('undoBtn').disabled=!history.length;$('redoBtn').disabled=!redoHistory.length;selectedIds=new Set([...selectedIds].filter(id=>project.scenes.some(s=>s.id===id)));renderSceneList();renderTimeline();if(refreshInspector)renderInspector();renderAudio();const cues=getCaptions(project);$('captionStatus').textContent=captionStatus(cues);$('autoCaptionsBtn').hidden=project.captionMode==='auto';editorTools?.render();libraryTools?.render();scriptStudio?.render();imageStudio?.render();transcriptStudio?.render();voiceStudio?.render();workspaceTabs?.render();apiSettings?.render();sceneImageBatch?.render();renderProjectExtensions();studioLayout?.render();renderWorkflow();renderPreview();}
+function renderAll(refreshInspector=true){updateField('projectTitle',project.title);updateField('aspectSelect',project.aspect);$('previewMode').textContent=`${project.aspect} · PREVIEW`;const portrait=project.aspect==='9:16';$('viewerShell').classList.toggle('portrait',portrait);const width=portrait?720:1280,height=portrait?1280:720;if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}$('emptyPreview').hidden=project.scenes.length>0;$('viewerBadge').hidden=!project.scenes.length;$('playBtn').disabled=!project.scenes.length;$('exportBtn').disabled=productionRunBusy||sceneReplacementBusy||!project.scenes.length;$('autoDurationBtn').disabled=!project.scenes.length||!project.audio.narrationId;$('downloadSrtBtn').disabled=!getCaptions(project).length;$('subtitlesToggle').checked=project.settings.subtitles;$('brandingToggle').checked=project.settings.branding;$('aiImageNoticeToggle').checked=project.settings.aiImageNotice===true;$('aiImageNoticeHelp').hidden=project.settings.aiImageNotice!==true;$('aiImageNoticePositionRow').hidden=project.settings.aiImageNotice!==true;$('aiImageNoticePosition').disabled=project.settings.aiImageNotice!==true;updateField('aiImageNoticePosition',project.settings.aiImageNoticePosition||'bottom-center');updateField('transitionSelect',project.settings.transition);updateField('fontSizeSelect',project.settings.fontSize);$('seekSlider').max=String(Math.max(0.01,total()));$('totalTime').textContent=time(total());$('undoBtn').disabled=!history.length;$('redoBtn').disabled=!redoHistory.length;selectedIds=new Set([...selectedIds].filter(id=>project.scenes.some(s=>s.id===id)));renderSceneList();renderTimeline();if(refreshInspector)renderInspector();renderAudio();const cues=getCaptions(project);$('captionStatus').textContent=captionStatus(cues);$('autoCaptionsBtn').hidden=project.captionMode==='auto';editorTools?.render();libraryTools?.render();scriptStudio?.render();imageStudio?.render();transcriptStudio?.render();voiceStudio?.render();workspaceTabs?.render();apiSettings?.render();sceneImageBatch?.render();renderProjectExtensions();studioLayout?.render();renderWorkflow();renderPreview();}
 function renderPreview(){
  const empty=project.scenes.length===0;
  canvas.hidden=empty;canvas.setAttribute('aria-hidden',String(empty));$('emptyPreview').hidden=!empty;$('viewerBadge').hidden=empty;
@@ -484,7 +521,7 @@ async function applyScript(){
 }
 
 async function importSrtFileWork(file){
- if(!file||importing||exportController)return;setMediaBusy(true);
+ if(!file||importing||exportController||productionRunBusy||sceneReplacementBusy)return;setMediaBusy(true);
  try{
   const cues=parseSrt(await file.text());const lastEnd=Math.max(...cues.map(c=>c.end));if(lastEnd>3600)throw new Error('자막은 60분 이내로 넣어주세요.');
   mutate(p=>{p.captions=cues;p.captionMode='srt';if(!p.scenes.length){const count=Math.max(1,Math.ceil(lastEnd/600));p.scenes=Array.from({length:count},()=>createScene({duration:Math.max(.25,lastEnd/count)}));}
@@ -567,7 +604,8 @@ async function addReferenceImages(fileList,{role='concept'}={}){
   throw error;
  }finally{setMediaBusy(false);}
 }
-async function applyGeneratedImage({blob,name='생성 이미지.png',sceneId=null,guard=null}){
+async function applyGeneratedImage({blob,name='생성 이미지.png',sceneId=null,guard=null,authority=null}){
+ if((productionRunBusy||sceneReplacementBusy)&&authority!==productionMutationAuthority)throw new Error('한 번에 제작 또는 장면 교체가 끝난 뒤 이미지를 적용해 주세요.');
  if(importing||exportController)throw new Error('현재 파일 처리나 영상 출력이 끝난 뒤 이미지를 적용해 주세요.');
  if(guard&&!guard())throw new Error('장면 계획이 바뀌어 이미지 적용을 취소했어요. 기존 이미지는 유지돼요.');
  if(!(blob instanceof Blob)||!blob.size)throw new Error('생성 이미지를 읽지 못했어요.');
@@ -580,15 +618,16 @@ async function applyGeneratedImage({blob,name='생성 이미지.png',sceneId=nul
    let scene=sceneId===null?null:p.scenes.find(item=>item.id===sceneId);
    if(!scene){scene=createScene({imageId});p.scenes.push(scene);}else{captureVersion(p,'image',{sceneId:scene.id,label:'이미지 교체 전'});scene.imageId=imageId;}
    selectedId=scene.id;selectedIds=new Set([scene.id]);current=getTimeline(p).scenes.find(item=>item.id===scene.id)?.start||0;
-  });
+  },{authority});
  }catch(error){if(imageId)pruneAssets();else if(decodedAsset?.url)URL.revokeObjectURL(decodedAsset.url);throw error;}
  finally{setMediaBusy(false);}
 }
 
 function restoreHistory(stack,destination){
- if(!stack.length||exportController||importing||uploadBatchBusy)return;
- pause();const accounting=project.production?.budget?clone(project.production.budget):null,uploads=project.production?.youtube?.uploads?clone(project.production.youtube.uploads):null,playlistTransfers=project.production?.youtube?.playlistTransfers?clone(project.production.youtube.playlistTransfers):null,voicePreferences=project.production?.speech?.voicePreferences?clone(project.production.speech.voicePreferences):null,voiceSamples=project.production?.speech?.voiceSamples?clone(project.production.speech.voiceSamples):null,voiceDraft=project.production?.speech?.voiceDraft?clone(project.production.speech.voiceDraft):null,uploadSeries=project.production?.uploadSeries?clone(project.production.uploadSeries):null,referenceDiscovery=project.production?.referenceMedia?clone(project.production.referenceMedia):null,musicDiscovery=project.production?.music?clone(project.production.music):null;destination.push(clone(project));project=stack.pop();
+ if(!stack.length||exportController||importing||uploadBatchBusy||productionRunBusy||sceneReplacementBusy)return;
+ pause();const accounting=project.production?.budget?clone(project.production.budget):null,productionRun=project.production?.run?clone(project.production.run):null,uploads=project.production?.youtube?.uploads?clone(project.production.youtube.uploads):null,playlistTransfers=project.production?.youtube?.playlistTransfers?clone(project.production.youtube.playlistTransfers):null,voicePreferences=project.production?.speech?.voicePreferences?clone(project.production.speech.voicePreferences):null,voiceSamples=project.production?.speech?.voiceSamples?clone(project.production.speech.voiceSamples):null,voiceDraft=project.production?.speech?.voiceDraft?clone(project.production.speech.voiceDraft):null,uploadSeries=project.production?.uploadSeries?clone(project.production.uploadSeries):null,referenceDiscovery=project.production?.referenceMedia?clone(project.production.referenceMedia):null,musicDiscovery=project.production?.music?clone(project.production.music):null;destination.push(clone(project));project=stack.pop();
  if(accounting)project.production={version:1,...project.production,budget:accounting};
+ if(productionRun)project.production={version:1,...project.production,run:productionRun};
  if(uploads||playlistTransfers)project.production={version:1,...project.production,youtube:{...project.production?.youtube,...(uploads?{uploads}:{}),...(playlistTransfers?{playlistTransfers}:{})}};
  if(voicePreferences||voiceSamples||voiceDraft)project.production={version:1,...project.production,speech:{...project.production?.speech,...(voicePreferences?{voicePreferences}:{}),...(voiceSamples?{voiceSamples}:{}),...(voiceDraft?{voiceDraft}:{})}};
  if(uploadSeries)project.production={version:1,...project.production,uploadSeries};
@@ -621,7 +660,7 @@ async function archiveCurrent(){
  await saveLibraryProject(project,assets,{thumbnail:thumbnail.toDataURL('image/png')});
 }
 async function replaceProject(loaded){
- if(exportController||importing||uploadBatchBusy||manualSaveBusy)throw new Error('현재 파일 처리가 끝난 뒤 프로젝트를 열어주세요.');
+ if(exportController||importing||uploadBatchBusy||manualSaveBusy||productionRunBusy||sceneReplacementBusy)throw new Error('현재 파일 처리가 끝난 뒤 프로젝트를 열어주세요.');
  if(loaded.guard&&!loaded.guard())throw new Error('원본이 바뀌어 새 프로젝트를 열지 않았어요.');
  pause();setMediaBusy(true);let decoded;
  try{
@@ -674,7 +713,7 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='End'){e.preventDefault();seek(total());}
   else if(e.key==='PageUp'||e.key==='PageDown'){e.preventDefault();const index=project.scenes.findIndex(s=>s.id===selectedId),scene=project.scenes[index+(e.key==='PageDown'?1:-1)];if(scene)selectScene(scene.id);}
  }catch(error){report(error);}
-});document.addEventListener('visibilitychange',()=>{if(document.hidden&&playing){pause();renderPreview();}});window.addEventListener('beforeunload',e=>{if(exportController||importing||revision>savedRevision){e.preventDefault();e.returnValue='';}});window.addEventListener('resize',()=>renderTimeline());
+});document.addEventListener('visibilitychange',()=>{if(document.hidden&&playing){pause();renderPreview();}});window.addEventListener('beforeunload',e=>{if(exportController||importing||productionRunBusy||sceneReplacementBusy||revision>savedRevision){e.preventDefault();e.returnValue='';}});window.addEventListener('resize',()=>renderTimeline());
 
 async function boot(){
  const operation=editorProgress.start('저장된 분야와 프로젝트를 불러오고 있어요.');setMediaBusy(true);let legacy;
@@ -706,8 +745,12 @@ on('emptyScriptBtn','click',()=>$('workflowScriptBtn').click());
 on('workflowVoiceBtn','click',()=>openVoiceStudio());on('workflowTimingBtn','click',openScript);on('workflowImagesBtn','click',()=>sceneImageBatch.open());on('workflowEditBtn','click',openEditingStep);
 const toolsApi={getProject:()=>project,getAssets:()=>assets,getCurrent:()=>current,getSelectedId:()=>selectedId,getSelectedIds:()=>[...selectedIds],getCanvas:()=>canvas,
  mutate:(action,options)=>{if(importing||exportController)throw new Error('파일 처리나 영상 출력이 끝난 뒤 편집해 주세요.');return mutate(action,options);},
- pause,seek,toast,report,previewIntro:async()=>{if(!canMutateProject())throw new Error('현재 작업이 끝난 뒤 인트로를 미리 봐 주세요.');studioLayout?.showPane?.('preview',{focus:true});pause();seek(0);await play({ignoreLoop:true});},renderPreview,renderAll,persist,replaceProject,addTemplateScene,applyScriptDraft,addReferenceImages,applyGeneratedImage,openVoiceStudio,openApiSettings:options=>apiSettings.open(options),openTimingPlan:openScript,openImageStudio:()=>imageStudio.open(),canUseSceneImages:()=>!importing&&!exportController&&!changingWorkspace&&!timingApplying&&!uploadBatchBusy&&!manualSaveBusy,addNarrationFile,getWorkspaceId:()=>workspaceCatalog?.activeId||null,getWorkspaceCatalog:()=>workspaceCatalog,getWorkspaceError:()=>workspaceError,canChangeWorkspace:()=>workspaceReady&&!importing&&!exportController&&!changingWorkspace&&!uploadBatchBusy&&!manualSaveBusy,createWorkspace,switchWorkspace,renameWorkspace,moveWorkspace,closeWorkspace,reopenWorkspace,selectScene,canMutate:canMutateProject,getNarrationScript:()=>getNarrationScript(project),getDisplayScript:()=>getDisplayScript(project),openProductionSection,captureProductionVersion,installProjectVariant,applyNarrationPatch,mutateProductionMetadata,getExportedVideo:()=>exportedVideoRecord,openYouTubeUpload,clearYouTubeStoredHistory,flushProjectEditors,setUploadBatchBusy,saveCurrentProject,saveVoiceSample,applyVoiceSample,removeVoiceSample,prepareSyncAudio,applySyncTiming,ensureMediaSpace:ensureSpace,openExport,canOpenToolNavigation:()=>editorTools?.canOpenToolNavigation?.()!==false&&voiceStudio?.canOpenToolNavigation?.()!==false,openToolRoute:(...args)=>toolRouter.open(...args),getToolAvailability:id=>toolRouter.availability(id),revealEditorTarget:target=>studioLayout?.reveal(target),showEditorPane:(...args)=>studioLayout?.showPane?.(...args),openAudioTools:()=>studioLayout?.openAudio(),openProjectMenu:()=>studioLayout?.openProjectMenu(),openMusicRecommendations:()=>musicRecommendations.open(),hasConfirmedScenePlan:()=>getScenePlanStatus(project).valid,openSceneImageBatch:()=>sceneImageBatch.open(),openAiAssistant:(section,options)=>aiWorkbench.open(section,options),openSyncStudio:options=>{if($('aiAssistantDialog')?.open)$('aiAssistantDialog').close();syncStudio.open(options);},openTranscriptStudio:()=>transcriptStudio.open(),prepareUploadSeries:async options=>{await videoUploadWorkbench.getFeature('series').prepareSeries(options);videoUploadWorkbench.open('series',{fromShortsPreparation:true});},addImages:async files=>{if(!canMutateProject())throw new Error('현재 작업이 끝난 뒤 이미지를 추가해 주세요.');return addImages(files);},addBgmFile:async file=>{if(!canMutateProject())throw new Error('현재 작업이 끝난 뒤 배경음악을 추가해 주세요.');return addAudio(file,'bgm');}};
+ pause,seek,toast,report,previewIntro:async()=>{if(!canMutateProject())throw new Error('현재 작업이 끝난 뒤 인트로를 미리 봐 주세요.');studioLayout?.showPane?.('preview',{focus:true});pause();seek(0);await play({ignoreLoop:true});},renderPreview,renderAll,persist,replaceProject,addTemplateScene,applyScriptDraft,addReferenceImages,applyGeneratedImage,openVoiceStudio,openApiSettings:options=>apiSettings.open(options),openTimingPlan:openScript,openImageStudio:()=>imageStudio.open(),canUseSceneImages:()=>!importing&&!exportController&&!changingWorkspace&&!timingApplying&&!uploadBatchBusy&&!manualSaveBusy&&!productionRunBusy&&!sceneReplacementBusy,addNarrationFile,getWorkspaceId:()=>workspaceCatalog?.activeId||null,getWorkspaceCatalog:()=>workspaceCatalog,getWorkspaceError:()=>workspaceError,canChangeWorkspace:()=>workspaceReady&&!importing&&!exportController&&!changingWorkspace&&!uploadBatchBusy&&!manualSaveBusy&&!productionRunBusy&&!sceneReplacementBusy,createWorkspace,switchWorkspace,renameWorkspace,moveWorkspace,closeWorkspace,reopenWorkspace,selectScene,canMutate:canMutateProject,getNarrationScript:()=>getNarrationScript(project),getDisplayScript:()=>getDisplayScript(project),openProductionSection,captureProductionVersion,installProjectVariant,applyNarrationPatch,mutateProductionMetadata,getExportedVideo:()=>exportedVideoRecord,openYouTubeUpload,clearYouTubeStoredHistory,flushProjectEditors,setUploadBatchBusy,saveCurrentProject,saveVoiceSample,applyVoiceSample,removeVoiceSample,prepareSyncAudio,applySyncTiming,ensureMediaSpace:ensureSpace,openExport,openProductionRunStudio:options=>productionRunStudio?.open(options),openSceneImageReplace,canOpenToolNavigation:()=>editorTools?.canOpenToolNavigation?.()!==false&&voiceStudio?.canOpenToolNavigation?.()!==false,openToolRoute:(...args)=>toolRouter.open(...args),getToolAvailability:id=>toolRouter.availability(id),revealEditorTarget:target=>studioLayout?.reveal(target),showEditorPane:(...args)=>studioLayout?.showPane?.(...args),openAudioTools:()=>studioLayout?.openAudio(),openProjectMenu:()=>studioLayout?.openProjectMenu(),openMusicRecommendations:()=>musicRecommendations.open(),hasConfirmedScenePlan:()=>getScenePlanStatus(project).valid,openSceneImageBatch:()=>sceneImageBatch.open(),openAiAssistant:(section,options)=>aiWorkbench.open(section,options),openSyncStudio:options=>{if($('aiAssistantDialog')?.open)$('aiAssistantDialog').close();syncStudio.open(options);},openTranscriptStudio:()=>transcriptStudio.open(),prepareUploadSeries:async options=>{await videoUploadWorkbench.getFeature('series').prepareSeries(options);videoUploadWorkbench.open('series',{fromShortsPreparation:true});},addImages:async files=>{if(!canMutateProject())throw new Error('현재 작업이 끝난 뒤 이미지를 추가해 주세요.');return addImages(files);},addBgmFile:async file=>{if(!canMutateProject())throw new Error('현재 작업이 끝난 뒤 배경음악을 추가해 주세요.');return addAudio(file,'bgm');}};
 apiSettings=setupApiSettings(toolsApi);editorTools=setupEditorTools(toolsApi);libraryTools=setupLibraryTools(toolsApi);scriptStudio=setupScriptStudio(toolsApi);imageStudio=setupImageStudio(toolsApi);sceneImageBatch=setupSceneImageBatch(toolsApi);sceneTimingUi=setupSceneTimingUi({getProject:()=>project,getNarrationDuration:()=>assets.get(project.audio.narrationId)?(project.audio.narrationOffset||0)+getAudioWindow(project,assets,'narration').duration:0,getTimedCaptions:()=>project.captionMode==='auto'?[]:getCaptions(project)});transcriptStudio=setupTranscriptStudio(toolsApi);voiceStudio=setupVoiceStudio(toolsApi);workspaceTabs=setupWorkspaceTabs(toolsApi);productionWorkbench=setupProductionWorkbench(toolsApi);videoUploadWorkbench=setupVideoUploadWorkbench(toolsApi);referenceMedia=setupReferenceMedia(toolsApi);musicRecommendations=setupMusicRecommendations(toolsApi);syncStudio=setupSyncStudio(toolsApi);aiWorkbench=setupAiWorkbench(toolsApi);toolRouter=createToolRouter(toolsApi);toolNavigation=setupToolNavigation(toolsApi);studioLayout=setupStudioLayout(toolsApi);
+const productionApi={...toolsApi,canMutate:()=>workspaceReady&&!importing&&!exportController&&!changingWorkspace&&!timingApplying&&!uploadBatchBusy&&!manualSaveBusy&&!sceneReplacementBusy,prepareWorkflowProject,applyWorkflowProject,setProductionRunBusy:value=>setProductionWorkBusy('run',value),isProductionRunApiConfigured:productionApiConfigured,getProductionRunSettingsKey:productionConnectionKey,mutate:(action,options={})=>mutate(action,{...options,authority:productionMutationAuthority}),applyGeneratedImage:options=>applyGeneratedImage({...options,authority:productionMutationAuthority})};
+productionRunEngine=createProductionRunEngine(productionApi);productionRunStudio=setupProductionRunStudio({...toolsApi,openSceneImageReplace},{runner:productionRunEngine});
+sceneImageReplace=setupSceneImageReplace({...toolsApi,setSceneReplacementBusy:value=>setProductionWorkBusy('replace',value),applyGeneratedImage:options=>applyGeneratedImage({...options,authority:productionMutationAuthority})});
+
 const youtubeSettingsShortcut=el('button','outline','YouTube 연결 설정');youtubeSettingsShortcut.id='youtubeConnectionSettingsBtn';youtubeSettingsShortcut.type='button';
 youtubeSettingsShortcut.addEventListener('click',()=>{if(exportController||importing)return;$('apiSettingsDialog').close();openProductionSection('youtube',{openSettings:true});});$('apiSettingsDialog').querySelector('.dialog-body').append(youtubeSettingsShortcut);
 document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();event.stopPropagation();if(!manualSaveBusy)saveCurrentProject().catch(report);}},{capture:true});
@@ -715,17 +758,17 @@ const shortcuts=el('p','keyboard-help','단축키: Ctrl/Cmd+S 프로젝트 저�
 $('helpDialog').querySelector('.dialog-body').append(shortcuts);
 boot().catch(report);
 
-async function addImages(fileList,options={}){if(importing||exportController)return;return trackEditorTask('이미지를 불러오고 있어요.',()=>addImagesWork(fileList,options),'이미지를 불러왔어요.');}
+async function addImages(fileList,options={}){if(importing||exportController||productionRunBusy||sceneReplacementBusy)return;return trackEditorTask('이미지를 불러오고 있어요.',()=>addImagesWork(fileList,options),'이미지를 불러왔어요.');}
 
-async function addAudio(file,kind){if(!file||importing||exportController)return;return trackEditorTask('음성 파일을 읽고 있어요.',()=>addAudioWork(file,kind),'음성 파일을 불러왔어요.');}
+async function addAudio(file,kind){if(!file||importing||exportController||productionRunBusy||sceneReplacementBusy)return;return trackEditorTask('음성 파일을 읽고 있어요.',()=>addAudioWork(file,kind),'음성 파일을 불러왔어요.');}
 
-async function importSrtFile(file){if(!file||importing||exportController)return;return trackEditorTask('자막 파일을 읽고 있어요.',()=>importSrtFileWork(file),'자막 파일을 불러왔어요.');}
+async function importSrtFile(file){if(!file||importing||exportController||productionRunBusy||sceneReplacementBusy)return;return trackEditorTask('자막 파일을 읽고 있어요.',()=>importSrtFileWork(file),'자막 파일을 불러왔어요.');}
 
 async function backup(){return trackEditorTask('백업 파일을 만들고 있어요.',()=>backupWork(),'백업 파일 다운로드를 요청했어요.');}
 
-async function openProject(file){if(!file||importing||exportController)return;return trackEditorTask('프로젝트와 미디어를 복원하고 있어요.',()=>openProjectWork(file),'프로젝트를 불러왔어요.');}
+async function openProject(file){if(!file||importing||exportController||productionRunBusy||sceneReplacementBusy)return;return trackEditorTask('프로젝트와 미디어를 복원하고 있어요.',()=>openProjectWork(file),'프로젝트를 불러왔어요.');}
 
-async function newProject(){if(importing||exportController)return;return trackEditorTask('현재 작업을 보관하고 새 프로젝트를 열고 있어요.',()=>newProjectWork(),'이전 작업을 보관하고 새 프로젝트를 열었어요.');}
+async function newProject(){if(importing||exportController||productionRunBusy||sceneReplacementBusy)return;return trackEditorTask('현재 작업을 보관하고 새 프로젝트를 열고 있어요.',()=>newProjectWork(),'이전 작업을 보관하고 새 프로젝트를 열었어요.');}
 
 async function copyPrompt(){return trackEditorTask('제작 요청문을 복사하고 있어요.',()=>copyPromptWork(),'제작 요청문을 복사했어요.');}
 
