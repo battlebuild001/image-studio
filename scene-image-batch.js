@@ -4,6 +4,7 @@ import {buildImagePrompt} from './image-prompt.js';
 import {prepareReferenceImageRequest, decodeReferenceImageResult} from './image-studio.js';
 import {createOperationStatus, nextPaint} from './operation-status.js';
 import {storyboardInputForProject, storyboardContextKey, validateStoryboardResult, isStoryboardPlanCurrent} from './storyboard-protocol.js';
+import {sanitizeOpenAiDiagnostic} from './openai-provider-error.js';
 
 const clone = value => structuredClone(value);
 const $ = id => document.getElementById(id);
@@ -43,7 +44,12 @@ export {timedPrompt as buildTimedImagePrompt};
 async function request(path, options = {}) {
   const response = await apiFetch(path, options);let value;
   try {value = await response.json();} catch {throw new Error('이미지 API 응답을 읽지 못했어요. 완료한 이미지와 설정은 유지돼요.');}
-  if (!response.ok) throw new Error(typeof value.error === 'string' ? value.error.slice(0, 500) : '이미지를 만들지 못했어요. 완료한 이미지는 유지돼요.');
+  if (!response.ok) {
+    const cause = new Error(typeof value.error === 'string' ? value.error.slice(0, 500) : '이미지를 만들지 못했어요. 완료한 이미지는 유지돼요.');
+    if (typeof value.code === 'string' && /^(?:OPENAI|IMAGE)_[A-Z_]{1,70}$/u.test(value.code)) cause.code = value.code;
+    cause.diagnostic = sanitizeOpenAiDiagnostic(value.diagnostic);
+    throw cause;
+  }
   return value;
 }
 
@@ -81,6 +87,9 @@ export function setupSceneImageBatch(api) {
   const progress = node('progress');progress.id = 'sceneImageBatchProgress';progress.max = 1;progress.value = 0;progress.hidden = true;body.append(progress);
   const status = node('p', 'scene-batch-status');status.id = 'sceneImageBatchStatus';status.setAttribute('role', 'status');status.setAttribute('aria-live', 'polite');
   const error = node('p', 'scene-batch-error');error.id = 'sceneImageBatchError';error.setAttribute('role', 'alert');body.append(status, error);
+  const fixError = button('fixSceneImageBatchErrorBtn', 'API 설정 확인', 'outline scene-batch-error-action');fixError.hidden = true;
+  const diagnostic = node('details', 'scene-batch-diagnostic');diagnostic.id = 'sceneImageBatchDiagnostic';diagnostic.hidden = true;
+  const diagnosticText = node('p');diagnosticText.id = 'sceneImageBatchDiagnosticText';diagnostic.append(node('summary', '', '오류 상세 정보'), diagnosticText);body.append(fixError, diagnostic);
   const activity = createOperationStatus({container: body, region: rows, id: 'sceneImageBatchOperation'});tools.before(activity.element);
   const connectionActivity = createOperationStatus({container: body, region: state, id: 'sceneImageBatchConnectionOperation'});state.after(connectionActivity.element);
   const footer = node('div', 'dialog-footer'), closeFooter = button('closeSceneImageBatchBtn', '닫기', 'ghost');footer.append(closeFooter);dialog.append(footer);document.body.append(dialog);
@@ -88,9 +97,38 @@ export function setupSceneImageBatch(api) {
   let activeRun = null, activePlan = null, applyingStoryboard = false, briefDirty = false, editTimer = 0, configured = false, connectionController = null, connectionSequence = 0;
   let displayedScope = '', displayedPlan = '', displayedSettings = '', displayedReferences = [], draftPrompts = new Map(), promptDirty = false, applyingSceneId = null;
   const rowStatus = new Map();
+  let failureAction = null;
   const scope = () => `${api.getWorkspaceId?.() || ''}\0${api.getProject().id}`;
   const planSignature = project => JSON.stringify(project.scenePlan || null);
-  function showError(message) {error.textContent = message || '';}
+  function showError(message, cause, run) {
+    const item = run?.items.find(value => value.sceneId === run.currentSceneId);
+    error.textContent = message ? `${item ? `${item.ordinal}번 장면 (${timestamp(item.start)}–${timestamp(item.end)}): ` : ''}${message}` : '';
+    const detail = sanitizeOpenAiDiagnostic(cause?.diagnostic);
+    diagnostic.hidden = !detail;diagnostic.open = false;diagnosticText.textContent = '';fixError.hidden = true;failureAction = null;
+    if (!message) return;
+    if (detail) {
+      diagnosticText.textContent = [
+        `OpenAI 응답: HTTP ${detail.providerStatus}`,
+        detail.providerCode ? `원인 코드: ${detail.providerCode}` : '',
+        detail.parameter ? `문제 항목: ${detail.parameter}` : '',
+        detail.model ? `이미지 모델: ${detail.model}` : '',
+        detail.size ? `출력 규격: ${detail.size}` : '',
+        Number.isInteger(detail.referenceCount) ? `참조 이미지: ${detail.referenceCount}장` : '',
+        detail.requestId ? `요청 번호: ${detail.requestId}` : '',
+      ].filter(Boolean).join('\n');
+    }
+    if (!detail && !/^(?:OPENAI|IMAGE)_/u.test(cause?.code || '')) return;
+    const promptError = /_CONTENT_POLICY$/u.test(cause?.code || '') || detail?.providerCode === 'content_policy_violation' || detail?.providerCode === 'moderation_blocked' || detail?.parameter === 'prompt';
+    const referenceError = /(?:^|_)IMAGE_REFERENCE_INVALID$/u.test(cause?.code || '');
+    failureAction = {scope: scope(), plan: planSignature(api.getProject()), sceneId: item?.sceneId, kind: promptError && item ? 'prompt' : referenceError ? 'references' : 'settings'};
+    fixError.textContent = failureAction.kind === 'prompt' ? '실패한 장면 요청 수정' : referenceError ? '레퍼런스 설정 확인' : 'API 설정 확인';fixError.hidden = false;
+  }
+  fixError.addEventListener('click', () => {
+    if (!failureAction || activeRun || activePlan || failureAction.scope !== scope() || failureAction.plan !== planSignature(api.getProject())) return;
+    if (failureAction.kind === 'prompt') {
+      const input = rows.querySelector(`[data-scene-prompt="${CSS.escape(failureAction.sceneId)}"]`);input?.scrollIntoView({block: 'center'});input?.focus();
+    } else if (failureAction.kind === 'references') references.click();else configure.click();
+  });
   function planned() {return getScenePlanStatus(api.getProject());}
   function eligible(project = api.getProject()) {
     const valid = getScenePlanStatus(project);if (!valid.valid) return [];
@@ -227,6 +265,9 @@ export function setupSceneImageBatch(api) {
       const run = captureRun();if (!run.items.length) throw new Error('생성할 빈 장면이 없어요. 새로 교체하려면 교체 옵션을 선택해 주세요.');
       run.prompts = new Map(run.items.map(item => [item.sceneId, timedPrompt(item, run)]));
       run.feedback = activity.start(`${run.items.length}장 생성 준비 · 타이밍과 요청을 저장하고 있어요.`);
+      run.startedSceneIds = new Set();
+      const targets = new Set(run.items.map(item => item.sceneId));
+      for (const item of run.allItems) setRowState(item.sceneId, targets.has(item.sceneId) ? (run.expectedImages.get(item.sceneId) ? '이번 요청 대기 · 기존 이미지 유지' : '이번 요청 대기') : '기존 이미지 유지 · 이번 요청 제외');
       activeRun = run;progress.hidden = false;progress.max = run.items.length;progress.value = 0;refreshControls();
       try {
         await nextPaint();
@@ -242,6 +283,7 @@ export function setupSceneImageBatch(api) {
         for (const [index, item] of run.items.entries()) {
           if (!stillCurrent(run)) throw abortError();
           run.currentSceneId = item.sceneId;run.currentImageApplied = false;
+          run.startedSceneIds.add(item.sceneId);
           status.textContent = `${index + 1}/${run.items.length}장 생성 중 · ${timestamp(item.start)}–${timestamp(item.end)}`;setRowState(item.sceneId, '생성 중');
           run.feedback.update(`${index + 1}/${run.items.length}장 · 이미지 생성 응답을 기다리고 있어요.`, {detail: `실제 생성·저장 완료 ${run.completed}장 · 현재 구간 ${timestamp(item.start)}–${timestamp(item.end)}`});
           const value = await request('/api/image/generate', {method: 'POST', headers: {'Content-Type': 'application/json'}, signal: run.controller.signal,
@@ -263,9 +305,10 @@ export function setupSceneImageBatch(api) {
         status.textContent = `${run.completed}장 생성·저장을 마쳤어요. 각 이미지가 확정한 시간 구간에 배치됐어요.`;api.toast(`${run.completed}장의 장면 이미지를 생성했어요.`);
         run.feedback.finish(`${run.completed}장 이미지의 생성·저장을 마쳤어요.`);
       } catch (cause) {
-        if (run.currentSceneId) setRowState(run.currentSceneId, run.currentImageApplied ? '이미지 적용됨 · 저장 확인 필요' : (cause?.name === 'AbortError' || run.cancelled || run.controller.signal.aborted ? '생성 중지' : '오류 · 다시 시작 가능'));
+        for (const item of run.items) if (!run.startedSceneIds.has(item.sceneId)) setRowState(item.sceneId, run.expectedImages.get(item.sceneId) ? '요청 안 함 · 기존 이미지 유지' : '요청 안 함');
+        if (run.currentSceneId) setRowState(run.currentSceneId, run.currentImageApplied ? '이미지 적용됨 · 저장 확인 필요' : (cause?.name === 'AbortError' || run.cancelled || run.controller.signal.aborted ? '생성 중지' : '오류 · 원인 확인 필요'));
         if (cause?.name === 'AbortError' || run.cancelled || run.controller.signal.aborted) {status.textContent = `${run.completed}/${run.items.length}장 완료 후 중지했어요. 완료한 이미지는 유지돼요. ${run.replaceExisting ? '교체 옵션을 유지하면 다음 시작에도 기존 이미지가 생성 대상에 포함돼요.' : '다시 시작하면 빈 장면부터 생성해요.'}`;run.feedback.cancel(`${run.completed}/${run.items.length}장 저장 후 중지했어요. 완료한 이미지는 유지돼요.`);}
-        else {showError(cause.message || '이미지 생성이 중단됐어요.');status.textContent = `${run.completed}/${run.items.length}장 완료 · 오류가 나서 다음 요청을 멈췄어요. 완료한 이미지는 유지돼요. 자동 재시도하지 않았어요.`;run.feedback.fail(`${run.completed}/${run.items.length}장 완료 · 오류로 다음 요청을 중단했어요.`);}
+        else {showError(cause.message || '이미지 생성이 중단됐어요.', cause, run);status.textContent = `${run.completed}/${run.items.length}장 완료 · 오류가 나서 다음 요청을 멈췄어요. 완료한 이미지는 유지돼요. 자동 재시도하지 않았어요.`;run.feedback.fail(`${run.completed}/${run.items.length}장 완료 · 오류로 다음 요청을 중단했어요.`);}
       } finally {
         applyingSceneId = null;if (activeRun === run) activeRun = null;confirm.checked = false;refreshControls();
       }
@@ -280,7 +323,7 @@ export function setupSceneImageBatch(api) {
     displayedSettings = nextSettings;displayedReferences = selected;
     if (nextScope !== displayedScope || nextPlan !== displayedPlan) {
       const scopeChanged = nextScope !== displayedScope;displayedScope = nextScope;displayedPlan = nextPlan;confirm.checked = false;
-      if (scopeChanged) {clearTimeout(editTimer);editTimer = 0;rowStatus.clear();promptDirty = false;briefDirty = false;replace.checked = false;activity.clear();connectionActivity.clear();planningActivity.clear();globalPanel.open = false;if (dialog.open) dialog.close();}
+      if (scopeChanged) {showError('');clearTimeout(editTimer);editTimer = 0;rowStatus.clear();promptDirty = false;briefDirty = false;replace.checked = false;activity.clear();connectionActivity.clear();planningActivity.clear();globalPanel.open = false;if (dialog.open) dialog.close();}
       if (document.activeElement !== brief || !briefDirty) brief.value = project.scenePlan?.visualBrief || '';
       drawRows(project);
     }

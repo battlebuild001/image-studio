@@ -1,0 +1,4 @@
+.desktop-app .desktop-file-action{min-height:38px;cursor:pointer;text-align:left;white-space:normal}
+.desktop-app .desktop-file-action:focus-visible{outline:2px solid var(--accent,#e2bc7f);outline-offset:3px}
+.desktop-app .desktop-file-action:disabled{cursor:wait;opacity:.5}
+.desktop-app .local-pill{max-width:100%;white-space:normal;line-height:1.5}

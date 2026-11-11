@@ -1,3 +1,6 @@
+import {desktopFetch} from './desktop-fetch.js';
+import {readOpenAiProviderError,sanitizeOpenAiDiagnostic} from './openai-provider-error.js';
+import {getDesktopSettingsBridge,readDesktopProvider,writeDesktopProvider,clearLegacyProviderCopies} from './desktop-settings.js';
 import {validateScriptRequest, buildScriptRequest, parseScriptResponse} from './script-protocol.js';
 import {buildImagePrompt} from './image-prompt.js';
 import {validateStoryboardRequest, buildStoryboardRequest, parseStoryboardResponse} from './storyboard-protocol.js';
@@ -186,12 +189,10 @@ function parseImage(response, settings, promptUsed) {
   return {image: {mimeType: 'image/png', data: value.b64_json, name: `reference-scene-${now.getTime()}.png`},
     promptUsed, referenceCount: settings.references.length, size: settings.size, quality: settings.quality, generatedAt: now.toISOString()};
 }
-function providerError(status) {
-  if (status === 401) return safeError(401, 'OPENAI_AUTH_FAILED', 'OpenAI API 키가 올바르지 않거나 만료됐어요. 설정에서 키를 확인해 주세요.');
-  if (status === 403) return safeError(403, 'OPENAI_ACCESS_DENIED', 'OpenAI 키의 모델 사용 권한을 확인해 주세요.');
-  if (status === 429) return safeError(429, 'OPENAI_RATE_LIMITED', 'OpenAI 사용 한도·잔액 또는 요청 한도를 확인해 주세요. 자동 재시도는 하지 않았어요.');
-  if (status === 400 || status === 404) return safeError(502, 'OPENAI_CONFIGURATION_ERROR', 'OpenAI 모델이나 요청 설정을 사용할 수 없어요. 설정의 모델과 입력 자료를 확인해 주세요.');
-  return safeError(502, 'OPENAI_UNAVAILABLE', 'OpenAI 서비스가 응답하지 않아요. 기존 자료와 결과는 유지돼요.');
+function providerError(status, failure) {
+  const error=safeError([401,403,429].includes(status)?status:502,`OPENAI_${failure.reason}`,failure.message);
+  if(failure.diagnostic)error.diagnostic=failure.diagnostic;
+  return error;
 }
 function appInput(options, limit) {
   if (typeof options.body !== 'string' || new TextEncoder().encode(options.body).byteLength > limit) throw invalid('요청 자료의 형식이나 크기를 확인해 주세요.');
@@ -202,9 +203,9 @@ function appInput(options, limit) {
 export function handlesDirectPath(path) {return ROUTES.has(path);}
 
 /** Retention beyond module memory always requires the user's explicit tab or browser choice. */
-export function createDirectOpenAi({fetchImpl = (...args) => globalThis.fetch(...args), sessionStorage = browserStorage('sessionStorage'),
+export function createDirectOpenAi({fetchImpl = desktopFetch, sessionStorage = browserStorage('sessionStorage'),
   localStorage = browserStorage('localStorage'), storageEvents = typeof window === 'undefined' ? null : window,
-  dispatchChange = emitSettingsChange, timeoutMs = 180000, checkTimeoutMs = 15000} = {}) {
+  dispatchChange = emitSettingsChange, desktopSettings = getDesktopSettingsBridge(), timeoutMs = 180000, checkTimeoutMs = 15000} = {}) {
   let settings = {...DEFAULTS}, activeController = null, generation = 0;
   function restore(store, key, scope) {
     try {
@@ -215,12 +216,22 @@ export function createDirectOpenAi({fetchImpl = (...args) => globalThis.fetch(..
       return normalizeSettings(value);
     } catch {try {store?.removeItem(key);} catch {}return null;}
   }
-  const tabSettings = restore(sessionStorage, SESSION_KEY, 'rememberForTab');
-  const browserSettings = restore(localStorage, BROWSER_KEY, 'rememberInBrowser');
-  settings = tabSettings || browserSettings || settings;
+  if(desktopSettings){
+    try{const saved=readDesktopProvider(desktopSettings,'openai');if(saved)settings=normalizeSettings(saved);}catch{}
+    clearLegacyProviderCopies([[sessionStorage,SESSION_KEY],[localStorage,BROWSER_KEY]]);
+  }else{
+    const tabSettings = restore(sessionStorage, SESSION_KEY, 'rememberForTab');
+    const browserSettings = restore(localStorage, BROWSER_KEY, 'rememberInBrowser');
+    settings = tabSettings || browserSettings || settings;
+  }
   function getDirectSettings() {return metadata(settings);}
   function replaceSettings(next) {activeController?.abort();settings = next;dispatchChange();return metadata(settings);}
   function save(next) {
+    if(desktopSettings){
+      try{writeDesktopProvider(desktopSettings,'openai',next);clearLegacyProviderCopies([[sessionStorage,SESSION_KEY],[localStorage,BROWSER_KEY]]);}
+      catch{throw safeError(400,'OPENAI_SETTINGS_STORAGE','PC 보안 저장소에 설정을 저장하지 못했어요. 현재 실행 중에만 사용하거나 시스템 보안 저장소를 확인해 주세요. 기존 연결은 유지했어요.');}
+      return replaceSettings(next);
+    }
     const changes = [], applied = [];
     try {
       for (const [store, key, retain] of [[sessionStorage, SESSION_KEY, next.rememberForTab], [localStorage, BROWSER_KEY, next.rememberInBrowser]]) {
@@ -249,12 +260,12 @@ export function createDirectOpenAi({fetchImpl = (...args) => globalThis.fetch(..
   }
   function clearDirectSettings() {return save({...DEFAULTS});}
   storageEvents?.addEventListener('storage', event => {
-    if (!settings.rememberInBrowser || (event.key !== BROWSER_KEY && event.key !== null) || (event.storageArea && event.storageArea !== localStorage)) return;
+    if (desktopSettings || !settings.rememberInBrowser || (event.key !== BROWSER_KEY && event.key !== null) || (event.storageArea && event.storageArea !== localStorage)) return;
     // Other tabs may replace or remove the remembered key. Never re-save a stale
     // copy, and never silently opt memory/tab-only clients into browser storage.
     replaceSettings(restore(localStorage, BROWSER_KEY, 'rememberInBrowser') || {...DEFAULTS});
   });
-  async function requestProvider(endpoint, {key, body, signal, timeout = timeoutMs}) {
+  async function requestProvider(endpoint, {key, body, signal, timeout = timeoutMs, context}) {
     const controller = new AbortController();let timedOut = false;
     const forward = () => controller.abort();
     if (signal?.aborted) throw abortError();
@@ -269,7 +280,7 @@ export function createDirectOpenAi({fetchImpl = (...args) => globalThis.fetch(..
         headers, body, signal: controller.signal, credentials: 'omit', redirect: 'error', cache: 'no-store', referrerPolicy: 'no-referrer'}));
       const response = await Promise.race([pending, aborted]);
       if (!response || typeof response.status !== 'number') throw safeError(502, 'INVALID_OPENAI_RESPONSE', 'OpenAI 응답을 읽지 못했어요.');
-      if (!response.ok) {response.body?.cancel?.().catch?.(() => {});throw providerError(response.status);}
+      if (!response.ok) throw providerError(response.status,await readOpenAiProviderError(response,{signal:controller.signal,context,secrets:[key]}));
       const length = Number(response.headers.get('Content-Length'));
       if (length > MAX_RESPONSE_BYTES) throw safeError(502, 'OPENAI_RESPONSE_TOO_LARGE', 'OpenAI 응답이 너무 커요. 분량이나 이미지 품질을 낮춰 주세요.');
       let text;
@@ -347,7 +358,8 @@ export function createDirectOpenAi({fetchImpl = (...args) => globalThis.fetch(..
         result = parseStoryboardResponse(response, input, current.scriptModel);
       } else if (path === IMAGE_GENERATE) {
         const input = imageSettings(appInput(options, 30 * 1024 * 1024)), {body, promptUsed, endpoint} = imageRequest(input, current.imageModel);
-        const response = await requestProvider(endpoint, {key: current.apiKey, body, signal: controller.signal});
+        const response = await requestProvider(endpoint, {key: current.apiKey, body, signal: controller.signal,
+          context:{model:current.imageModel,size:input.size,referenceCount:input.references.length}});
         result = parseImage(response, input, promptUsed);
       } else {
         const {settings: input, body} = buildDirectTranscriptRequest(appInput(options, 14 * 1024 * 1024), current.transcribeModel);
@@ -359,7 +371,8 @@ export function createDirectOpenAi({fetchImpl = (...args) => globalThis.fetch(..
     } catch (error) {
       if (controller.signal.aborted || error?.name === 'AbortError') throw abortError();
       const safe = error instanceof DirectOpenAiError || (Number.isInteger(error?.status) && typeof error?.code === 'string');
-      return jsonResponse(safe ? error.status : 502, {error: safe ? error.message : 'OpenAI 작업을 마치지 못했어요. 기존 자료와 결과는 유지돼요.', code: safe ? error.code : 'OPENAI_FAILED'});
+      const diagnostic=sanitizeOpenAiDiagnostic(error?.diagnostic,{secrets:[current.apiKey]});
+      return jsonResponse(safe ? error.status : 502, {error: safe ? error.message : 'OpenAI 작업을 마치지 못했어요. 기존 자료와 결과는 유지돼요.', code: safe ? error.code : 'OPENAI_FAILED',...(diagnostic?{diagnostic}:{})});
     } finally {
       options.signal?.removeEventListener('abort', forward);if (sequence === generation) activeController = null;
     }

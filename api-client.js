@@ -1,7 +1,10 @@
+import {desktopFetch,configureDesktopServer} from './desktop-fetch.js';
+import {getDesktopSettingsBridge,readDesktopProvider,writeDesktopProvider,clearLegacyProviderCopies} from './desktop-settings.js';
 import {getDirectSettings, handlesDirectPath, directApiFetch} from './direct-openai.js';
 import {beginProductionBudgetRequest} from './production-budget.js';
 import {getTypecastSettings, handlesTypecastPath, directTypecastApiFetch, validateTypecastApiRequest} from './direct-typecast.js';
 
+let desktopServerQueue=Promise.resolve();
 const BASE_KEY = 'bth-studio-api-base-v1';
 const TOKEN_KEY = 'bth-studio-api-token-v1';
 const ROUTES = new Set([
@@ -54,10 +57,16 @@ function storageError() {return new ApiConnectionError('storage', '이 브라우
 function invalidSavedSettings() {return new ApiConnectionError('saved-settings', '저장된 AI 서버 연결 설정을 확인하지 못했어요. ‘AI 서버 연결’에서 다시 연결하거나 해제해 주세요.');}
 
 /** Injectable storage/fetch keeps tests offline and credentials out of project state. */
-export function createApiClient({localStorage = browserStorage('localStorage'), sessionStorage = browserStorage('sessionStorage'), fetchImpl = (...args) => globalThis.fetch(...args), directClient = null, voiceClient = null, budgetGuard = beginProductionBudgetRequest, dispatchChange = () => {
+export function createApiClient({localStorage = browserStorage('localStorage'), sessionStorage = browserStorage('sessionStorage'), fetchImpl = desktopFetch, directClient = null, voiceClient = null, budgetGuard = beginProductionBudgetRequest, desktopSettings = getDesktopSettingsBridge(), dispatchChange = () => {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('studio-api-settings-change'));
 }} = {}) {
+  let nativeServer = {baseUrl:'',accessToken:''};
+  if(desktopSettings){
+    try{const saved=readDesktopProvider(desktopSettings,'server');if(saved){const baseUrl=normalizeApiBaseUrl(saved.baseUrl);if(baseUrl&&baseUrl===saved.baseUrl)nativeServer={baseUrl,accessToken:validateToken(saved.accessToken||'')};}}catch{}
+    clearLegacyProviderCopies([[localStorage,BASE_KEY],[sessionStorage,TOKEN_KEY]]);
+  }
   function readSettings() {
+    if(desktopSettings)return {...nativeServer};
     let saved;
     try {saved = localStorage?.getItem(BASE_KEY) || '';} catch {throw invalidSavedSettings();}
     if (!saved) return {baseUrl: '', accessToken: ''};
@@ -89,6 +98,10 @@ export function createApiClient({localStorage = browserStorage('localStorage'), 
   }
   function setApiSettings(settings) {
     const next = candidateSettings(settings);
+    if(desktopSettings){
+      try{writeDesktopProvider(desktopSettings,'server',next.baseUrl?next:null);}catch{throw new ApiConnectionError('storage','PC 보안 저장소에 서버 연결 설정을 저장하지 못했어요. 기존 연결은 유지했어요.');}
+      nativeServer=next;clearLegacyProviderCopies([[localStorage,BASE_KEY],[sessionStorage,TOKEN_KEY]]);dispatchChange();return {baseUrl:next.baseUrl,hasToken:Boolean(next.accessToken)};
+    }
     if (!localStorage || !sessionStorage) throw storageError();
     let previousBase, previousToken, snapshotRead = false;
     try {
@@ -106,6 +119,10 @@ export function createApiClient({localStorage = browserStorage('localStorage'), 
     dispatchChange();return {baseUrl: next.baseUrl, hasToken: Boolean(next.accessToken)};
   }
   function clearApiSettings() {
+    if(desktopSettings){
+      try{writeDesktopProvider(desktopSettings,'server',null);}catch{throw new ApiConnectionError('storage','PC 보안 저장소에서 서버 연결 설정을 지우지 못했어요. 기존 연결은 유지했어요.');}
+      nativeServer={baseUrl:'',accessToken:''};clearLegacyProviderCopies([[localStorage,BASE_KEY],[sessionStorage,TOKEN_KEY]]);dispatchChange();return {baseUrl:'',hasToken:false};
+    }
     let failed = false;
     try {localStorage?.removeItem(BASE_KEY);} catch {failed = true;}
     try {sessionStorage?.removeItem(TOKEN_KEY);} catch {failed = true;}
@@ -118,7 +135,14 @@ export function createApiClient({localStorage = browserStorage('localStorage'), 
     if (headers.has('Authorization') || headers.has('Proxy-Authorization') || headers.has('X-API-KEY')) throw new ApiConnectionError('request-credential', 'AI 서버 인증은 저장된 앱 접속코드만 사용할 수 있어요.');
     if (settings.baseUrl && settings.accessToken) headers.set('Authorization', `Bearer ${settings.accessToken}`);
     try {
-      return await fetchImpl(settings.baseUrl + path, {...options, headers, redirect: 'error', credentials: settings.baseUrl ? 'omit' : 'same-origin'});
+      const request=()=>fetchImpl(settings.baseUrl + path, {...options, headers, redirect: 'error', credentials: settings.baseUrl ? 'omit' : 'same-origin',...(desktopSettings&&settings.baseUrl?{desktopBackend:true}:{})});
+      if(desktopSettings&&settings.baseUrl){
+        // Configure and complete one native backend request together. A candidate
+        // connection check cannot change the destination of an in-flight job.
+        const run=async()=>{if(options.signal?.aborted)throw new DOMException('요청을 취소했어요.','AbortError');await configureDesktopServer(settings.baseUrl,desktopSettings);return request();};
+        const pending=desktopServerQueue.then(run,run);desktopServerQueue=pending.catch(()=>{});return await pending;
+      }
+      return await request();
     } catch (error) {
       if (error?.name === 'AbortError' || options.signal?.aborted) throw error;
       throw new ApiConnectionError('network', 'AI 서버에 연결하지 못했어요. 서버 주소와 실행 상태를 확인해 주세요.');
