@@ -11,6 +11,16 @@
 
 소스 저장소: https://github.com/battlebuild001/image-studio
 
+## Windows 프로그램
+
+Windows 10·11 64비트용 설치 프로그램과 무설치 버전을 지원합니다. Chrome이나
+로컬 서버 없이 실행하며 프로젝트를 PC 폴더에 저장합니다. API 키는 PC에 기억하도록
+선택하면 운영체제의 보안 저장소로 암호화합니다. 웹에서 저장한 `.bth.json` 백업도
+가져올 수 있습니다. YouTube 연결에는 Google의 데스크톱 앱용 OAuth 설정을 사용합니다.
+
+설치·기존 작업 가져오기·빌드 방법은 [Windows 프로그램 안내](docs/DESKTOP.md)를 참고하세요.
+개발 실행은 `npm run desktop:start`, Windows 배포 빌드는 `npm run desktop:build`입니다.
+
 ## 필요한 도구 찾기
 
 상단 **전체 도구**에서 기능을 여섯 분류로 찾습니다: **자료·대본, 음성·자막,

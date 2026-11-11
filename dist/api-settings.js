@@ -1,3 +1,4 @@
+import {getDesktopSettingsBridge,desktopRememberAvailable} from './desktop-settings.js';
 import {candidateApiFetch, getApiSettings, setApiSettings, clearApiSettings, normalizeApiBaseUrl, ApiConnectionError} from './api-client.js';
 import {getDirectSettings, setDirectSettings, clearDirectSettings, setDirectEnabled, checkDirectKey} from './direct-openai.js';
 import {createOperationStatus, nextPaint} from './operation-status.js';
@@ -25,6 +26,7 @@ function directError(cause) {
   if (cause?.status === 401 || cause?.code === 'OPENAI_AUTH_FAILED') return 'OpenAI API 키가 맞지 않거나 사용할 수 없어요. 키를 확인해 주세요. 기존 설정은 유지했어요.';
   if (cause?.status === 429) return 'OpenAI 사용량 또는 요청 한도에 도달했어요. 사용 한도를 확인해 주세요. 기존 설정은 유지했어요.';
   if (cause?.name === 'AbortError') return '';
+  if (cause?.code === 'OPENAI_SETTINGS_STORAGE' && getDesktopSettingsBridge()) return 'PC 보안 저장소에 API 설정을 저장하지 못했어요. ‘현재 창에서만 기억하기’를 선택하거나 Windows 보안 저장소를 확인해 주세요. 기존 설정은 유지했어요.';
   if (cause?.code === 'OPENAI_SETTINGS_STORAGE') return '선택한 보관 방식으로 API 설정을 저장하지 못했어요. 브라우저의 사이트 데이터 저장 권한을 확인해 주세요. 기존 연결은 유지했어요.';
   if (/MODEL|SETTING|KEY|INPUT/.test(String(cause?.code || ''))) return 'API 키와 모델 설정을 확인해 주세요. 기존 설정은 유지했어요.';
   return 'OpenAI 연결을 확인하지 못했어요. 네트워크 상태를 확인하거나 ‘저장’으로 설정한 뒤 직접 생성해 확인해 주세요. 기존 설정은 유지했어요.';
@@ -32,6 +34,7 @@ function directError(cause) {
 
 /** Global API settings never read or mutate project content. */
 export function setupApiSettings(api = {}) {
+  const desktop=Boolean(getDesktopSettingsBridge()),secureRemember=desktop&&desktopRememberAvailable();
   if (!document.getElementById('apiSettingsStyles')) {const link = node('link');link.id = 'apiSettingsStyles';link.rel = 'stylesheet';link.href = new URL('./api-settings.css', import.meta.url).href;document.head.append(link);}
   const launcher = button('apiSettingsBtn', '설정', 'outline api-settings-launcher');launcher.setAttribute('aria-label', '설정 · API 연결');document.querySelector('.project-tools')?.append(launcher);
   const dialog = node('dialog', 'modal api-settings-modal');dialog.id = 'apiSettingsDialog';dialog.setAttribute('aria-labelledby', 'apiSettingsTitle');
@@ -55,10 +58,10 @@ export function setupApiSettings(api = {}) {
     const wrapper = node('label', 'api-settings-retention-option'), input = node('input');input.id = id;input.type = 'radio';input.name = 'openAiKeyRetention';
     const text = node('span');text.append(node('span', 'api-settings-retention-label', label), node('span', 'api-settings-help', help));wrapper.append(input, text);retention.append(wrapper);return input;
   }
-  const browserInput = retentionOption('rememberOpenAiKeyBrowser', '이 브라우저에서 계속 기억하기', '탭이나 브라우저를 닫고 다시 열어도 키와 모델 설정을 유지해요.');
-  const rememberInput = retentionOption('rememberOpenAiKey', '이 탭을 사용하는 동안 키 기억하기', '같은 탭의 새로고침에는 유지해요. 탭을 닫으면 보관이 끝나요.');
-  const memoryInput = retentionOption('forgetOpenAiKeyRadio', '저장하지 않기', '현재 페이지에서만 사용해요. 새로고침하면 다시 입력해야 해요.');memoryInput.checked = true;
-  const retentionHelp = node('p', 'api-settings-help', '보관 방식은 ‘저장’을 눌러야 적용돼요. 브라우저 보관은 이 기기에 키를 저장하므로 공용 기기에서는 사용하지 마세요. 사이트 데이터를 삭제하거나 다른 브라우저를 사용하면 다시 입력해야 해요.');retentionHelp.id = 'openAiRetentionHelp';retention.setAttribute('aria-describedby', retentionHelp.id);directPanel.append(retention, retentionHelp);
+  const browserInput = retentionOption('rememberOpenAiKeyBrowser', desktop?'이 PC에 안전하게 기억하기':'이 브라우저에서 계속 기억하기', desktop?'Windows 보안 저장소로 암호화해 앱을 다시 실행해도 유지해요.':'탭이나 브라우저를 닫고 다시 열어도 키와 모델 설정을 유지해요.');
+  const rememberInput = retentionOption('rememberOpenAiKey', desktop?'현재 창에서만 기억하기':'이 탭을 사용하는 동안 키 기억하기', desktop?'화면을 새로고침해도 유지하고 앱을 완전히 종료하면 지워요.':'같은 탭의 새로고침에는 유지해요. 탭을 닫으면 보관이 끝나요.');
+  const memoryInput = retentionOption('forgetOpenAiKeyRadio', '저장하지 않기', desktop?'현재 화면에서만 사용해요. 화면을 새로고침하면 다시 입력해야 해요.':'현재 페이지에서만 사용해요. 새로고침하면 다시 입력해야 해요.');memoryInput.checked = true;
+  const retentionHelp = node('p', 'api-settings-help', desktop?(secureRemember?'보관 방식은 저장해야 적용돼요. 키는 이 PC의 사용자 계정으로 암호화하며 프로젝트 파일에는 포함하지 않아요. 공용 PC에서는 현재 창 보관을 선택하세요.':'이 PC에서 보안 저장소를 사용할 수 없어요. 현재 창에서만 기억하거나 저장하지 않고 사용할 수 있어요.'):'보관 방식은 ‘저장’을 눌러야 적용돼요. 브라우저 보관은 이 기기에 키를 저장하므로 공용 기기에서는 사용하지 마세요. 사이트 데이터를 삭제하거나 다른 브라우저를 사용하면 다시 입력해야 해요.');retentionHelp.id = 'openAiRetentionHelp';retention.setAttribute('aria-describedby', retentionHelp.id);directPanel.append(retention, retentionHelp);
   const models = node('div', 'api-settings-models');
   const scriptModel = field('openAiScriptModel', '대본 모델', 'text'), imageModel = field('openAiImageModel', '이미지 모델', 'text');
   for (const model of [scriptModel, imageModel]) {model.input.autocomplete = 'off';model.input.spellcheck = false;model.input.maxLength = 100;}
@@ -74,7 +77,7 @@ export function setupApiSettings(api = {}) {
   const current = node('p', 'api-settings-current');current.id = 'apiSettingsCurrent';serverPanel.append(current);
   const url = field('apiServerUrl', 'AI 서버 주소', 'url');url.input.placeholder = 'https://your-studio-server.example.com';url.input.autocomplete = 'url';url.input.maxLength = 2048;url.input.spellcheck = false;
   const code = field('apiAccessToken', '앱 접속코드 (OpenAI API 키와 다른 값)', 'password');code.input.autocomplete = 'off';code.input.maxLength = 2048;code.input.spellcheck = false;code.input.setAttribute('aria-describedby', 'apiAccessTokenHelp');serverPanel.append(url.wrapper, code.wrapper);
-  const codeHelp = node('p', 'api-settings-help', '서버에 설정한 STUDIO_ACCESS_TOKEN을 입력하세요. 접속코드는 현재 탭 세션에만 보관해요. 같은 서버의 저장된 코드를 유지하려면 빈칸으로 두세요.');codeHelp.id = 'apiAccessTokenHelp';serverPanel.append(codeHelp);
+  const codeHelp = node('p', 'api-settings-help', desktop?'서버에 설정한 STUDIO_ACCESS_TOKEN을 입력하세요. 저장한 접속코드는 이 PC에 암호화해 보관해요. 같은 서버의 저장된 코드를 유지하려면 빈칸으로 두세요.':'서버에 설정한 STUDIO_ACCESS_TOKEN을 입력하세요. 접속코드는 현재 탭 세션에만 보관해요. 같은 서버의 저장된 코드를 유지하려면 빈칸으로 두세요.');codeHelp.id = 'apiAccessTokenHelp';serverPanel.append(codeHelp);
   serverPanel.append(node('p', 'api-settings-privacy', '이 탭에는 서버 주소와 앱 접속코드만 입력해요. OpenAI API 키를 서버 접속코드 칸에 입력하지 마세요. 서버 연결을 저장하면 대본·이미지·음성 분석은 서버 방식을 사용해요.'));
   const actions = node('div', 'api-settings-actions'), connect = button('connectApiBtn', '연결 확인·저장', 'primary'), clear = button('clearApiSettingsBtn', '서버 연결 해제', 'outline');actions.append(connect, clear);serverPanel.append(actions);
   const status = announcement('apiSettingsStatus', 'api-settings-status', 'status'), error = announcement('apiSettingsError', 'api-settings-error', 'alert');serverPanel.append(status, error);
@@ -95,12 +98,12 @@ export function setupApiSettings(api = {}) {
   function render() {
     const settings = getApiSettings(), direct = getDirectSettings(), typecast = getTypecastSettings();
     launcher.dataset.connected = String(Boolean((direct.enabled && direct.hasKey) || (typecast.enabled && typecast.hasKey) || settings.baseUrl));launcher.title = 'API 키·모델·서버 연결 설정';
-    current.textContent = settings.baseUrl ? `저장된 서버: ${settings.baseUrl} · ${settings.hasToken ? '현재 탭에 앱 접속코드 저장됨' : '앱 접속코드 없음'}` : '별도 서버가 연결되지 않았어요. 필요하면 이 앱을 실행하는 서버의 API를 사용할 수 있어요.';
+    current.textContent = settings.baseUrl ? `저장된 서버: ${settings.baseUrl} · ${settings.hasToken ? (desktop?'PC 보안 저장소에 앱 접속코드 저장됨':'현재 탭에 앱 접속코드 저장됨') : '앱 접속코드 없음'}` : '별도 서버가 연결되지 않았어요. 필요하면 이 앱을 실행하는 서버의 API를 사용할 수 있어요.';
     code.input.placeholder = settings.hasToken ? '저장된 접속코드 유지 (변경하려면 입력)' : '서버에서 받은 앱 접속코드';
-    directCurrent.textContent = direct.hasKey ? `${direct.enabled ? 'OpenAI 직접 연결 사용 중' : 'OpenAI 키 설정됨 · 현재 서버 연결 사용'} · ${direct.rememberInBrowser ? '이 브라우저에 키 저장됨 · 다시 접속해도 유지' : direct.rememberForTab ? '현재 탭에 키 저장됨 · 탭을 닫으면 보관 종료' : '메모리에만 키 보관 · 새로고침하면 다시 입력'} · 키는 보안을 위해 입력란에 표시하지 않아요.` : '저장된 OpenAI API 키가 없어요. 키를 입력하고 보관 방식을 선택한 뒤 저장해 주세요.';
+    directCurrent.textContent = direct.hasKey ? `${direct.enabled ? 'OpenAI 직접 연결 사용 중' : 'OpenAI 키 설정됨 · 현재 서버 연결 사용'} · ${direct.rememberInBrowser ? (desktop?'PC 보안 저장소에 키 저장됨 · 앱을 다시 실행해도 유지':'이 브라우저에 키 저장됨 · 다시 접속해도 유지') : direct.rememberForTab ? (desktop?'현재 창에 키 보관 · 앱 종료 시 삭제':'현재 탭에 키 저장됨 · 탭을 닫으면 보관 종료') : '메모리에만 키 보관 · 새로고침하면 다시 입력'} · 키는 보안을 위해 입력란에 표시하지 않아요.` : '저장된 OpenAI API 키가 없어요. 키를 입력하고 보관 방식을 선택한 뒤 저장해 주세요.';
     key.input.placeholder = direct.hasKey ? '키 저장됨 · 변경할 때만 새 키 입력' : 'sk-…';typecastSettings.render();
   }
-  function hydrate() {const direct = getDirectSettings();key.input.value = '';code.input.value = '';url.input.value = getApiSettings().baseUrl;scriptModel.input.value = direct.scriptModel || 'gpt-5-mini';imageModel.input.value = direct.imageModel || 'gpt-image-2';browserInput.checked = direct.rememberInBrowser === true;rememberInput.checked = !browserInput.checked && direct.rememberForTab === true;memoryInput.checked = !browserInput.checked && !rememberInput.checked;typecastSettings.hydrate();}
+  function hydrate() {const direct = getDirectSettings();key.input.value = '';code.input.value = '';url.input.value = getApiSettings().baseUrl;scriptModel.input.value = direct.scriptModel || 'gpt-5-mini';imageModel.input.value = direct.imageModel || 'gpt-image-2';browserInput.checked = direct.rememberInBrowser === true || (!direct.hasKey && secureRemember);rememberInput.checked = !browserInput.checked && (direct.rememberForTab === true || (!direct.hasKey && desktop));memoryInput.checked = !browserInput.checked && !rememberInput.checked;typecastSettings.hydrate();}
   function setBusy(value) {busy = value;dialog.setAttribute('aria-busy', String(value));for (const control of allControls) control.disabled = value;verify.textContent = value && selectedTab === 'openai' ? '연결 확인 중…' : '연결 확인·저장';connect.textContent = value && selectedTab === 'server' ? '연결 확인 중…' : '연결 확인·저장';typecastSettings.render();}
   function stop() {operation++;controller?.abort();controller = null;if (timeout) clearTimeout(timeout);timeout = null;directActivity.cancel('연결 확인을 취소했어요. 기존 설정은 유지했어요.');serverActivity.cancel('연결 확인을 취소했어요. 기존 설정은 유지했어요.');setBusy(false);}
   function dismiss() {typecastSettings.onClose();stop();key.input.value = '';code.input.value = '';dialog.close();}
@@ -137,7 +140,7 @@ export function setupApiSettings(api = {}) {
       }
       if (sequence !== operation || !dialog.open) return;
       applySettings(() => setDirectSettings(captured.settings));key.input.value = '';render();
-      const retentionMessage = captured.settings.rememberInBrowser ? '이 브라우저에 보관해 다음 접속에서도 유지해요.' : captured.settings.rememberForTab ? '현재 탭에 보관해 새로고침 후에도 유지해요. 탭을 닫으면 보관이 끝나요.' : '현재 페이지에서만 사용해요. 새로고침하면 다시 입력해야 해요.';
+      const retentionMessage = desktop ? (captured.settings.rememberInBrowser?'이 PC의 보안 저장소에 암호화해 다음 실행에서도 유지해요.':captured.settings.rememberForTab?'현재 창에만 보관하고 앱을 종료하면 지워요.':'현재 화면에서만 사용해요. 새로고침하면 다시 입력해야 해요.') : captured.settings.rememberInBrowser ? '이 브라우저에 보관해 다음 접속에서도 유지해요.' : captured.settings.rememberForTab ? '현재 탭에 보관해 새로고침 후에도 유지해요. 탭을 닫으면 보관이 끝나요.' : '현재 페이지에서만 사용해요. 새로고침하면 다시 입력해야 해요.';
       directStatus.textContent = `${verifyFirst ? 'OpenAI 연결을 확인하고 설정을 저장했어요.' : 'OpenAI 설정을 저장했어요. 연결 확인과 실제 생성은 아직 실행하지 않았어요.'} ${retentionMessage}`;
       feedback.finish(verifyFirst ? 'OpenAI 연결 확인·설정 저장을 마쳤어요.' : 'OpenAI 설정을 저장했어요.');
     } catch (cause) {if (sequence !== operation || !dialog.open || cause?.name === 'AbortError') return;directStatus.textContent = '';directErrorText.textContent = directError(cause);feedback.fail(directErrorText.textContent);}
@@ -169,8 +172,8 @@ export function setupApiSettings(api = {}) {
     finally {if (sequence === operation) {if (timeout) clearTimeout(timeout);timeout = null;controller = null;setBusy(false);}}
   }
   launcher.addEventListener('click', () => open());connect.addEventListener('click', checkAndSaveServer);save.addEventListener('click', () => saveDirect(false));verify.addEventListener('click', () => saveDirect(true));
-  clearKey.addEventListener('click', () => {if (busy) return;try {clearDirectSettings();key.input.value = '';directErrorText.textContent = '';directStatus.textContent = 'OpenAI 키를 삭제했어요. 대본과 프로젝트 자료는 그대로 있어요.';hydrate();render();} catch {directErrorText.textContent = '키 설정을 지우지 못했어요. 브라우저 저장 공간 설정을 확인해 주세요.';}});
-  clear.addEventListener('click', () => {if (busy) return;try {clearApiSettings();url.input.value = '';code.input.value = '';error.textContent = '';status.textContent = '별도 AI 서버 연결을 해제했어요. 대본과 프로젝트 자료는 그대로 있어요.';render();} catch {error.textContent = '연결 설정을 지우지 못했어요. 브라우저 저장 공간 설정을 확인해 주세요.';}});
+  clearKey.addEventListener('click', () => {if (busy) return;try {clearDirectSettings();key.input.value = '';directErrorText.textContent = '';directStatus.textContent = 'OpenAI 키를 삭제했어요. 대본과 프로젝트 자료는 그대로 있어요.';hydrate();render();} catch {directErrorText.textContent = desktop?'키 설정을 지우지 못했어요. PC 보안 저장소를 확인해 주세요.':'키 설정을 지우지 못했어요. 브라우저 저장 공간 설정을 확인해 주세요.';}});
+  clear.addEventListener('click', () => {if (busy) return;try {clearApiSettings();url.input.value = '';code.input.value = '';error.textContent = '';status.textContent = '별도 AI 서버 연결을 해제했어요. 대본과 프로젝트 자료는 그대로 있어요.';render();} catch {error.textContent = desktop?'연결 설정을 지우지 못했어요. PC 보안 저장소를 확인해 주세요.':'연결 설정을 지우지 못했어요. 브라우저 저장 공간 설정을 확인해 주세요.';}});
   const tabOrder=['openai','typecast','server'];
   for (const [tab,name] of [[directTab,'openai'],[typecastTab,'typecast'],[serverTab,'server']]){tab.addEventListener('click',()=>{if(!busy)selectTab(name);});tab.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)||busy)return;event.preventDefault();const index=tabOrder.indexOf(selectedTab);selectTab(event.key==='Home'?tabOrder[0]:event.key==='End'?tabOrder.at(-1):tabOrder[(index+(event.key==='ArrowRight'?1:-1)+tabOrder.length)%tabOrder.length],true);});}
   for (const element of [close, done]) element.addEventListener('click', dismiss);

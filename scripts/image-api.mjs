@@ -3,6 +3,7 @@ export {buildImagePrompt} from '../dist/image-prompt.js';
 import http from 'node:http';
 import https from 'node:https';
 import {randomBytes} from 'node:crypto';
+import {readOpenAiProviderError,sanitizeOpenAiDiagnostic} from '../dist/openai-provider-error.js';
 
 const MAX_REFERENCES = 5;
 const MAX_REFERENCE_BYTES = 10 * 1024 * 1024;
@@ -193,17 +194,16 @@ export function parseImageResponse(response, settings, promptUsed, now = new Dat
     promptUsed, referenceCount: settings.references.length, size: settings.size, quality: settings.quality, generatedAt: now.toISOString()};
 }
 
-function providerError(status) {
-  if (status === 401) return new ImageApiError(502, 'IMAGE_AUTH_FAILED', '이미지 생성 서비스의 인증을 확인해 주세요. 서버의 API 키 설정이 필요합니다.');
-  if (status === 403) return new ImageApiError(502, 'IMAGE_ACCESS_DENIED', '이미지 모델 접근이 차단되었습니다. 서버의 모델 권한과 네트워크 설정을 확인해 주세요.');
-  if (status === 429) return new ImageApiError(429, 'IMAGE_RATE_LIMITED', '이미지 생성 사용량 또는 요청 한도에 도달했습니다. 잠시 후 다시 시도하거나 사용량을 확인해 주세요.');
-  if (status === 400 || status === 404) return new ImageApiError(502, 'IMAGE_CONFIGURATION_ERROR', '이미지 모델이 요청을 처리하지 못했습니다. 참조 파일과 서버 모델 설정을 확인해 주세요.');
-  return new ImageApiError(502, 'IMAGE_SERVICE_UNAVAILABLE', '이미지 생성 서비스가 응답하지 않습니다. 잠시 후 다시 시도해 주세요.');
+function providerError(status, failure) {
+  const code=failure.reason==='UNAVAILABLE'?'IMAGE_SERVICE_UNAVAILABLE':failure.reason.startsWith('IMAGE_')?failure.reason:`IMAGE_${failure.reason}`;
+  const error=new ImageApiError(status===429?429:502,code,failure.message);
+  if(failure.diagnostic)error.diagnostic=failure.diagnostic;
+  return error;
 }
 
 export function createImageProviderRequest(env = process.env, requestImpl = https.request) {
   let proxyConfigured = false;
-  return ({payload, key, signal}) => {
+  return ({payload, key, signal, context}) => {
     if (!proxyConfigured) {
       const hasProxy = env.HTTPS_PROXY || env.https_proxy || env.HTTP_PROXY || env.http_proxy;
       if (hasProxy && typeof http.setGlobalProxyFromEnv !== 'function') throw new ImageApiError(503, 'PROXY_RUNTIME_REQUIRED', '현재 프록시 환경에서는 Node.js 24.5 이상으로 서버를 실행해 주세요.');
@@ -214,7 +214,9 @@ export function createImageProviderRequest(env = process.env, requestImpl = http
       const request = requestImpl(payload.referenceCount === 0 ? GENERATION_ENDPOINT : ENDPOINT, {method: 'POST', signal, headers: {
         Authorization: `Bearer ${key}`, 'Content-Type': payload.contentType, 'Content-Length': payload.body.length,
       }}, response => {
-        if (response.statusCode < 200 || response.statusCode >= 300) {response.resume();reject(providerError(response.statusCode));return;}
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          readOpenAiProviderError(response,{signal,context,secrets:[key]}).then(failure=>reject(providerError(response.statusCode,failure)),reject);return;
+        }
         const chunks = [];let size = 0;
         response.on('data', chunk => {
           size += chunk.length;
@@ -301,13 +303,17 @@ export function createImageApi({env = process.env, requestProvider = createImage
       generating = true;ownsSlot = true;controller = new AbortController();
       clientClosed = () => {if (!res.writableEnded) controller.abort();};res.on('close', clientClosed);
       timer = setTimeout(() => {timedOut = true;controller.abort();}, timeoutMs);
-      const response = await withAbort(requestProvider({payload, key: apiKey(), signal: controller.signal}), controller.signal);
+      const response = await withAbort(requestProvider({payload, key: apiKey(), signal: controller.signal,
+        context:{model,size:settings.size,referenceCount:settings.references.length}}), controller.signal);
       if (controller.signal.aborted) throw new Error('Image generation aborted');
       send(res, 200, parseImageResponse(response, settings, payload.promptUsed));
     } catch (error) {
       if (res.destroyed || res.writableEnded) return true;
       if (timedOut || controller?.signal.aborted) send(res, 504, {error: '이미지 생성이 오래 걸리고 있습니다. 크기나 품질을 줄여 다시 시도해 주세요.', code: 'IMAGE_GENERATION_TIMEOUT'});
-      else if (error instanceof ImageApiError || error instanceof ImagePromptError) send(res, error.status, {error: error.message, code: error.code});
+      else if (error instanceof ImageApiError || error instanceof ImagePromptError) {
+        const diagnostic=sanitizeOpenAiDiagnostic(error.diagnostic,{secrets:[apiKey()]});
+        send(res, error.status, {error: error.message, code: error.code,...(diagnostic?{diagnostic}:{})});
+      }
       else send(res, 502, {error: '이미지 생성 서비스에 연결하지 못했습니다. 서버의 네트워크와 연결 설정을 확인해 주세요.', code: 'IMAGE_CONNECTION_FAILED'});
     } finally {
       if (ownsSlot) generating = false;

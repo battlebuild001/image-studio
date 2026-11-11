@@ -1,6 +1,7 @@
 import {YOUTUBE_PLAYLIST_SCOPE, normalizePlaylistSelection, normalizePlaylistPageToken, validatePlaylistId, validatePlaylistVideoId, validatePlaylistChannelId, validatePlaylistItemId} from './youtube-playlist-protocol.js';
 import {YOUTUBE_SCOPES, normalizeYouTubeClientId, normalizeYouTubeMetadata, buildYouTubeVideoResource, normalizeYouTubeUploadRecord, validateYouTubeVideoFile, validateYouTubeThumbnailFile} from './youtube-protocol.js';
 import {assertYouTubeScheduleFuture, normalizePublishAt, YOUTUBE_SCHEDULE_TRANSFER_LEAD_MS} from './youtube-schedule.js';
+import {desktopFetch} from './desktop-fetch.js';
 
 const SETTINGS_KEY = 'content-studio-youtube-client-id-v1';
 const CHUNK_UNIT = 256 * 1024;
@@ -30,7 +31,33 @@ function oauthFailure(response) {
 }
 function cancelled() {return new DOMException('유튜브 작업을 중지했어요. 이미 전송한 영상은 유튜브에서 삭제되지 않아요.', 'AbortError');}
 function copy(value) {return value == null ? value : JSON.parse(JSON.stringify(value));}
-function identityApi(value) {const api = value?.accounts?.oauth2 || value?.google?.accounts?.oauth2 || value;if (typeof api?.initTokenClient !== 'function') throw failure('YOUTUBE_IDENTITY_UNAVAILABLE', 'Google 연결 도구를 불러오지 못했어요. 네트워크를 확인한 뒤 다시 연결해 주세요.');return api;}
+function identityApi(value) {const api = value?.accounts?.oauth2 || value?.google?.accounts?.oauth2 || value;if (typeof api?.initTokenClient !== 'function' && typeof api?.authorizeNative !== 'function') throw failure('YOUTUBE_IDENTITY_UNAVAILABLE', 'Google 연결 도구를 불러오지 못했어요. 네트워크를 확인한 뒤 다시 연결해 주세요.');return api;}
+function desktopIdentityFailure(cause) {
+  if (cause?.name === 'AbortError' || cause?.code === 'DESKTOP_OAUTH_CANCELLED') return cancelled();
+  const messages = {
+    DESKTOP_OAUTH_CONFIG: ['YOUTUBE_DESKTOP_CONFIG', '이 프로그램에서는 Google Cloud의 데스크톱 앱 OAuth JSON 파일을 먼저 가져와 주세요. 웹 앱 클라이언트 ID는 사용할 수 없어요.'],
+    DESKTOP_OAUTH_DENIED: ['YOUTUBE_OAUTH_DENIED', 'Google 권한 동의를 취소했어요. OAuth 앱이 테스트 상태라면 현재 계정을 테스트 사용자에 추가해 주세요.'],
+    DESKTOP_OAUTH_TIMEOUT: ['YOUTUBE_OAUTH_TIMEOUT', 'Google 연결 시간이 지났어요. 기본 브라우저의 연결 창을 확인하고 다시 연결해 주세요.'],
+    DESKTOP_OAUTH_BUSY: ['YOUTUBE_BUSY', '진행 중인 Google 연결을 먼저 완료하거나 취소해 주세요.'],
+    DESKTOP_OAUTH_NETWORK: ['YOUTUBE_NETWORK', 'Google에 연결하지 못했어요. 인터넷 연결을 확인한 뒤 다시 연결해 주세요.'],
+    DESKTOP_OAUTH_LOOPBACK: ['YOUTUBE_OAUTH_FAILED', 'PC에서 Google 연결 응답을 받을 수 없어요. 다른 연결 작업을 마친 뒤 다시 시도해 주세요.'],
+    DESKTOP_OAUTH_RESPONSE: ['YOUTUBE_OAUTH_RESPONSE', 'Google이 필요한 연결 권한을 반환하지 않았어요. 같은 채널로 다시 연결하고 요청한 권한에 동의해 주세요.']
+  };
+  const [code,message] = messages[cause?.code] || ['YOUTUBE_OAUTH_FAILED', 'Google 연결을 완료하지 못했어요. 데스크톱 OAuth 설정과 기본 브라우저를 확인해 주세요.'];
+  return failure(code,message,undefined,undefined,'oauth');
+}
+function desktopIdentity(bridge) {
+  if (!['getConfig','authorize','cancel','revoke'].every(key => typeof bridge?.[key] === 'function')) throw failure('YOUTUBE_IDENTITY_UNAVAILABLE', '프로그램의 Google 연결 도구를 준비하지 못했어요. 프로그램을 다시 실행해 주세요.');
+  return {
+    async prepareNative(clientId) {
+      let config;try {config = await bridge.getConfig();} catch (cause) {throw desktopIdentityFailure(cause);}
+      if (config?.configured !== true || !clientId || config.clientId !== clientId) throw desktopIdentityFailure({code:'DESKTOP_OAUTH_CONFIG'});
+    },
+    authorizeNative: value => bridge.authorize(value),
+    cancelNative: value => bridge.cancel(value),
+    revoke(token,done) {try {Promise.resolve(bridge.revoke({token})).then(() => done?.(), () => done?.());} catch {done?.();}}
+  };
+}
 function expirySeconds(value) {const number = Number(value);if (!Number.isFinite(number) || number < 1 || number > 86400) throw failure('YOUTUBE_OAUTH_RESPONSE', 'Google 연결의 유효 시간을 확인하지 못했어요. 다시 연결해 주세요.');return number;}
 function sessionAddress(value) {
   let url;try {url = new URL(value);} catch {throw failure('YOUTUBE_UPLOAD_LOCATION', 'Google의 이어 올리기 주소를 확인하지 못했어요. 새 업로드를 자동으로 시작하지 않았어요.');}
@@ -104,6 +131,7 @@ async function responseFailure(response, signal, timeout, phase='upload') {
 
 /** Loaded only by an explicit connection action; no provider call occurs on import. */
 function loadGoogleIdentity() {
+  if (globalThis.contentStudioDesktop?.youtube) {try {return Promise.resolve(desktopIdentity(globalThis.contentStudioDesktop.youtube));} catch (cause) {return Promise.reject(cause);}}
   if (globalThis.google?.accounts?.oauth2) return Promise.resolve(globalThis.google.accounts.oauth2);
   if (typeof document === 'undefined') return Promise.reject(failure('YOUTUBE_BROWSER_REQUIRED', '유튜브 연결은 브라우저에서 실행해 주세요.'));
   return new Promise((resolve, reject) => {
@@ -119,7 +147,7 @@ function loadGoogleIdentity() {
 
 /** Public client ID may persist. OAuth credentials and resumable URLs stay in closures. */
 export function createYouTubeClient(options = {}) {
-  const fetchImpl = options.fetchImpl || globalThis.fetch, loadIdentity = options.loadIdentity || loadGoogleIdentity, now = options.now || Date.now;
+  const fetchImpl = options.fetchImpl || desktopFetch, loadIdentity = options.loadIdentity || loadGoogleIdentity, now = options.now || Date.now;
   const chunkSize = options.chunkSize ?? 4 * 1024 * 1024, requestTimeout = options.requestTimeoutMs ?? 120000, oauthTimeout = options.oauthTimeoutMs ?? 120000;
   if (!Number.isSafeInteger(chunkSize) || chunkSize < CHUNK_UNIT || chunkSize % CHUNK_UNIT !== 0 || chunkSize > 16 * 1024 * 1024) throw new TypeError('YouTube chunks must be a 256KiB multiple, up to 16MiB.');
   if (!Number.isFinite(requestTimeout) || requestTimeout <= 0 || !Number.isFinite(oauthTimeout) || oauthTimeout <= 0) throw new TypeError('YouTube timeouts must be positive.');
@@ -137,8 +165,8 @@ export function createYouTubeClient(options = {}) {
   function saveClientId(value) {const next = normalizeYouTubeClientId(value);if (next === clientId) return getSettings();storeId(next);revision++;stopActive();clearCredential();upload = null;clientId = next;emit('settings');return getSettings();}
   function subscribe(callback) {if (typeof callback !== 'function') throw new TypeError('A subscriber must be a function.');subscribers.add(callback);return () => subscribers.delete(callback);}
   function prepareIdentity() {
-    if (identity) return Promise.resolve(identity);
-    if (!identityPromise) {try {identityPromise = Promise.resolve(loadIdentity()).then(value => (identity = identityApi(value))).catch(cause => {identityPromise = null;throw cause;});} catch (cause) {identityPromise = null;return Promise.reject(cause);}}
+    if (identity) return identity.prepareNative ? Promise.resolve().then(() => identity.prepareNative(clientId)).then(() => identity) : Promise.resolve(identity);
+    if (!identityPromise) {try {identityPromise = Promise.resolve(loadIdentity()).then(async value => {const api=identityApi(value);await api.prepareNative?.(clientId);return identity=api;}).catch(cause => {identityPromise = null;throw cause;});} catch (cause) {identityPromise = null;return Promise.reject(cause);}}
     return identityPromise;
   }
   function requireAuth(expectedChannel) {
@@ -169,6 +197,16 @@ export function createYouTubeClient(options = {}) {
     return Promise.race([prepareIdentity(), stopped]).finally(() => {clearTimeout(timer);signal.removeEventListener('abort', onAbort);});
   }
   function grant(api, signal, requestedScopes = YOUTUBE_SCOPES) {
+    if (api.authorizeNative) return new Promise((resolve,reject) => {
+      const requestId=globalThis.crypto?.randomUUID?.() || `desktop_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+      let settled=false,timer;
+      const finish=(cause,value)=>{if(settled)return;settled=true;clearTimeout(timer);signal.removeEventListener('abort',onAbort);cause?reject(cause):resolve(value);};
+      const stop=()=>{try{Promise.resolve(api.cancelNative?.({requestId})).catch(()=>{});}catch{}};
+      const onAbort=()=>{stop();finish(cancelled());};signal.addEventListener('abort',onAbort,{once:true});
+      if(signal.aborted){onAbort();return;}
+      timer=setTimeout(()=>{stop();finish(failure('YOUTUBE_OAUTH_TIMEOUT','Google 연결 시간이 지났어요. 기본 브라우저의 연결 창을 확인하고 다시 연결해 주세요.'));},oauthTimeout);
+      try{Promise.resolve(api.authorizeNative({clientId,playlistAccess:requestedScopes.split(/\s+/u).includes(YOUTUBE_PLAYLIST_SCOPE),requestId})).then(response=>finish(null,response),cause=>finish(desktopIdentityFailure(cause)));}catch(cause){finish(desktopIdentityFailure(cause));}
+    });
     return new Promise((resolve, reject) => {
       let settled = false, timer;
       const finish = (cause, value) => {if (settled) return;settled = true;clearTimeout(timer);signal.removeEventListener('abort', onAbort);cause ? reject(cause) : resolve(value);};
@@ -189,7 +227,7 @@ export function createYouTubeClient(options = {}) {
   function connect({signal, playlistAccess = false} = {}) {
     if (typeof playlistAccess !== 'boolean') return Promise.reject(failure('YOUTUBE_PLAYLIST_SCOPE_REQUIRED','재생목록 연결 옵션을 확인해 주세요.'));
     if (connecting || job) return Promise.reject(failure('YOUTUBE_BUSY', '진행 중인 유튜브 작업을 마치거나 중지한 뒤 연결해 주세요.'));
-    if (!clientId) return Promise.reject(failure('YOUTUBE_CLIENT_ID_REQUIRED', 'Google 웹 애플리케이션의 공개 OAuth 클라이언트 ID를 먼저 저장해 주세요.'));
+    if (!clientId) return Promise.reject(failure('YOUTUBE_CLIENT_ID_REQUIRED', globalThis.contentStudioDesktop?.youtube ? 'Google Cloud의 데스크톱 앱 OAuth JSON 파일을 먼저 가져와 주세요.' : 'Google 웹 애플리케이션의 공개 OAuth 클라이언트 ID를 먼저 저장해 주세요.'));
     const requestedScopes = playlistAccess ? `${YOUTUBE_SCOPES} ${YOUTUBE_PLAYLIST_SCOPE}` : YOUTUBE_SCOPES;
     const scope = controlled(signal), controller = scope.controller, expected = revision, selectedClient = clientId;
     connecting = controller;clearCredential();emit('connecting');

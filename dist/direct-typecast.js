@@ -1,3 +1,5 @@
+import {desktopFetch} from './desktop-fetch.js';
+import {getDesktopSettingsBridge,readDesktopProvider,writeDesktopProvider,clearLegacyProviderCopies} from './desktop-settings.js';
 import {
   TYPECAST_DEFAULT_MODEL, TYPECAST_MODELS, TYPECAST_MAX_AUDIO_BYTES, TYPECAST_MAX_CHUNK_AUDIO_BYTES, validateTypecastVoiceRequest,
   splitTypecastText, createTypecastSpeechPlan, buildTypecastTtsRequest, assertTypecastVoiceSupport,
@@ -64,7 +66,7 @@ function asBase64(bytes) {let text='';for(let at=0;at<bytes.length;at+=0x8000)te
 export const handlesTypecastPath = path => path===CONFIG||path===GENERATE;
 
 /** Personal keys never enter project data. Each explicit retention scope is independent of OpenAI. */
-export function createDirectTypecastClient({fetchImpl=(...args)=>globalThis.fetch(...args),sessionStorage=storage('sessionStorage'),localStorage=storage('localStorage'),storageEvents=typeof window==='undefined'?null:window,dispatchChange=emitChange,timeoutMs=180000,checkTimeoutMs=20000,cacheMs=300000,now=()=>Date.now()}={}) {
+export function createDirectTypecastClient({fetchImpl=desktopFetch,sessionStorage=storage('sessionStorage'),localStorage=storage('localStorage'),storageEvents=typeof window==='undefined'?null:window,dispatchChange=emitChange,desktopSettings=getDesktopSettingsBridge(),timeoutMs=180000,checkTimeoutMs=20000,cacheMs=300000,now=()=>Date.now()}={}) {
   let settings={...DEFAULTS},settingsVersion=0,active=null,operationId=0,voiceCache=null,disposed=false;
   const requests=new Set();
   function restore(store,key,scope) {
@@ -76,7 +78,10 @@ export function createDirectTypecastClient({fetchImpl=(...args)=>globalThis.fetc
       return normalizeSettings(value);
     }catch{try{store?.removeItem(key);}catch{}return null;}
   }
-  settings=restore(sessionStorage,SESSION_KEY,'rememberForTab')||restore(localStorage,BROWSER_KEY,'rememberInBrowser')||settings;
+  if(desktopSettings){
+    try{const saved=readDesktopProvider(desktopSettings,'typecast');if(saved)settings=normalizeSettings(saved);}catch{}
+    clearLegacyProviderCopies([[sessionStorage,SESSION_KEY],[localStorage,BROWSER_KEY]]);
+  }else settings=restore(sessionStorage,SESSION_KEY,'rememberForTab')||restore(localStorage,BROWSER_KEY,'rememberInBrowser')||settings;
   const getSettings=()=>metadata(settings);
   function replace(next) {
     settingsVersion++;operationId++;active?.abort();active=null;
@@ -84,6 +89,11 @@ export function createDirectTypecastClient({fetchImpl=(...args)=>globalThis.fetc
     voiceCache=null;settings=next;dispatchChange();return metadata(settings);
   }
   function save(next) {
+    if(desktopSettings){
+      try{writeDesktopProvider(desktopSettings,'typecast',next);clearLegacyProviderCopies([[sessionStorage,SESSION_KEY],[localStorage,BROWSER_KEY]]);}
+      catch{throw error(400,'TYPECAST_SETTINGS_STORAGE','PC 보안 저장소에 Typecast 설정을 저장하지 못했어요. 현재 실행 중에만 사용하거나 시스템 보안 저장소를 확인해 주세요. 기존 연결은 유지했어요.');}
+      return replace(next);
+    }
     const changes=[],applied=[];
     try{
       for(const[store,key,retain]of[[sessionStorage,SESSION_KEY,next.rememberForTab],[localStorage,BROWSER_KEY,next.rememberInBrowser]]){
@@ -103,7 +113,7 @@ export function createDirectTypecastClient({fetchImpl=(...args)=>globalThis.fetc
   const clearSettings=()=>save({...DEFAULTS});
   const setEnabled=enabled=>{if(typeof enabled==='boolean'&&enabled===settings.enabled)return metadata(settings);return setSettings({enabled});};
   function onStorage(event) {
-    if(!settings.rememberInBrowser||(event.key!==BROWSER_KEY&&event.key!==null)||(event.storageArea&&event.storageArea!==localStorage))return;
+    if(desktopSettings||!settings.rememberInBrowser||(event.key!==BROWSER_KEY&&event.key!==null)||(event.storageArea&&event.storageArea!==localStorage))return;
     replace(restore(localStorage,BROWSER_KEY,'rememberInBrowser')||{...DEFAULTS});
   }
   storageEvents?.addEventListener('storage',onStorage);

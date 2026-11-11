@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import http from 'node:http';
 import {EventEmitter, once} from 'node:events';
+import {Readable} from 'node:stream';
 import {test} from 'node:test';
 import {buildImageMultipart, buildImagePrompt, createImageApi, createImageProviderRequest, parseImageResponse, validateImageRequest} from '../scripts/image-api.mjs';
 
@@ -168,6 +169,22 @@ test('provider transport uploads multipart data only to the fixed image-edit end
     });
     await assert.rejects(transport({payload, key: 'test-only-key'}), error => {assert.equal(error.code, code);assert.equal(error.status, statusCode);assert.ok(!error.message.includes('test-only-key'));return true;});
     assert.ok(posted.equals(payload.body));
+  }
+});
+
+test('server image transport and HTTP boundary preserve safe provider causes and metadata without private content or paid retries',async t=>{
+  for(const[details,status,code]of[
+    [{code:'content_policy_violation'},400,'IMAGE_CONTENT_POLICY'],
+    [{code:'invalid_value',param:'size'},400,'IMAGE_SIZE_UNSUPPORTED'],
+    [{code:'model_not_found'},404,'IMAGE_MODEL_NOT_FOUND'],
+    [{code:'organization_verification_required'},403,'IMAGE_ORGANIZATION_VERIFICATION_REQUIRED']
+  ]){
+    let calls=0;
+    const transport=createImageProviderRequest({},(_url,_options,onResponse)=>{
+      const request=new EventEmitter();request.end=()=>{calls++;const response=Readable.from([Buffer.from(JSON.stringify({error:{...details,message:'private provider test-hidden-key'}}))]);response.statusCode=status;response.headers={'x-request-id':'req_server_image_123'};onResponse(response);};return request;
+    });
+    const{post}=await apiServer(t,{env:{IMAGE_AI_API_KEY:'test-hidden-key'},requestProvider:transport});
+    const response=await post(settings()),body=await response.json();assert.equal(response.status,502);assert.equal(body.code,code);assert.equal(body.diagnostic.providerStatus,status);assert.equal(body.diagnostic.providerCode,details.code);assert.equal(body.diagnostic.requestId,'req_server_image_123');assert.equal(body.diagnostic.model,'gpt-image-2');assert.equal(body.diagnostic.size,'1536x864');assert.equal(body.diagnostic.referenceCount,2);assert.equal(calls,1);assert.equal(JSON.stringify(body).includes('private'),false);assert.equal(JSON.stringify(body).includes('test-hidden-key'),false);
   }
 });
 

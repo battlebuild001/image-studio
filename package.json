@@ -93,10 +93,20 @@
     "test:production-run-browser": "node tests/production-run.browser.cjs",
     "test:scene-image-replace-browser": "node tests/scene-image-replace.browser.cjs",
     "test:production-run-export-browser": "node tests/production-run-export.browser.cjs",
-    "test:scene-image-replace-main-browser": "node tests/scene-image-replace-main.browser.cjs"
+    "test:scene-image-replace-main-browser": "node tests/scene-image-replace-main.browser.cjs",
+    "desktop:start": "electron .",
+    "desktop:build": "node scripts/desktop-build.mjs --win",
+    "desktop:build:linux": "node scripts/desktop-build.mjs --linux-smoke"
   },
   "dependencies": {
     "mammoth": "1.13.0",
     "unpdf": "1.9.1"
-  }
+  },
+  "devDependencies": {
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0"
+  },
+  "main": "desktop/main.cjs",
+  "description": "Korean desktop video production workspace",
+  "author": "Content Studio"
 }

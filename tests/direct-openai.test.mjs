@@ -245,6 +245,32 @@ test('provider failures, untrusted exception text and malformed/oversized JSON a
   }
 });
 
+test('image provider errors retain distinct safe causes and selected request context without retrying',async()=>{
+  const cases=[
+    [{code:'model_not_found'},404,'OPENAI_MODEL_NOT_FOUND'],
+    [{code:'invalid_value',param:'size'},400,'OPENAI_IMAGE_SIZE_UNSUPPORTED'],
+    [{code:'invalid_value',param:'quality'},400,'OPENAI_IMAGE_QUALITY_UNSUPPORTED'],
+    [{code:'invalid_image_format',param:'image[0]'},400,'OPENAI_IMAGE_REFERENCE_INVALID'],
+    [{code:'content_policy_violation'},400,'OPENAI_CONTENT_POLICY'],
+    [{code:'organization_verification_required'},403,'OPENAI_ORGANIZATION_VERIFICATION_REQUIRED'],
+    [{code:'insufficient_quota'},429,'OPENAI_INSUFFICIENT_QUOTA']
+  ];
+  for(const[details,status,expected]of cases){
+    let calls=0;const api=client({fetchImpl:async()=>{calls++;return response({error:{...details,message:`private provider ${key}`}},status,{'x-request-id':'req_image_cause_123'});}});api.setDirectSettings({apiKey:key});
+    const result=await api.directApiFetch('/api/image/generate',post(imageInput())),body=await result.json();
+    assert.equal(result.status,[403,429].includes(status)?status:502);assert.equal(body.code,expected);assert.equal(body.diagnostic.providerStatus,status);assert.equal(body.diagnostic.providerCode,details.code);assert.equal(body.diagnostic.requestId,'req_image_cause_123');assert.equal(body.diagnostic.model,'gpt-image-2');assert.equal(body.diagnostic.size,'1536x864');assert.equal(body.diagnostic.referenceCount,2);assert.equal(calls,1);
+    assert.equal(JSON.stringify(body).includes(key),false);assert.equal(JSON.stringify(body).includes('private'),false);assert.equal(JSON.stringify(body).includes(imageInput().prompt),false);
+  }
+});
+
+test('cancelled or timed-out error-body reads release the direct request slot without exposing partial error data',async()=>{
+  let calls=0;const api=client({timeoutMs:35,fetchImpl:async()=>{calls++;return calls===1?new Response(new ReadableStream({pull(){return new Promise(()=>{});}}),{status:400}):response(imageResult());}});api.setDirectSettings({apiKey:key});
+  const timed=await api.directApiFetch('/api/image/generate',post(imageInput()));assert.equal((await timed.json()).code,'OPENAI_TIMEOUT');assert.equal(calls,1);
+  assert.equal((await api.directApiFetch('/api/image/generate',post(imageInput()))).status,200);assert.equal(calls,2);
+  const controller=new AbortController();const cancelled=client({fetchImpl:async()=>new Response(new ReadableStream({pull(){return new Promise(()=>{});}}),{status:400})});cancelled.setDirectSettings({apiKey:key});
+  const pending=cancelled.directApiFetch('/api/image/generate',{...post(imageInput()),signal:controller.signal});setTimeout(()=>controller.abort(),10);await assert.rejects(pending,error=>error.name==='AbortError');
+});
+
 test('direct narration analysis sends actual WAV samples once and preserves real timestamp gaps', async () => {
   const samples = new Float32Array(32000);for (let index = 0; index < samples.length; index++) samples[index] = Math.sin(index * Math.PI / 40) * .2;
   const bytes = new Uint8Array(await encodePcm16Wav(samples).arrayBuffer());let received;

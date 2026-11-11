@@ -35,6 +35,7 @@ import {setupProductionRunStudio} from './production-run-studio.js';
 import {setupSceneImageReplace} from './scene-image-replace.js';
 import {getDirectSettings} from './direct-openai.js';
 import {getApiSettings} from './api-client.js';
+import {initializeDesktopBridge} from './desktop-bridge.js';
 
 const $=id=>document.getElementById(id);
 $('aiImageNoticeHelp').textContent=AI_IMAGE_NOTICE_TEXT;
@@ -45,6 +46,7 @@ let narration=new Audio(),bgm=new Audio(),saveTimer=0,saveChain=Promise.resolve(
 let workspaceCatalog=null,workspaceTabs=null,workspaceReady=false,changingWorkspace=false,workspaceError='';
 let videoUploadWorkbench=null,referenceMedia=null,musicRecommendations=null,uploadBatchBusy=false,manualSaveBusy=false,syncStudio=null,aiWorkbench=null,toolNavigation=null,toolRouter=null;
 let productionRunStudio=null,productionRunEngine=null,sceneImageReplace=null,productionRunBusy=false,sceneReplacementBusy=false;
+let desktopBridge=null;
 const productionMutationAuthority=Symbol('reviewed-production-work');
 const canvas=$('previewCanvas'),ctx=canvas.getContext('2d',{alpha:false});
 const editorStatusHost=el('div','editor-operation-host');editorStatusHost.id='editorOperationHost';document.querySelector('main.workspace').before(editorStatusHost);
@@ -173,17 +175,22 @@ async function removeVoiceSample(assetId){
  for(const value of [...history,...redoHistory])if(value.production?.speech?.voiceSamples)value.production.speech.voiceSamples=value.production.speech.voiceSamples.filter(sample=>sample.assetId!==assetId);
  pruneAssets();await persist();return assetId;
 }
-async function saveCurrentProject(){
+async function saveCurrentProject({saveAs=false}={}){
  if(!canMutateProject())throw new Error('현재 작업이 끝난 뒤 프로젝트를 저장해 주세요.');
  const active=document.activeElement;active?.blur?.();flushProjectEditors({strict:true});pause();
  manualSaveBusy=true;setMediaBusy(true);
  try{return await trackEditorTask('프로젝트와 미디어를 저장하고 있어요.',async operation=>{
   await persist();const snapshot=clone(project),media=new Map(assets),name=((snapshot.title||'콘텐츠 프로젝트').replace(/[<>:"/\\|?*\x00-\x1F]/g,'_').slice(0,100)||'콘텐츠 프로젝트');
   const thumbnail=document.createElement('canvas');thumbnail.width=240;thumbnail.height=Math.max(1,Math.round(240*canvas.height/canvas.width));drawLibraryThumbnail(thumbnail.getContext('2d'),canvas,project,assets,current);
-  operation.update('이 브라우저의 프로젝트 보관함에 저장하고 있어요.');await saveLibraryProject(snapshot,media,{thumbnail:thumbnail.toDataURL('image/png')});
-  operation.update('이미지·음성·기본 설정을 포함한 프로젝트 파일을 만들고 있어요.');const file=await exportProjectBackup(snapshot,media);downloadBlob(file,`${name}.bth.json`);
-  toast('프로젝트를 보관함에 저장하고 프로젝트 파일 다운로드를 요청했어요.');return snapshot.id;
- },'프로젝트 저장을 완료했어요. 보관함이나 내려받은 파일에서 다시 열 수 있어요.');}
+  operation.update(desktopBridge?'이 PC의 프로젝트 보관함에 저장하고 있어요.':'이 브라우저의 프로젝트 보관함에 저장하고 있어요.');await saveLibraryProject(snapshot,media,{thumbnail:thumbnail.toDataURL('image/png')});
+  operation.update('이미지·음성·기본 설정을 포함한 프로젝트 파일을 만들고 있어요.');const file=await exportProjectBackup(snapshot,media);
+  if(desktopBridge){
+   const result=await desktopBridge.saveProjectBackup({backupText:await file.text(),suggestedName:name,projectId:snapshot.id,saveAs});
+   if(result?.cancelled){toast('폴더 저장을 취소했어요. 현재 작업은 이 PC의 보관함에 저장되어 있어요.');return snapshot.id;}
+   toast('프로젝트와 이미지·음성을 PC 폴더에 저장했어요.');
+  }else{downloadBlob(file,`${name}.bth.json`);toast('프로젝트를 보관함에 저장하고 프로젝트 파일 다운로드를 요청했어요.');}
+  return snapshot.id;
+ },desktopBridge?'현재 작업을 이 PC의 보관함에 저장했어요.':'프로젝트 저장을 완료했어요. 보관함이나 내려받은 파일에서 다시 열 수 있어요.');}
  finally{manualSaveBusy=false;setMediaBusy(false);}
 }
 async function clearYouTubeStoredHistory(){
@@ -743,7 +750,7 @@ on('timelineZoom','input',renderTimeline);
 on('workflowScriptBtn','click',()=>{if(exportController)throw new Error('영상 출력이 끝난 뒤 대본을 작성해 주세요.');$('scriptStudioBtn').click();});
 on('emptyScriptBtn','click',()=>$('workflowScriptBtn').click());
 on('workflowVoiceBtn','click',()=>openVoiceStudio());on('workflowTimingBtn','click',openScript);on('workflowImagesBtn','click',()=>sceneImageBatch.open());on('workflowEditBtn','click',openEditingStep);
-const toolsApi={getProject:()=>project,getAssets:()=>assets,getCurrent:()=>current,getSelectedId:()=>selectedId,getSelectedIds:()=>[...selectedIds],getCanvas:()=>canvas,
+const toolsApi={newProject:()=>{if(!canMutateProject())throw new Error('현재 작업이 끝난 뒤 새 프로젝트를 만들어 주세요.');return newProject();},getDesktopActivity:()=>({busy:Boolean(importing||exportController||changingWorkspace||timingApplying||uploadBatchBusy||manualSaveBusy||productionRunBusy||sceneReplacementBusy||sceneImageBatch?.isBusy?.()||videoUploadWorkbench?.isBusy?.()||syncStudio?.getBusy?.()||musicRecommendations?.getBusy?.()),unsaved:revision>savedRevision}),getProject:()=>project,getAssets:()=>assets,getCurrent:()=>current,getSelectedId:()=>selectedId,getSelectedIds:()=>[...selectedIds],getCanvas:()=>canvas,
  mutate:(action,options)=>{if(importing||exportController)throw new Error('파일 처리나 영상 출력이 끝난 뒤 편집해 주세요.');return mutate(action,options);},
  pause,seek,toast,report,previewIntro:async()=>{if(!canMutateProject())throw new Error('현재 작업이 끝난 뒤 인트로를 미리 봐 주세요.');studioLayout?.showPane?.('preview',{focus:true});pause();seek(0);await play({ignoreLoop:true});},renderPreview,renderAll,persist,replaceProject,addTemplateScene,applyScriptDraft,addReferenceImages,applyGeneratedImage,openVoiceStudio,openApiSettings:options=>apiSettings.open(options),openTimingPlan:openScript,openImageStudio:()=>imageStudio.open(),canUseSceneImages:()=>!importing&&!exportController&&!changingWorkspace&&!timingApplying&&!uploadBatchBusy&&!manualSaveBusy&&!productionRunBusy&&!sceneReplacementBusy,addNarrationFile,getWorkspaceId:()=>workspaceCatalog?.activeId||null,getWorkspaceCatalog:()=>workspaceCatalog,getWorkspaceError:()=>workspaceError,canChangeWorkspace:()=>workspaceReady&&!importing&&!exportController&&!changingWorkspace&&!uploadBatchBusy&&!manualSaveBusy&&!productionRunBusy&&!sceneReplacementBusy,createWorkspace,switchWorkspace,renameWorkspace,moveWorkspace,closeWorkspace,reopenWorkspace,selectScene,canMutate:canMutateProject,getNarrationScript:()=>getNarrationScript(project),getDisplayScript:()=>getDisplayScript(project),openProductionSection,captureProductionVersion,installProjectVariant,applyNarrationPatch,mutateProductionMetadata,getExportedVideo:()=>exportedVideoRecord,openYouTubeUpload,clearYouTubeStoredHistory,flushProjectEditors,setUploadBatchBusy,saveCurrentProject,saveVoiceSample,applyVoiceSample,removeVoiceSample,prepareSyncAudio,applySyncTiming,ensureMediaSpace:ensureSpace,openExport,openProductionRunStudio:options=>productionRunStudio?.open(options),openSceneImageReplace,canOpenToolNavigation:()=>editorTools?.canOpenToolNavigation?.()!==false&&voiceStudio?.canOpenToolNavigation?.()!==false,openToolRoute:(...args)=>toolRouter.open(...args),getToolAvailability:id=>toolRouter.availability(id),revealEditorTarget:target=>studioLayout?.reveal(target),showEditorPane:(...args)=>studioLayout?.showPane?.(...args),openAudioTools:()=>studioLayout?.openAudio(),openProjectMenu:()=>studioLayout?.openProjectMenu(),openMusicRecommendations:()=>musicRecommendations.open(),hasConfirmedScenePlan:()=>getScenePlanStatus(project).valid,openSceneImageBatch:()=>sceneImageBatch.open(),openAiAssistant:(section,options)=>aiWorkbench.open(section,options),openSyncStudio:options=>{if($('aiAssistantDialog')?.open)$('aiAssistantDialog').close();syncStudio.open(options);},openTranscriptStudio:()=>transcriptStudio.open(),prepareUploadSeries:async options=>{await videoUploadWorkbench.getFeature('series').prepareSeries(options);videoUploadWorkbench.open('series',{fromShortsPreparation:true});},addImages:async files=>{if(!canMutateProject())throw new Error('현재 작업이 끝난 뒤 이미지를 추가해 주세요.');return addImages(files);},addBgmFile:async file=>{if(!canMutateProject())throw new Error('현재 작업이 끝난 뒤 배경음악을 추가해 주세요.');return addAudio(file,'bgm');}};
 apiSettings=setupApiSettings(toolsApi);editorTools=setupEditorTools(toolsApi);libraryTools=setupLibraryTools(toolsApi);scriptStudio=setupScriptStudio(toolsApi);imageStudio=setupImageStudio(toolsApi);sceneImageBatch=setupSceneImageBatch(toolsApi);sceneTimingUi=setupSceneTimingUi({getProject:()=>project,getNarrationDuration:()=>assets.get(project.audio.narrationId)?(project.audio.narrationOffset||0)+getAudioWindow(project,assets,'narration').duration:0,getTimedCaptions:()=>project.captionMode==='auto'?[]:getCaptions(project)});transcriptStudio=setupTranscriptStudio(toolsApi);voiceStudio=setupVoiceStudio(toolsApi);workspaceTabs=setupWorkspaceTabs(toolsApi);productionWorkbench=setupProductionWorkbench(toolsApi);videoUploadWorkbench=setupVideoUploadWorkbench(toolsApi);referenceMedia=setupReferenceMedia(toolsApi);musicRecommendations=setupMusicRecommendations(toolsApi);syncStudio=setupSyncStudio(toolsApi);aiWorkbench=setupAiWorkbench(toolsApi);toolRouter=createToolRouter(toolsApi);toolNavigation=setupToolNavigation(toolsApi);studioLayout=setupStudioLayout(toolsApi);
@@ -756,7 +763,7 @@ youtubeSettingsShortcut.addEventListener('click',()=>{if(exportController||impor
 document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();event.stopPropagation();if(!manualSaveBusy)saveCurrentProject().catch(report);}},{capture:true});
 const shortcuts=el('p','keyboard-help','단축키: Ctrl/Cmd+S 프로젝트 저장 · Space 재생 · Ctrl/Cmd+Z 되돌리기 · Ctrl/Cmd+Shift+Z 다시 실행 · Ctrl/Cmd+D 장면 복제 · Ctrl/Cmd+A 전체 선택 · Ctrl/Cmd+C/V 장면 설정 복사/붙이기 · Delete 선택 장면 삭제 · ←/→ 0.1초 이동 (Shift: 1초) · PageUp/Down 이전/다음 장면. 입력칸에서는 일반 글 편집이 우선이에요.');
 $('helpDialog').querySelector('.dialog-body').append(shortcuts);
-boot().catch(report);
+initializeDesktopBridge(toolsApi).then(controller=>{desktopBridge=controller;return boot();}).catch(report);
 
 async function addImages(fileList,options={}){if(importing||exportController||productionRunBusy||sceneReplacementBusy)return;return trackEditorTask('이미지를 불러오고 있어요.',()=>addImagesWork(fileList,options),'이미지를 불러왔어요.');}
 
