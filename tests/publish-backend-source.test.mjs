@@ -127,6 +127,51 @@ test('source collection refuses symlinks in selected files, directory ancestors 
   await assert.rejects(collectBackendSource(link), {code: 'SYMLINK_SOURCE'});
 });
 
+test('optional desktop handoff retains native entry points and exact icons without collecting desktop user data', async t => {
+  const {directory} = await sourceTree(t), before = await collectBackendSource(directory);
+  const native = {
+    'desktop/main.cjs': "require('./vault.cjs');\n",
+    'desktop/preload.cjs': "require('electron');\n",
+    'desktop/files.cjs': 'exports.files = true;\n',
+    'desktop/protocol.cjs': 'exports.protocol = true;\n',
+    'desktop/vault.cjs': 'exports.vault = true;\n',
+    'desktop/network.cjs': 'exports.network = true;\n',
+    'desktop/oauth.cjs': 'exports.oauth = true;\n',
+    'desktop/assets/icon.png': Buffer.from([137, 80, 78, 71, 255, 0]),
+    'desktop/assets/icon.ico': Buffer.from([0, 0, 1, 0, 255]),
+    'desktop/assets/icon.svg': '<svg xmlns="http://www.w3.org/2000/svg"/>\n',
+    'electron-builder.config.cjs': 'module.exports = {asar:true};\n',
+    'docs/DESKTOP.md': '# 데스크톱 설치·빌드 안내\n',
+  };
+  const omitted = {'desktop/other.cjs': 'unselected native code', 'desktop/credentials.json': 'not-public',
+    'desktop/user-data/settings.json': 'not-public', 'desktop/project.bth.json': 'not-public',
+    'desktop/assets/user-image.png': 'not-public', 'desktop/private-key.pem': 'not-public',
+    'desktop/fixtures/upload.png': 'not-public', 'electron-builder.local.cjs': 'not-public',
+    'docs/desktop-user-notes.md': 'not-public'};
+  for (const [path, content] of Object.entries({...native, ...omitted})) {await mkdir(join(directory, path, '..'), {recursive:true});await writeFile(join(directory, path), content);}
+  const release = await collectBackendSource(directory), selected = new Map(release.files.map(file => [file.path, bytesOf(file)]));
+  for (const [path, bytes] of Object.entries(native)) assert.deepEqual(selected.get(path), Buffer.from(bytes), `${path} retains its exact public source bytes`);
+  for (const path of Object.keys(omitted)) assert.equal(selected.has(path), false, `${path} must remain private and unselected`);
+  assert.equal(release.fileCount, before.fileCount + Object.keys(native).length);
+  assert.equal(JSON.stringify(release).includes(Buffer.from('not-public').toString('base64')), false);
+  assert.deepEqual(await collectBackendSource(directory), release);
+  const mock = github(release);assert.equal((await publishBackendSource(release, mock)).status, 'published', 'selected native source also passes publisher revalidation');
+});
+
+test('optional native source retains symlink and size protections for files and parent directories', async t => {
+  const {directory} = await sourceTree(t);
+  await mkdir(join(directory, 'desktop'), {recursive:true});
+  await symlink(join(directory, 'package.json'), join(directory, 'desktop/main.cjs'));
+  await assert.rejects(collectBackendSource(directory), {code:'SYMLINK_SOURCE'});
+  await rm(join(directory, 'desktop/main.cjs'));
+  await mkdir(join(directory, 'icons'));await writeFile(join(directory, 'icons/icon.png'), 'icon');
+  await symlink(join(directory, 'icons'), join(directory, 'desktop/assets'));
+  await assert.rejects(collectBackendSource(directory), {code:'SYMLINK_SOURCE'});
+  await rm(join(directory, 'desktop/assets'));
+  await writeFile(join(directory, 'desktop/vault.cjs'), Buffer.alloc(MAX_BACKEND_FILE_BYTES + 1));
+  await assert.rejects(collectBackendSource(directory), {code:'SOURCE_TOO_LARGE'});
+});
+
 test('source collection refuses secret-like or user-data paths within selected source and enforces file limits', async t => {
   const {directory} = await sourceTree(t);
   for (const path of ['dist/.env', 'dist/vendor/private-key.json', 'dist/backups/project.json', 'dist/project.bth.json', 'scripts/credentials.mjs', 'dist/movie.mp4']) {
@@ -179,7 +224,8 @@ test('publisher refuses private/wrong repositories and unowned branches before w
 test('publisher revalidates caller paths, fixed target, revision and marker before network calls', async t => {
   const {directory} = await sourceTree(t), release = await collectBackendSource(directory);
   const additions = ['../.env', '/etc/passwd', 'dist/../.env', 'dist\\private.json', 'dist/\nwrong.js', 'uploads/user.png', 'scripts/secret.mjs', 'dist/.env', 'dist/main.js',
-    'tests/private-fixture.mjs', 'tests/nested/other.test.mjs', 'tests/fixtures/private.pdf', 'tests/fixtures/reference-test-2.docx', 'tests/secret.test.mjs'];
+    'tests/private-fixture.mjs', 'tests/nested/other.test.mjs', 'tests/fixtures/private.pdf', 'tests/fixtures/reference-test-2.docx', 'tests/secret.test.mjs',
+    'desktop/other.cjs', 'desktop/credentials.json', 'desktop/user-data/settings.json', 'desktop/assets/user-image.png', 'electron-builder.local.cjs', 'docs/desktop-user-notes.md'];
   for (const path of additions) {
     let calls = 0;
     await assert.rejects(publishBackendSource({...release, files: [...release.files, {path, encoding: 'base64', content: 'eA=='}]}, {request: async () => {calls++;}}));

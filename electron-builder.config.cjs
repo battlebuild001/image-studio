@@ -1,0 +1,70 @@
+const path = require('node:path');
+
+/** Only application code is distributed. User projects and credentials live in userData. */
+module.exports = {
+  appId: 'com.contentstudio.editor',
+  productName: 'Content Studio',
+  executableName: 'ContentStudio',
+  copyright: 'Content Studio',
+  asar: true,
+  npmRebuild: false,
+  nodeGypRebuild: false,
+  buildDependenciesFromSource: false,
+  forceCodeSigning: false,
+  extraMetadata: {
+    main: 'desktop/main.cjs',
+    description: 'Korean desktop video production studio',
+    dependencies: {},
+  },
+  directories: {
+    output: path.join(__dirname, '.desktop-build'),
+    buildResources: path.join(__dirname, 'desktop', 'assets'),
+  },
+  files: [
+    'dist/**/*',
+    'desktop/**/*.cjs',
+    'desktop/assets/icon.png',
+    'desktop/assets/icon.ico',
+    'package.json',
+    '!node_modules/**/*',
+    '!desktop/**/*.test.*',
+    '!desktop/**/fixtures/**/*',
+    '!desktop/**/test-results/**/*',
+    '!**/*.map',
+  ],
+  win: {
+    target: [{target: 'nsis', arch: ['x64']}, {target: 'portable', arch: ['x64']}, {target: 'zip', arch: ['x64']}],
+    icon: 'desktop/assets/icon.ico',
+    artifactName: 'Content-Studio-${version}-Windows-${arch}.${ext}',
+    // No certificate is supplied. Skip optional Windows executable resource editing.
+    signAndEditExecutable: false,
+    verifyUpdateCodeSignature: false,
+  },
+  nsis: {
+    artifactName: 'Content-Studio-Setup-${version}-${arch}.exe',
+    oneClick: false,
+    perMachine: false,
+    allowElevation: false,
+    allowToChangeInstallationDirectory: true,
+    createDesktopShortcut: true,
+    createStartMenuShortcut: true,
+    shortcutName: 'Content Studio',
+    deleteAppDataOnUninstall: false,
+    runAfterFinish: true,
+    installerLanguages: ['ko_KR', 'en_US'],
+    displayLanguageSelector: false,
+    language: '1042',
+    installerIcon: 'desktop/assets/icon.ico',
+    uninstallerIcon: 'desktop/assets/icon.ico',
+  },
+  portable: {
+    artifactName: 'Content-Studio-${version}-Windows-${arch}-Portable.exe',
+    requestExecutionLevel: 'user',
+  },
+  linux: {
+    target: ['dir'],
+    icon: 'desktop/assets/icon.png',
+    category: 'AudioVideo',
+    artifactName: 'Content-Studio-${version}-Linux-${arch}.${ext}',
+  },
+};

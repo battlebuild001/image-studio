@@ -15,6 +15,13 @@ export const MAX_BACKEND_BYTES = 25 * 1024 * 1024;
 export const MAX_BACKEND_FILE_BYTES = 8 * 1024 * 1024;
 const ROOT_FILES = ['package.json', 'package-lock.json', 'render.yaml', 'docs/AI_SERVER_DEPLOY.md',
   'README.md', 'AGENTS.md', '.gitignore', '.openai/hosting.json'];
+// Older web-only trees remain valid. When desktop source is present, retain
+// exactly the native entry points needed by package.json and the shared tests;
+// never walk a desktop directory that could also contain local user data.
+const OPTIONAL_DESKTOP_SOURCE = new Set(['desktop/main.cjs', 'desktop/preload.cjs', 'desktop/files.cjs',
+  'desktop/protocol.cjs', 'desktop/vault.cjs', 'desktop/network.cjs', 'desktop/oauth.cjs',
+  'desktop/assets/icon.png', 'desktop/assets/icon.ico', 'desktop/assets/icon.svg',
+  'electron-builder.config.cjs', 'docs/DESKTOP.md']);
 const TEST_FIXTURES = new Set(['tests/fixtures/reference-test.txt', 'tests/fixtures/reference-test.pdf', 'tests/fixtures/reference-test.docx']);
 const TEST_SOURCE = /^tests\/[^/]+\.(?:test\.mjs|browser\.cjs)$/;
 const REQUIRED = [...ROOT_FILES, 'dist/index.html', 'dist/main.js', 'scripts/serve.mjs'];
@@ -33,7 +40,7 @@ function validPath(path) {
       /[\\\u0000-\u001f\u007f]/u.test(path) || path.split('/').some(part => !part || part === '.' || part === '..')) {
     fail('INVALID_SOURCE_PATH', '서버 소스 파일의 경로가 올바르지 않습니다.');
   }
-  if (ROOT_FILES.includes(path) || path === BACKEND_MARKER) return;
+  if (ROOT_FILES.includes(path) || OPTIONAL_DESKTOP_SOURCE.has(path) || path === BACKEND_MARKER) return;
   const parts = path.split('/');
   if (!['dist', 'scripts', 'tests'].includes(parts[0]) || parts.length < 2 || parts.some(part =>
     part.startsWith('.') || /^(?:node_modules|uploads?|exports?|backups?|user[-_]?data)$/i.test(part) ||
@@ -147,6 +154,9 @@ export async function collectBackendSource(directory = ROOT) {
     }
   }
   for (const path of ROOT_FILES) await add(path, await inspect(path));
+  for (const path of OPTIONAL_DESKTOP_SOURCE) {
+    const stat = await inspect(path, true);if (stat) await add(path, stat);
+  }
   await walk('dist');await walk('scripts');
   const tests = await inspect('tests', true);
   if (tests) {
