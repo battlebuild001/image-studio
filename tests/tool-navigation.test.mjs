@@ -20,7 +20,7 @@ test('search normalizes Korean whitespace, English case and fullwidth characters
  assert.equal(searchToolCatalog('  자막   문구 시간  ')[0].id,'captions-edit');assert.equal(normalizeToolQuery(null),'');assert.equal(normalizeToolQuery({}), '');
 });
 test('aliases search across categories and prioritize the actual named task',()=>{
- assert.deepEqual(searchToolCatalog('예약 업로드','script').map(value=>value.id),['upload-video','series']);
+ assert.deepEqual(searchToolCatalog('예약 업로드','script').map(value=>value.id),['upload-video','series','bulk-video']);
  assert.equal(searchToolCatalog('원본 대본 비교')[0].id,'fidelity');assert.equal(searchToolCatalog('음성 분석')[0].id,'transcript');assert.equal(searchToolCatalog('API KEY')[0].id,'api-settings');
  assert.ok(searchToolCatalog('목소리').some(value=>value.id==='voice-generation'));assert.equal(searchToolCatalog('어둡게')[0].categoryId,'visual');
  assert.deepEqual(searchToolCatalog('zzzz도구없음999'),[]);assert.deepEqual(searchToolCatalog('...'),[]);

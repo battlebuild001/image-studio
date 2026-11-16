@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createProject,createScene} from '../dist/project.js';
-import {prepareBulkUpload,runBulkUpload,validateBulkUploadChannel,resolveBulkUploadConfirmation} from '../dist/bulk-video-upload.js';
+import {prepareBulkUpload,runBulkUpload,validateBulkUploadChannel,resolveBulkUploadConfirmation,runBulkThumbnail} from '../dist/bulk-video-upload.js';
 
 const channelId='UC'+'a'.repeat(22),otherChannel='UC'+'b'.repeat(22),videoId='video000001';
 const stamp='2026-11-16T10:00:00.000Z';
@@ -82,4 +82,27 @@ test('manual recovery records only user confirmation and never fabricates an API
   assert.equal(result.uploadedAt,undefined);assert.equal(result.bytes,undefined);assert.equal(result.scheduleConfirmed,undefined);
   for(const value of ['https://other.example/watch?v='+videoId,'bad','https://www.youtube.com.evil.example/watch?v='+videoId])assert.throws(()=>resolveBulkUploadConfirmation({videoId:value,channelId,session:client().state}));
   assert.throws(()=>resolveBulkUploadConfirmation({videoId,channelId,session:{connected:true,channelId:otherChannel}}),/같은/u);
+});
+
+
+test('the reviewed thumbnail is snapshotted and counted separately from video uploads',()=>{
+  const c=client(),source=project(),blob=new Blob(['synthetic-thumbnail'],{type:'image/png'});
+  const work=prepareBulkUpload({project:source,publishAt:publishAt(),client:c,thumbnail:{blob,name:'선택한 썸네일.png',width:1280,height:720}});
+  assert.equal(work.uploadCalls,1);assert.equal(work.thumbnailCalls,1);assert.equal(work.thumbnail.blob,blob);
+  assert.equal(work.thumbnail.name,'선택한 썸네일.png');assert.equal(Object.isFrozen(work.thumbnail),true);
+  assert.equal(prepareBulkUpload({project:source,publishAt:publishAt(),client:c}).thumbnailCalls,0);
+  assert.throws(()=>prepareBulkUpload({project:source,publishAt:publishAt(),client:c,thumbnail:{blob:new Blob(['not-image'],{type:'video/mp4'}),name:'bad.png'}}),/PNG/u);
+  assert.equal(c.events.length,0);
+});
+
+test('a thumbnail failure keeps the canonical video receipt and explicit retry changes only the same video image',async()=>{
+  const c=client(),source=project(),file=video(),work=prepareBulkUpload({project:source,publishAt:publishAt(),client:c});
+  const known=receipt({blob:file.blob,metadata:work.metadata,fileName:'ready.mp4'}),thumbnail={blob:new Blob(['synthetic-png'],{type:'image/png'}),name:'선택한 썸네일.png'};
+  let attempts=0;c.setThumbnail=async value=>{attempts++;assert.equal(value.videoId,known.videoId);assert.equal(value.channelId,known.channelId);assert.equal(value.blob,thumbnail.blob);if(attempts===1)throw Error('합성 썸네일 전송 실패');return{videoId:known.videoId,uploaded:true};};
+  await assert.rejects(runBulkThumbnail({receipt:known,thumbnail,client:c,validateThumbnail:async value=>value}),cause=>cause.bulkThumbnailOnly===true&&cause.receipt.videoId===known.videoId);
+  const result=await runBulkThumbnail({receipt:known,thumbnail,client:c,validateThumbnail:async value=>value});
+  assert.deepEqual(result,{status:'completed',videoId:known.videoId,bytes:thumbnail.blob.size});assert.equal(attempts,2);assert.equal(c.events.length,0);
+  c.state.channelId=otherChannel;
+  await assert.rejects(runBulkThumbnail({receipt:known,thumbnail,client:c,validateThumbnail:async value=>value}),cause=>cause.bulkThumbnailOnly===true);
+  assert.equal(attempts,2);
 });

@@ -546,35 +546,44 @@ regressions and test:dual-scripts-browser for visible subtitle/voice separation.
 ## Bulk video queue
 
 `bulk-video-studio.js/.css`, `bulk-video-projects.js`, `bulk-video-engine.js`,
-`bulk-video-voice.js`, `bulk-video-upload.js` and `bulk-video-store.js` own the
-explicit <=20-job complete workflow: whole spoken script synthesis, measured PCM
-retiming, image planning/generation, native export and scheduled YouTube upload.
-The user explicitly requested one execution for every stage with common voice/
-upload settings and only per-video publication times edited; do not reduce this
-to silent generation or require opening each project's tools. Preserve all text,
-references/global instructions/BGM/credits, original projects, manual cue texts,
-independent budgets and actual Blobs. Voice and scheduled upload default on.
-One reviewed acknowledgment authorizes concrete voice requests/provider chunks,
-image/planning counts, channel, metadata and schedules; never generate or upload
-on navigation/typing/prepare. Opening may GET actual voice configuration/catalog.
-Reuse existing narration or matching stored samples; new measured audio retimes
-the reviewed scene count, preserves displayed/spoken text and labels cues as
-estimated unless actual recognition exists. Save the paid voice sample before
-applying timing, every image before another call, video before upload, and actual
-receipts before proceeding. Preserve completed assets on failure/cancel/settings
-change. Schedule-only edits reuse completed media and invalidate review only.
-Use browser Web Locks and durable source checks to prevent duplicate work in
-another tab. No reload autorun, hidden paid retries or uncertain-upload reposts.
-Known receipts survive late cancellation/save failures; absent schedule echo is
-upload complete / schedule needs-check, never a confirmed scheduled success.
-Manual observations remain separate from API receipts. Recheck channel/schedule
-before dispatch and block pending unrelated YouTube transfers. Use existing OAuth
-and public-key configuration; never persist keys/tokens/session URLs in jobs.
-Restore the active budget bridge after each isolated run. Keep this tab visible,
-serialize native exports and release decoded media. Run npm test and both
-`test:bulk-video-full-browser`/`test:bulk-video-browser`: actual images, WAV voice,
-BGM, captions, MP4, ffprobe/playback, schedule edits/cache, receipts/reload/mobile.
-Synthetic provider/Google replies do not verify live quality, billing or posting.
+`bulk-video-voice.js`, `bulk-video-packaging.js`, `bulk-video-upload.js` and
+`bulk-video-store.js` own <=20 independent jobs. The latest user explicitly wants
+actual playback inspection BEFORE any upload and bulk thumbnails/descriptions.
+Default mode produce runs whole-script voice, measured PCM retiming, image
+planning/generation and native export, then STOPS without any Google upload.
+A separate mode upload uses cached videos only, requires every pending video's
+explicit SHA-256-bound playback marker and selected actual thumbnail, then shows
+final exact metadata/channel/schedule before one upload acknowledgment. Never
+combine upload into production again, even when the upload preference is enabled.
+Inline native controls must play the actual completed Blob, no autoplay; enable
+user review only after real playback progresses. Preserve video element/URL and
+currentTime during title/description/schedule edits, revoke URLs on remove/close.
+Editing metadata/thumb/schedule invalidates upload review but not video playback
+marker. Replacing bytes invalidates the marker. Persist review across reload.
+Bulk packaging all uses one publishing text request per job then local Canvas
+PNG from actual scene pixels; description-only preserves siblings; thumbnail-only
+uses current title locally with zero paid requests. Explicitly review exact calls
+and costs before paid generation. Keep selected tags/footer ownership and actual
+thumbnail bytes; allow per-job manual title/description/file changes and save to
+queue/library. Never regenerate video for packaging edits. Store actual upload
+receipt BEFORE applying selected thumbnail to the same videoId; thumbnail failure
+keeps receipt and retries only thumbnail, never reposts the video.
+Preserve complete script, references/global instructions/BGM/credits, original
+projects, manual cue texts and independent budgets. Existing narration or matching
+paid sample is reused; new audio retimes reviewed scene count, cues stay honestly
+estimated without actual ASR. Save every paid result before the next call. Opening
+may GET actual voice config/catalog but navigation/add/prepare never generates or
+uploads. Web Locks and durable source checks prevent cross-tab duplicate work.
+No reload autorun or uncertain-upload reposts. Known receipts survive late cancel/
+save failures; absent schedule echo stays upload complete/schedule needs-check.
+Manual observations stay separate from API receipts. Recheck channel/schedule,
+block unrelated paused transfers, use existing OAuth/API settings and never persist
+keys/tokens/session URLs in jobs. Restore active budget bridge after isolated work.
+Keep tab visible, serialize native exports and release decoded assets. Run npm test,
+`test:bulk-video-full-browser` and `test:bulk-video-browser`: real image/WAV/BGM/
+caption/MP4 pixels+audio, actual inline playback before upload, bulk packaging,
+manual edits, exact thumbnail bytes, cache/reload/retry and mobile controls.
+Synthetic responses do not verify live AI quality, billing or actual posting.
 
 ## Architecture
 
