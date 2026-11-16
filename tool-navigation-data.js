@@ -9,6 +9,7 @@ export const TOOL_CATEGORIES = Object.freeze([
 ].map(Object.freeze));
 
 const entries = [
+  ['bulk-video', 'delivery', '영상 대량 제작', '여러 프로젝트·대본을 대기열에 넣어 이미지와 영상 파일을 순서대로 만들어요.', ['대량 생성', '일괄 제작', '일괄 내보내기', '영상 여러 개', 'batch', 'queue']],
   ['production-run', 'review', '한 번에 제작', '자막 싱크·전체 이미지·AI 검수를 한 화면에서 준비하고 실행해요.', ['자동 제작', '일괄 실행', '한번에', '워크플로', 'pipeline', 'workflow', '자동화']],
   ['scene-image-replace', 'visual', '특정 장면 이미지 교체', '원하는 장면만 새 파일이나 AI 이미지로 바꾸고 전후를 비교해요.', ['이미지 교체', '다시 생성', '한 컷', '선택 장면', 'regenerate', 'replace'], 'scenes'],
   ['script-draft', 'script', '대본 작성', '주제나 참고 자료로 대본을 작성하고 직접 수정해요.', ['글쓰기', '시나리오', '스크립트', 'script', 'gpt', 'ai']],
