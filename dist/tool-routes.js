@@ -1,6 +1,6 @@
 /** Explicit navigation only. No route performs generation, analysis or an upload. */
 export const TOOL_ROUTE_IDS = Object.freeze([
-  'production-run','scene-image-replace','script-draft','topic-research','source-files','reference-images','speech-texts','pronunciation',
+  'bulk-video','production-run','scene-image-replace','script-draft','topic-research','source-files','reference-images','speech-texts','pronunciation',
   'voice-generation','voice-samples','audio-files','music','captions-edit','transcript','sync',
   'scene-timing','images-batch','image-reference','scene-layout','scene-effects','title-cards','diagrams',
   'quality','fidelity','chat-edit','partial-regenerate','image-review','version-history',
@@ -57,6 +57,7 @@ export function createToolRouter(api, doc = document) {
     // Normal dialog close events cancel obsolete work; dirty fields have been flushed.
     for (const dialog of doc.querySelectorAll('dialog[open]')) if (dialog.id !== 'toolNavigationDialog') dialog.close();
     switch (id) {
+      case 'bulk-video': await api.openBulkVideoStudio();break;
       case 'script-draft': openScript();break;
       case 'topic-research': openScript('#researchTopic');break;
       case 'source-files': openScript('#chooseResearchFilesBtn');break;

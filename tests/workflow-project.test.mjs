@@ -29,3 +29,15 @@ test('caption text, effects and fixed title cards survive preparation and the po
  const result=prepareWorkflowTimeline(project,new Map(),{sync:'none',images:true,intervalSeconds:10});assert.deepEqual(getCaptions(result.project),getCaptions(project));assert.deepEqual(result.project.scenes,project.scenes);
  const backup=await exportProjectBackup(result.project,new Map()),restored=await importProjectBackup(await backup.text());assert.deepEqual(restored.project,result.project);
 });
+
+
+test('reconfirming stale timing keeps user whole-image instructions and common concept',()=>{
+ const project=fixture({scenes:[createScene({caption:'원래 대본',duration:5})],scriptDraft:{draftScript:'원래 대본'}});
+ const prepared=prepareWorkflowTimeline(project,new Map(),{sync:'none',images:true}).project;
+ prepared.scenePlan.visualBrief='일관된 청록색 조명';prepared.scenePlan.imageInstructions='모든 장면을 넓은 구도로 만들어 주세요.';
+ prepared.scenes[0].duration=6;
+ const next=prepareWorkflowTimeline(prepared,new Map(),{sync:'none',images:true}).project;
+ assert.equal(next.scenePlan.imageInstructions,prepared.scenePlan.imageInstructions);
+ assert.equal(next.scenePlan.visualBrief,prepared.scenePlan.visualBrief);
+ assert.equal(getScenePlanStatus(next).valid,true);
+});

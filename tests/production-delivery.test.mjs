@@ -111,3 +111,13 @@ test('UTF-8 delivery ZIP contains exact local file bytes, valid CRCs and no path
 test('delivery source guards ignore budget/version bookkeeping but notice genuine scene or speech changes',()=>{
   const project=source(),key=deliverySourceKey(project);project.production.budget={spentUsd:3};project.production.versions=[];assert.equal(deliverySourceKey(project),key);project.scenes[0].caption+=' 바뀐 내용';assert.notEqual(deliverySourceKey(project),key);
 });
+
+
+test('video ZIP supports an explicit bounded size while rejecting oversized blobs before reading them',async()=>{
+ const blob=new Blob(['12345'],{type:'video/mp4'});
+ blob.arrayBuffer=()=>assert.fail('Oversized video should not be read into memory');
+ await assert.rejects(createDeliveryZip([{name:'one.mp4',data:blob}],{maxBytes:4}),/용량 제한/u);
+ const zip=await createDeliveryZip([{name:'one.mp4',data:new Blob(['12345'])}],{maxBytes:5});
+ assert.ok(zip.size>5);
+ await assert.rejects(createDeliveryZip([{name:'one.mp4',data:'1'}],{maxBytes:2**32}),/용량 제한/u);
+});

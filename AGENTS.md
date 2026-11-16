@@ -543,6 +543,23 @@ exports sequential and distinguish mocked feature checks from live speech qualit
 Use test:voice-durable-browser for actual persisted sample/pause/preferences
 regressions and test:dual-scripts-browser for visible subtitle/voice separation.
 
+## Bulk video queue
+
+`bulk-video-studio.js/.css`, `bulk-video-projects.js`, `bulk-video-engine.js` and
+`bulk-video-store.js` own an explicit <=20-job queue, independent project copies,
+script-to-timing snapshots, sequential missing-image production and native export.
+Preserve original projects, per-job references/global instructions/audio/captions
+and separate budgets. One reviewed acknowledgment authorizes the displayed total
+image/planning calls; persist every image before another paid call. Stop on any
+failure/cancel/settings change; no hidden retry or reload autorun. Store partial
+projects and completed video Blobs locally; completed jobs are skipped on resume.
+Opening, adding and preparing are local-only. Restore the active budget bridge
+after isolated paid work. Script-only entries explicitly have no generated voice.
+Use real supported MP4/WebM export; keep this tab visible, serialize exports and
+release decoded media between jobs. Test `test:bulk-video-browser` with actual
+images/narration/BGM/captions, ffprobe/playback, independent projects and reload.
+Synthetic provider replies do not verify live AI quality or billing.
+
 ## Architecture
 
 - `dist/index.html` and `dist/style.css`: editor UI.

@@ -70,12 +70,14 @@ export function canvasBlob(canvas) {return new Promise((resolve,reject)=>canvas.
 const CRC_TABLE=Uint32Array.from({length:256},(_,n)=>{let value=n;for(let bit=0;bit<8;bit++)value=(value&1)?0xedb88320^(value>>>1):value>>>1;return value>>>0;});
 export function crc32(bytes) {let value=0xffffffff;for(const byte of bytes)value=CRC_TABLE[(value^byte)&255]^(value>>>8);return(value^0xffffffff)>>>0;}
 /** Small standards-compliant UTF-8, stored ZIP; no external service sees the media. */
-export async function createDeliveryZip(entries, {signal} = {}) {
+export async function createDeliveryZip(entries, {signal, maxBytes = 50 * 1024 * 1024} = {}) {
   if(!Array.isArray(entries)||!entries.length||entries.length>100)throw new Error('묶을 제작 자료를 확인해 주세요.');
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 1024 * 1024 * 1024) throw new Error('자료 묶음의 용량 제한을 확인해 주세요.');
   const chunks=[],central=[],names=new Set();let offset=0,total=0;
   for(const entry of entries){if(signal?.aborted)throw new DOMException('자료 묶음 생성을 취소했어요.','AbortError');
     const name=String(entry.name || '');if(!name||name.length>180||/[\\\u0000-\u001f]/u.test(name)||name.startsWith('/')||name.split('/').some(part=>!part||part==='.'||part==='..')||names.has(name))throw new Error('자료 묶음의 파일 이름을 확인해 주세요.');names.add(name);
-    const bytes=entry.data instanceof Blob?new Uint8Array(await entry.data.arrayBuffer()):entry.data instanceof Uint8Array?entry.data:new TextEncoder().encode(String(entry.data));total+=bytes.length;if(total>50*1024*1024)throw new Error('게시 자료 묶음은 50MB 이하로 만들어 주세요.');
+    if (entry.data instanceof Blob && total + entry.data.size > maxBytes) throw new Error('ZIP 용량 제한을 넘었어요. 완료한 파일을 개별 저장해 주세요.');
+    const bytes=entry.data instanceof Blob?new Uint8Array(await entry.data.arrayBuffer()):entry.data instanceof Uint8Array?entry.data:new TextEncoder().encode(String(entry.data));total+=bytes.length;if(total>maxBytes)throw new Error('ZIP 용량 제한을 넘었어요. 완료한 파일을 개별 저장해 주세요.');
     const filename=new TextEncoder().encode(name),crc=crc32(bytes),header=new Uint8Array(30+filename.length),view=new DataView(header.buffer);
     view.setUint32(0,0x04034b50,true);view.setUint16(4,20,true);view.setUint16(6,0x0800,true);view.setUint16(12,33,true);view.setUint32(14,crc,true);view.setUint32(18,bytes.length,true);view.setUint32(22,bytes.length,true);view.setUint16(26,filename.length,true);header.set(filename,30);chunks.push(header,bytes);
     const item=new Uint8Array(46+filename.length),cv=new DataView(item.buffer);cv.setUint32(0,0x02014b50,true);cv.setUint16(4,20,true);cv.setUint16(6,20,true);cv.setUint16(8,0x0800,true);cv.setUint16(14,33,true);cv.setUint32(16,crc,true);cv.setUint32(20,bytes.length,true);cv.setUint32(24,bytes.length,true);cv.setUint16(28,filename.length,true);cv.setUint32(42,offset,true);item.set(filename,46);central.push(item);offset+=header.length+bytes.length;

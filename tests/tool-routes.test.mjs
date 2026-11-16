@@ -5,14 +5,14 @@ import {TOOL_CATALOG} from '../dist/tool-navigation-data.js';
 import {TOOL_ROUTE_IDS,createToolRouter,getToolRouteAvailability} from '../dist/tool-routes.js';
 
 test('each discoverable feature has exactly one explicitly allowlisted navigation route',()=>{
- assert.equal(new Set(TOOL_ROUTE_IDS).size,40);assert.deepEqual(TOOL_ROUTE_IDS.slice().sort(),TOOL_CATALOG.map(tool=>tool.routeId).sort());
+ assert.equal(new Set(TOOL_ROUTE_IDS).size,41);assert.deepEqual(TOOL_ROUTE_IDS.slice().sort(),TOOL_CATALOG.map(tool=>tool.routeId).sort());
  for(const id of ['generateScriptBtn','uploadYouTubeBtn','runUploadSeriesBtn','generateVoiceBtn','__proto__','https://api.openai.com'])assert.equal(TOOL_ROUTE_IDS.includes(id),false);
 });
 function harness(project=createProject()){
  const calls=[],doc={querySelectorAll:()=>[],querySelector:()=>null,getElementById:id=>({disabled:false,click:()=>calls.push(['click',id])})};
  const api={getProject:()=>project,getAssets:()=>new Map(),getSelectedId:()=>project.scenes[0]?.id,canMutate:()=>true,flushProjectEditors:()=>calls.push(['flush']),pause:()=>calls.push(['pause']),toast:()=>{},
   openAudioTools:()=>calls.push(['audio']),openTimingPlan:()=>calls.push(['timing']),openSceneImageBatch:()=>calls.push(['batch-review']),hasConfirmedScenePlan:()=>false,
-  openProductionRunStudio:()=>calls.push(['production-run-review']),openSceneImageReplace:()=>calls.push(['scene-replace-review']),openProductionSection:id=>calls.push(['production',id]),openAiAssistant:id=>calls.push(['assistant',id]),openApiSettings:()=>calls.push(['api']),
+  openBulkVideoStudio:()=>calls.push(['bulk-video-review']),openProductionRunStudio:()=>calls.push(['production-run-review']),openSceneImageReplace:()=>calls.push(['scene-replace-review']),openProductionSection:id=>calls.push(['production',id]),openAiAssistant:id=>calls.push(['assistant',id]),openApiSettings:()=>calls.push(['api']),
   generate:()=>assert.fail('Navigation must never generate'),upload:()=>assert.fail('Navigation must never upload')};
  return{calls,api,router:createToolRouter(api,doc)};
 }
@@ -40,6 +40,7 @@ test('readiness hints distinguish missing scenes, selected frames and confirmed 
 
 test('combined production and one-scene replacement routes only open reviewed screens',async()=>{
  const project=createProject({scenes:[createScene({id:'selected',imageId:'original',caption:'이미지와 자막 보존'})]}),before=structuredClone(project),h=harness(project);
+ await h.router.open('bulk-video');assert.equal(h.calls.filter(call=>call[0]==='bulk-video-review').length,1);
  await h.router.open('production-run');assert.equal(h.calls.filter(call=>call[0]==='production-run-review').length,1);
  await h.router.open('scene-image-replace');assert.equal(h.calls.filter(call=>call[0]==='scene-replace-review').length,1);
  assert.equal(h.calls.some(call=>call[0]==='click'),false);assert.deepEqual(project,before);

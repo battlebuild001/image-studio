@@ -5,7 +5,7 @@ import {TOOL_CATEGORIES,TOOL_CATALOG,normalizeToolQuery,getToolCategory,searchTo
 const tool = id => TOOL_CATALOG.find(value => value.id === id);
 test('all tools have one unique route and exactly six meaningful task categories',()=>{
  assert.deepEqual(TOOL_CATEGORIES.map(value=>[value.id,value.title]),[['script','자료·대본'],['audio','음성·자막'],['visual','이미지·장면'],['review','편집·검수'],['delivery','게시·업로드'],['project','프로젝트·연결']]);
- assert.equal(TOOL_CATALOG.length,40);assert.equal(new Set(TOOL_CATALOG.map(value=>value.id)).size,40);
+ assert.equal(TOOL_CATALOG.length,41);assert.equal(new Set(TOOL_CATALOG.map(value=>value.id)).size,41);
  for(const value of TOOL_CATALOG){assert.equal(value.id,value.routeId);assert.ok(TOOL_CATEGORIES.some(category=>category.id===value.categoryId));assert.ok(value.title&&value.description&&value.keywords.length);assert.equal(Object.isFrozen(value),true);assert.equal(Object.isFrozen(value.keywords),true);}
  assert.equal(Object.isFrozen(TOOL_CATALOG),true);assert.equal(Object.isFrozen(TOOL_CATEGORIES),true);
 });
