@@ -96,3 +96,22 @@ test('invalid persisted visual metadata cannot partly replace the current projec
   assert.throws(() => validateProject({...current, scenePlan: {...current.scenePlan, visualBrief: '가'.repeat(6001)}}));
   assert.deepEqual(current, before);
 });
+
+test('whole-image instructions persist, reach planning and every shot, and invalidate a prior composition', async () => {
+  const {buildTimedImagePrompt} = await import('../dist/scene-image-batch.js');
+  const value = project(), instructions = '인물의 의상을 유지하고 넓은 구도로 제작하세요.';
+  const oldKey = storyboardContextKey(value);
+  value.imageStudio.references = [];
+  value.scenePlan.imageInstructions = instructions;
+  const restored = await importProjectBackup(await exportProjectBackup(validateProject(value), new Map()));
+  assert.equal(restored.project.scenePlan.imageInstructions, instructions);
+  const data = storyboardInputForProject(value);
+  assert.equal(JSON.parse(buildStoryboardRequest(data).input[0].content[0].text).instructions, instructions);
+  assert.notEqual(storyboardContextKey(value), oldKey);
+  for (const [index, item] of value.scenePlan.items.entries()) {
+    assert.ok(buildTimedImagePrompt({...item, ordinal: index + 1}, {instructions, allItems: value.scenePlan.items}).includes(instructions));
+  }
+  assert.throws(() => validateStoryboardRequest({...input(), instructions: '가'.repeat(6001)}));
+  assert.throws(() => validateStoryboardRequest({...input(), instructions: 42}));
+  assert.throws(() => validateProject({...value, scenePlan: {...value.scenePlan, imageInstructions: '가'.repeat(6001)}}));
+});

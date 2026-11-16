@@ -325,6 +325,7 @@ function validateScenePlan(input) {
       prompt: requiredText(item.prompt, 6000, '장면 이미지 생성 요청')};
   });
   if (Math.abs(previousEnd - durationSeconds) > 0.001) fail('마지막 장면의 종료 시각이 계획한 전체 길이와 다릅니다.');
+  const imageInstructions = scriptText(input.imageInstructions, '', 6000, '전체 이미지 생성 지시');
   const visualBrief = scriptText(input.visualBrief, '', 6000, '영상 전체 콘셉트');
   let visualPlan;
   if (input.visualPlan !== undefined && input.visualPlan !== null) {
@@ -341,6 +342,7 @@ function validateScenePlan(input) {
     confirmedAt: confirmed.toISOString(), sourceScript: requiredText(input.sourceScript, 100000, '장면 계획 원본 대본'),
     narrationKey: requiredText(input.narrationKey, 1000, '장면 계획 내레이션 정보'), items,
     // Keep older schema-one timing plans byte-shape compatible until configured.
+    ...(input.imageInstructions === undefined ? {} : {imageInstructions}),
     ...(input.visualBrief === undefined ? {} : {visualBrief}), ...(visualPlan ? {visualPlan} : {})};
 }
 

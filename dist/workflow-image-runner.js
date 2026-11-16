@@ -37,7 +37,7 @@ function capture(api,items,allItems,{planNeeded=false,maxImages=items.length,sin
   const project=api.getProject(),assets=api.getAssets(),settings=settingsFor(project);
   const state={scope:scope(api),sourceKey:workflowImageSourceKey(project),references:items.length?referenceSnapshot(settings,assets):[],images:imageSnapshot(project,assets),
     settings,items:clone(items),allItems:clone(allItems),fullScript:single?sourceText(project):project.scenePlan.sourceScript,
-    brief:project.scenePlan?.visualBrief||'',globalConcept:isStoryboardPlanCurrent(project)?project.scenePlan.visualPlan.globalConcept:'',
+    imageInstructions:project.scenePlan?.imageInstructions||'',brief:project.scenePlan?.visualBrief||'',globalConcept:isStoryboardPlanCurrent(project)?project.scenePlan.visualPlan.globalConcept:'',
     planNeeded,single,instructions,maxImages,requirePlan:!single};
   const targetIds=Object.freeze(items.map(item=>item.sceneId));
   const review=Object.freeze({ownerKey:state.scope,sourceKey:state.sourceKey,targetIds,sceneIds:targetIds,imageCount:items.length,count:items.length,
@@ -91,7 +91,7 @@ async function request(api,path,body,signal) {
   return value;
 }
 function promptFor(item,state) {
-  const prompt=buildTimedImagePrompt(item,{allItems:state.allItems,fullScript:state.fullScript,brief:state.brief,globalConcept:state.globalConcept});
+  const prompt=buildTimedImagePrompt(item,{allItems:state.allItems,fullScript:state.fullScript,brief:state.brief,instructions:state.imageInstructions,globalConcept:state.globalConcept});
   const result=state.single&&state.instructions?prompt+'\n[이 장면만 교체하는 사용자 요청]\n'+state.instructions:prompt;
   if(Array.from(result).length>30000)throw new Error('전체 콘셉트와 선택 장면 요청이 너무 길어요. 교체 요청을 줄여 주세요.');
   return result;

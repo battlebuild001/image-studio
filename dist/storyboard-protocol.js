@@ -21,7 +21,7 @@ function serializedSize(value, limit) {
 export function validateStoryboardRequest(value) {
   if (!plain(value)) throw invalid('영상 구성 요청 형식을 확인해 주세요.');
   serializedSize(value, 1024 * 1024);
-  const allowed = new Set(['title', 'fullScript', 'brief', 'background', 'style', 'negativePrompt', 'items']);
+  const allowed = new Set(['title', 'fullScript', 'brief', 'instructions', 'background', 'style', 'negativePrompt', 'items']);
   if (Object.keys(value).some(key => !allowed.has(key))) throw invalid('지원하지 않는 전체 영상 구성 설정입니다.');
   const fullScript = text(value.fullScript, undefined, 100000, '전체 대본');
   if (!fullScript) throw invalid('전체 영상 구성을 만들 대본을 먼저 작성해 주세요.');
@@ -36,6 +36,7 @@ export function validateStoryboardRequest(value) {
     return {sceneId: item.sceneId, start, end, caption: text(item.caption, '', 20000, '장면 대본')};
   });
   return {title: text(value.title, '', 200, '영상 제목'), fullScript,
+    ...(value.instructions === undefined ? {} : {instructions: text(value.instructions, '', 6000, '전체 이미지 생성 지시')}),
     brief: text(value.brief, '', 6000, '영상 전체 콘셉트'), background: text(value.background, '', 20000, '배경 설정'),
     style: text(value.style, '', 4000, '공통 화풍'), negativePrompt: text(value.negativePrompt, '', 2000, '피할 요소'), items};
 }
@@ -49,6 +50,7 @@ export function buildStoryboardRequest(input, model = 'gpt-5-mini') {
       'fullScript는 영상 전체의 내용이며 items의 caption은 해당 구간의 대사입니다. 문장이 시간 구간 사이에서 잘릴 수 있으므로 앞뒤 장면과 전체 사건의 시점·장소·주체를 함께 파악하세요. 문장의 한 조각이나 특정 단어만 보고 그림을 정하지 마세요.',
       '각 장면은 반드시 그 시점의 내용에 맞아야 합니다. 예를 들어 초기의 지구 관측·우주 탐사·이주선 출발을 뒤 시점의 미래 전투 장면으로 대체하지 마세요. 대본에 나온 시대와 장소·인물·세력·장비의 순서를 보존하고 모든 장면을 동일한 군인·기체·전투로 반복하지 마세요.',
       'globalConcept에는 전체 이야기의 시각적 방향, 공통 색감·조명·화풍, 반복되는 대상의 외형과 시대별 변화 원칙을 한국어로 정리하세요. brief와 고정 배경·화풍을 우선하며 명시되지 않은 세부는 조심스러운 시각 연출로만 정하고 새로운 사건·설정·인과관계·주요 인물을 지어내지 마세요.',
+      'instructions는 모든 이미지에 적용할 사용자의 전체 이미지 생성 지시입니다. 공통 콘셉트와 모든 shots의 prompt에 반영하되 대본의 사실과 장면 순서 및 출력 계약을 유지하세요.',
       'shots의 prompt에는 해당 장면에서 실제로 보여줄 주체·행동·장소·시대·카메라 구도·조명을 구체적으로 쓰세요. 비슷한 내용이 이어지면 먼 전경/중경/세부의 구도를 바꾸되 대상의 정체·외형·색감은 유지하세요. 전후 장면의 연결과 등장 순서를 고려하세요.',
       '참고 이미지가 별도로 설정되어 있으면 실제 이미지 생성 단계에서 원본 픽셀을 함께 전달합니다. 대본의 내용과 무관하게 레퍼런스의 장면을 그대로 복제하라고 지시하지 말고, 스타일·인물·배경 등 지정된 역할에 맞게 활용하도록 요청하세요. 참조 이미지가 없어도 전체 대본과 공통 콘셉트만으로 각 장면의 요청을 완성하세요.',
       '이미지 안에 읽을 대본·연도 자막·장면 번호·시간표·출처 주소·로고를 그리도록 요청하지 마세요. 한 요청은 한 장면의 이미지이며 여러 칸의 콘택트 시트가 아닙니다. 웹 검색·실제 생성 또는 검증을 실행했다고 주장하지 마세요.',
@@ -94,6 +96,7 @@ export function parseStoryboardResponse(response, input, model = 'gpt-5-mini', n
 export function storyboardInputForProject(project) {
   const plan = project?.scenePlan, settings = project?.imageStudio || {};
   return validateStoryboardRequest({title: project?.title || '', fullScript: plan?.sourceScript || '', brief: plan?.visualBrief || '',
+    ...(plan?.imageInstructions ? {instructions: plan.imageInstructions} : {}),
     background: settings.background || '', style: settings.style || '', negativePrompt: settings.negativePrompt || '',
     items: (plan?.items || []).map(item => ({sceneId: item.sceneId, start: item.start, end: item.end, caption: item.caption}))});
 }

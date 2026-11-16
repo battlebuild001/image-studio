@@ -26,6 +26,7 @@ function timedPrompt(item, context = {}) {
     else lines.push('[기본 요청 모드 · 전체 대본 앞뒤 발췌, AI 전체 구성은 아직 없음]',
       `${clip(context.fullScript, 3000)}\n…\n${Array.from(context.fullScript).slice(-1500).join('')}`);
   }
+  if (context.instructions) lines.push('[전체 이미지 생성 지시 · 모든 장면에 적용]', context.instructions);
   if (context.brief) lines.push('[영상 전체에 적용하는 사용자 콘셉트]', context.brief);
   lines.push('[앞뒤 장면 맥락 · 긴 요청은 일부 발췌]',
     before ? `직전 장면: ${clip(before.prompt || before.caption, 500)}` : '영상의 첫 장면입니다.',
@@ -71,6 +72,9 @@ export function setupSceneImageBatch(api) {
   const planningTitle = node('h3', '', '1. 전체 대본으로 이미지 구성');planningTitle.id = 'videoImagePlanningTitle';planningSection.append(planningTitle);
   const briefLabel = node('label', 'scene-batch-prompt');briefLabel.append(node('span', '', '영상 전체의 공통 콘셉트 (선택)'));
   const brief = node('textarea');brief.id = 'videoImageConcept';brief.rows = 3;brief.maxLength = 6000;brief.placeholder = '예: 차분한 다큐멘터리 화풍. 초기 지구·우주 탐사·이주·정착·전쟁을 시대에 맞게 구분하고, 같은 인물과 장소의 디자인을 유지해 주세요.';briefLabel.append(brief);planningSection.append(briefLabel);
+  const instructionsLabel = node('label', 'scene-batch-prompt');instructionsLabel.append(node('span', '', '전체 이미지 생성 지시 (선택)'));
+  const instructions = node('textarea');instructions.id = 'videoImageInstructions';instructions.rows = 3;instructions.maxLength = 6000;instructions.placeholder = '예: 모든 장면을 넓은 구도로 만들고, 주요 인물의 의상과 외형을 유지해 주세요.';instructionsLabel.append(instructions);planningSection.append(instructionsLabel);
+  const instructionsHelp = node('p', 'scene-batch-planning-help', '전체 이미지 구성과 각 장면 이미지 생성에 함께 적용하며 프로젝트에 저장해요. 최대 6,000자까지 입력할 수 있어요.');instructionsHelp.id = 'videoImageInstructionsHelp';instructions.setAttribute('aria-describedby', instructionsHelp.id);planningSection.append(instructionsHelp);
   const planningState = node('p', 'scene-batch-planning-state');planningState.id = 'videoImagePlanningState';planningState.setAttribute('role', 'status');planningSection.append(planningState);
   planningSection.append(node('p', 'scene-batch-planning-help', '아래 버튼은 전체 대본과 모든 장면의 시간표를 텍스트 AI로 분석하며 별도 API 요금이 발생할 수 있어요. 이 단계에서는 이미지를 생성하지 않아요. 참조 이미지는 선택 사항이며, 등록하면 이미지 생성에 실제 파일을 함께 사용해요.'));
   const planActions = node('div', 'scene-batch-generation-actions'), plan = button('planVideoImagesBtn', '전체 대본으로 이미지 구성 만들기', 'primary'), stopPlan = button('cancelVideoImagePlanningBtn', '구성 만들기 취소', 'ghost');stopPlan.hidden = true;planActions.append(plan, stopPlan);planningSection.append(planActions);body.append(planningSection);
@@ -94,7 +98,7 @@ export function setupSceneImageBatch(api) {
   const connectionActivity = createOperationStatus({container: body, region: state, id: 'sceneImageBatchConnectionOperation'});state.after(connectionActivity.element);
   const footer = node('div', 'dialog-footer'), closeFooter = button('closeSceneImageBatchBtn', '닫기', 'ghost');footer.append(closeFooter);dialog.append(footer);document.body.append(dialog);
 
-  let activeRun = null, activePlan = null, applyingStoryboard = false, briefDirty = false, editTimer = 0, configured = false, connectionController = null, connectionSequence = 0;
+  let activeRun = null, activePlan = null, applyingStoryboard = false, briefDirty = false, instructionsDirty = false, editTimer = 0, configured = false, connectionController = null, connectionSequence = 0;
   let displayedScope = '', displayedPlan = '', displayedSettings = '', displayedReferences = [], draftPrompts = new Map(), promptDirty = false, applyingSceneId = null;
   const rowStatus = new Map();
   let failureAction = null;
@@ -137,13 +141,13 @@ export function setupSceneImageBatch(api) {
   function refreshControls() {
     const busy = Boolean(activeRun || activePlan), project = api.getProject(), valid = planned(), settings = imageSettings(project), selected = enabledReferences(settings), pending = eligible(project);
     launcher.hidden = false;launcher.disabled = busy || Boolean(api.canUseSceneImages && !api.canUseSceneImages());
-    const staleStoryboard = Boolean(project.scenePlan?.visualPlan && (briefDirty || !isStoryboardPlanCurrent(project)));
+    const staleStoryboard = Boolean(project.scenePlan?.visualPlan && (briefDirty || instructionsDirty || !isStoryboardPlanCurrent(project)));
     start.disabled = busy || !valid.valid || !configured || !pending.length || !confirm.checked || staleStoryboard;
     plan.disabled = busy || !valid.valid || !configured || Boolean(api.canUseSceneImages && !api.canUseSceneImages());
-    brief.disabled = busy || !valid.valid;stopPlan.hidden = !activePlan;stopPlan.disabled = Boolean(activePlan?.cancelled);
+    brief.disabled = busy || !valid.valid;instructions.disabled = busy || !valid.valid;stopPlan.hidden = !activePlan;stopPlan.disabled = Boolean(activePlan?.cancelled);
     plan.textContent = activePlan ? '전체 대본을 분석하고 있어요…' : '전체 대본으로 이미지 구성 만들기';
     planningState.dataset.state = staleStoryboard ? 'stale' : project.scenePlan?.visualPlan ? 'ready' : 'basic';
-    planningState.textContent = staleStoryboard ? '대본·콘셉트·타이밍 또는 참조 설정이 바뀌었어요. 전체 이미지 구성을 다시 만든 뒤 시작해 주세요.' : project.scenePlan?.visualPlan ? '전체 대본을 분석한 공통 콘셉트와 장면별 구성이 준비됐어요. 아래 요청을 확인한 뒤 전체 생성을 시작하세요.' : 'AI 전체 구성 없음 · 현재는 기본 구간 요청입니다. 위 버튼으로 전체 대본을 분석하면 사건의 흐름과 공통 콘셉트를 모든 컷에 반영해요.';
+    planningState.textContent = staleStoryboard ? '대본·콘셉트·생성 지시·타이밍 또는 참조 설정이 바뀌었어요. 전체 이미지 구성을 다시 만든 뒤 시작해 주세요.' : project.scenePlan?.visualPlan ? '전체 대본을 분석한 공통 콘셉트와 장면별 구성이 준비됐어요. 아래 요청을 확인한 뒤 전체 생성을 시작하세요.' : 'AI 전체 구성 없음 · 현재는 기본 구간 요청입니다. 위 버튼으로 전체 대본을 분석하면 사건의 흐름과 공통 콘셉트를 모든 컷에 반영해요.';
     globalPanel.hidden = !project.scenePlan?.visualPlan;globalText.textContent = project.scenePlan?.visualPlan?.globalConcept || '';
     cancel.hidden = !activeRun;cancel.disabled = Boolean(activeRun?.cancelled);
     for (const control of [replace, confirm, timing, references, configure]) control.disabled = busy;
@@ -171,18 +175,19 @@ export function setupSceneImageBatch(api) {
   }
   function flushPrompts() {
     clearTimeout(editTimer);editTimer = 0;
-    if (!promptDirty && !briefDirty) return;
+    if (!promptDirty && !briefDirty && !instructionsDirty) return;
     if (scope() !== displayedScope || !planned().valid) throw new Error('타이밍이나 작업 분야가 바뀌었어요. 현재 계획을 다시 확인해 주세요.');
-    const updates = new Map(draftPrompts), nextBrief = brief.value;
+    const updates = new Map(draftPrompts), nextBrief = brief.value, nextInstructions = instructions.value;
+    if (Array.from(nextInstructions).length > 6000) throw new Error('전체 이미지 생성 지시는 6,000자 이하로 입력해 주세요.');
     if (Array.from(nextBrief).length > 6000) throw new Error('공통 콘셉트는 6,000자 이하로 입력해 주세요.');
     for (const value of updates.values()) if (!value.trim() || Array.from(value).length > 6000) throw new Error('각 장면의 이미지 요청을 1~6,000자로 입력해 주세요.');
-    const hadPromptEdits = promptDirty, hadBriefEdits = briefDirty;promptDirty = false;briefDirty = false;
-    try {api.mutate(project => {project.scenePlan.items = project.scenePlan.items.map(item => ({...item, prompt: updates.get(item.sceneId) ?? item.prompt}));project.scenePlan.visualBrief = nextBrief;});}
-    catch (cause) {promptDirty = hadPromptEdits;briefDirty = hadBriefEdits;throw cause;}
+    const hadPromptEdits = promptDirty, hadBriefEdits = briefDirty, hadInstructionsEdits = instructionsDirty;promptDirty = false;briefDirty = false;instructionsDirty = false;
+    try {api.mutate(project => {project.scenePlan.items = project.scenePlan.items.map(item => ({...item, prompt: updates.get(item.sceneId) ?? item.prompt}));project.scenePlan.visualBrief = nextBrief;if (nextInstructions || project.scenePlan.imageInstructions !== undefined) project.scenePlan.imageInstructions = nextInstructions;});}
+    catch (cause) {promptDirty = hadPromptEdits;briefDirty = hadBriefEdits;instructionsDirty = hadInstructionsEdits;throw cause;}
     displayedPlan = planSignature(api.getProject());
   }
   function flush({strict = true} = {}) {
-    if (!promptDirty && !briefDirty) return;
+    if (!promptDirty && !briefDirty && !instructionsDirty) return;
     try {flushPrompts();} catch (cause) {showError(cause.message);if (strict) throw cause;}
   }
   function captureRun() {
@@ -190,7 +195,7 @@ export function setupSceneImageBatch(api) {
     return {scope: scope(), projectId: project.id, plan: planSignature(project), settings: JSON.stringify(settings),
       referenceBlobs: refs.map(reference => [reference.assetId, api.getAssets().get(reference.assetId)?.blob]),
       expectedImages: new Map(project.scenes.map(scene => [scene.id, scene.imageId])),
-      allItems: clone(project.scenePlan.items), fullScript: project.scenePlan.sourceScript, brief: project.scenePlan.visualBrief || '', globalConcept: isStoryboardPlanCurrent(project) ? project.scenePlan.visualPlan.globalConcept : '',
+      allItems: clone(project.scenePlan.items), fullScript: project.scenePlan.sourceScript, brief: project.scenePlan.visualBrief || '', instructions: project.scenePlan.imageInstructions || '', globalConcept: isStoryboardPlanCurrent(project) ? project.scenePlan.visualPlan.globalConcept : '',
       items: clone(eligible(project).map(item => ({...item, ordinal: project.scenePlan.items.findIndex(value => value.sceneId === item.sceneId) + 1}))), imageSettings: settings, replaceExisting: replace.checked, controller: new AbortController(), cancelled: false, completed: 0};
   }
   function stillCurrent(run, includeImages = true) {
@@ -323,8 +328,9 @@ export function setupSceneImageBatch(api) {
     displayedSettings = nextSettings;displayedReferences = selected;
     if (nextScope !== displayedScope || nextPlan !== displayedPlan) {
       const scopeChanged = nextScope !== displayedScope;displayedScope = nextScope;displayedPlan = nextPlan;confirm.checked = false;
-      if (scopeChanged) {showError('');clearTimeout(editTimer);editTimer = 0;rowStatus.clear();promptDirty = false;briefDirty = false;replace.checked = false;activity.clear();connectionActivity.clear();planningActivity.clear();globalPanel.open = false;if (dialog.open) dialog.close();}
+      if (scopeChanged) {showError('');clearTimeout(editTimer);editTimer = 0;rowStatus.clear();promptDirty = false;briefDirty = false;instructionsDirty = false;replace.checked = false;activity.clear();connectionActivity.clear();planningActivity.clear();globalPanel.open = false;if (dialog.open) dialog.close();}
       if (document.activeElement !== brief || !briefDirty) brief.value = project.scenePlan?.visualBrief || '';
+      if (document.activeElement !== instructions || !instructionsDirty) instructions.value = project.scenePlan?.imageInstructions || '';
       drawRows(project);
     }
     refreshControls();
@@ -335,9 +341,10 @@ export function setupSceneImageBatch(api) {
     if (!dialog.open) dialog.showModal();await checkConnection();
   }
   function dismiss() {if (activeRun) cancelRun();else if (activePlan) cancelPlanning();else {try {flushPrompts();} catch (cause) {showError(cause.message);return;}}dialog.close();}
-  function reset() {clearTimeout(editTimer);editTimer = 0;cancelRun();cancelPlanning();activity.clear();planningActivity.clear();connectionActivity.clear();connectionSequence++;connectionController?.abort();connectionController = null;configured = false;displayedScope = '';displayedPlan = '';promptDirty = false;briefDirty = false;draftPrompts.clear();rowStatus.clear();if (dialog.open) dialog.close();render();}
+  function reset() {clearTimeout(editTimer);editTimer = 0;cancelRun();cancelPlanning();activity.clear();planningActivity.clear();connectionActivity.clear();connectionSequence++;connectionController?.abort();connectionController = null;configured = false;displayedScope = '';displayedPlan = '';promptDirty = false;briefDirty = false;instructionsDirty = false;draftPrompts.clear();rowStatus.clear();if (dialog.open) dialog.close();render();}
   const run = callback => () => Promise.resolve().then(callback).catch(cause => showError(cause.message || '작업을 마치지 못했어요.'));
   brief.addEventListener('input', () => {briefDirty = true;confirm.checked = false;showError('');refreshControls();clearTimeout(editTimer);editTimer = setTimeout(() => {try {flushPrompts();} catch (cause) {showError(cause.message);}}, 650);});brief.addEventListener('change', run(flushPrompts));
+  instructions.addEventListener('input', () => {instructionsDirty = true;confirm.checked = false;showError('');refreshControls();clearTimeout(editTimer);editTimer = setTimeout(() => {try {flushPrompts();} catch (cause) {showError(cause.message);}}, 650);});instructions.addEventListener('change', run(flushPrompts));
   plan.addEventListener('click', run(planWholeVideo));stopPlan.addEventListener('click', () => cancelPlanning());
   launcher.addEventListener('click', run(open));start.addEventListener('click', run(startBatch));cancel.addEventListener('click', () => cancelRun());
   for (const close of [closeHeader, closeFooter]) close.addEventListener('click', dismiss);
