@@ -1,5 +1,5 @@
 import {normalizePublishAt,normalizeScheduleTimeZone} from './youtube-schedule.js';
-import {normalizeYouTubeUploadRecord} from './youtube-protocol.js';
+import {normalizeYouTubeUploadRecord,normalizeYouTubeUploadDraft} from './youtube-protocol.js';
 import {validateProject,canonicalAssets,MAX_ASSET_BYTES} from './project.js';
 
 export const MAX_BULK_VIDEO_JOBS=20;
@@ -25,13 +25,16 @@ export function normalizeBulkVideoJob(input){
  for(const key of ['createdAt','updatedAt'])if(!Number.isFinite(Date.parse(value[key]))||value[key].length>40)fail();
  if(input.video!==undefined){
   const v=input.video;if(!(v?.blob instanceof Blob)||!v.blob.size||!['mp4','webm'].includes(v.extension))fail();
-  value.video={blob:v.blob,extension:v.extension,mime:v.blob.type||String(v.mime||'').slice(0,100)};
+  value.video={blob:v.blob,extension:v.extension,mime:v.blob.type||String(v.mime||'').slice(0,100)};if(v.digest!==undefined){if(!/^[a-f0-9]{64}$/u.test(v.digest))fail();value.video.digest=v.digest;}
  }
  if(input.publishAt!==undefined&&input.publishAt!=='')value.publishAt=normalizePublishAt(input.publishAt);
  if(input.scheduleTimeZone!==undefined)value.scheduleTimeZone=normalizeScheduleTimeZone(input.scheduleTimeZone);
+ if(input.videoReview!==undefined){const review=input.videoReview;if(!review||!value.video?.digest||review.digest!==value.video.digest||typeof review.reviewedAt!=='string'||review.reviewedAt.length>40||!Number.isFinite(Date.parse(review.reviewedAt)))fail();value.videoReview={digest:review.digest,reviewedAt:review.reviewedAt};}
+ if(input.thumbnail!==undefined){const image=input.thumbnail;if(!(image?.blob instanceof Blob)||!image.blob.size||image.blob.size>5*1024*1024||!['image/png','image/jpeg'].includes(image.type)||image.blob.type!==image.type||typeof image.name!=='string'||image.name.length>180||/[\\/\u0000-\u001f]/u.test(image.name)||!Number.isSafeInteger(image.width)||!Number.isSafeInteger(image.height)||image.width<1||image.height<1||image.width>8192||image.height>8192||image.width*image.height>32*1024*1024||!/^[a-f0-9]{64}$/u.test(image.digest))fail();value.thumbnail={blob:image.blob,name:image.name,type:image.type,width:image.width,height:image.height,digest:image.digest};}
+ if(input.uploadDescription!==undefined)value.uploadDescription=normalizeYouTubeUploadDraft({description:input.uploadDescription}).description;
  if(input.uploadTitle!==undefined){if(typeof input.uploadTitle!=='string'||!input.uploadTitle.trim()||Array.from(input.uploadTitle).length>100||/[<>\u0000-\u001f\u007f]/u.test(input.uploadTitle))fail();value.uploadTitle=input.uploadTitle;}
  if(input.upload!==undefined){
-  const upload=input.upload;if(!upload||!['pending','uploading','needs-check','uploaded'].includes(upload.status)||Object.keys(upload).some(key=>!['status','channelId','title','attemptAt','receipt','manualConfirmation'].includes(key)))fail();
+  const upload=input.upload;if(!upload||!['pending','uploading','needs-check','uploaded'].includes(upload.status)||Object.keys(upload).some(key=>!['status','channelId','title','attemptAt','receipt','manualConfirmation','thumbnailStatus','thumbnailDigest','thumbnailError'].includes(key)))fail();
   value.upload={status:upload.status};if(upload.title!==undefined){if(typeof upload.title!=='string'||!upload.title.trim()||Array.from(upload.title).length>100||/[<>\u0000-\u001f\u007f]/u.test(upload.title))fail();value.upload.title=upload.title;}if(upload.channelId!==undefined){if(!/^UC[A-Za-z0-9_-]{22}$/u.test(upload.channelId))fail();value.upload.channelId=upload.channelId;}
   if(upload.attemptAt!==undefined){if(typeof upload.attemptAt!=='string'||upload.attemptAt.length>40||!Number.isFinite(Date.parse(upload.attemptAt)))fail();value.upload.attemptAt=upload.attemptAt;}
   if(upload.receipt!==undefined)value.upload.receipt=normalizeYouTubeUploadRecord(upload.receipt);
@@ -39,6 +42,9 @@ export function normalizeBulkVideoJob(input){
    if(!confirm||Object.keys(confirm).some(key=>!['videoId','videoUrl','channelId','confirmedAt','source'].includes(key))||!/^[A-Za-z0-9_-]{11}$/u.test(confirm.videoId)||confirm.videoUrl!==`https://www.youtube.com/watch?v=${confirm.videoId}`||!/^UC[A-Za-z0-9_-]{22}$/u.test(confirm.channelId)||confirm.source!=='user-confirmed'||typeof confirm.confirmedAt!=='string'||confirm.confirmedAt.length>40||!Number.isFinite(Date.parse(confirm.confirmedAt)))fail();
    value.upload.manualConfirmation={videoId:confirm.videoId,videoUrl:confirm.videoUrl,channelId:confirm.channelId,confirmedAt:confirm.confirmedAt,source:confirm.source};
   }
+  if(upload.thumbnailStatus!==undefined){if(!['pending','uploading','completed','failed'].includes(upload.thumbnailStatus))fail();value.upload.thumbnailStatus=upload.thumbnailStatus;}
+  if(upload.thumbnailDigest!==undefined){if(!/^[a-f0-9]{64}$/u.test(upload.thumbnailDigest))fail();value.upload.thumbnailDigest=upload.thumbnailDigest;}
+  if(upload.thumbnailError!==undefined){if(typeof upload.thumbnailError!=='string'||upload.thumbnailError.length>1000)fail();value.upload.thumbnailError=upload.thumbnailError;}
   if(value.upload.status==='uploaded'&&!value.upload.receipt&&!value.upload.manualConfirmation)fail();
  }
  if(['completed','uploading','needs-check','uploaded'].includes(value.status)&&!value.video)fail();
