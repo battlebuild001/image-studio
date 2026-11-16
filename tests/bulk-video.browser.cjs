@@ -35,7 +35,7 @@ function tone(frequency, volume = .25, duration = 1.4) {
   files.firstVoice = tone(440).toString('base64');files.secondVoice = tone(880).toString('base64');files.bgm = tone(110, .07).toString('base64');
   const ready = () => page.waitForFunction(() => document.querySelector('#bulkVideoBtn') && !document.querySelector('#addWorkspaceBtn').disabled);
   const activeProject = () => page.evaluate(async () => (await (await import('./project.js')).loadProject()).project);
-  const open = async () => {await reveal(page, '#bulkVideoBtn');await page.locator('#bulkVideoBtn').click();await page.locator('#bulkVideoDialog').waitFor({state: 'visible'});};
+  const open = async () => {await reveal(page, '#bulkVideoBtn');await page.locator('#bulkVideoBtn').click();await page.locator('#bulkVideoDialog').waitFor({state: 'visible'});await page.locator('#bulkVideoVoice').uncheck();await page.locator('#bulkVideoUpload').uncheck();};
   const prepare = async () => {await page.locator('#prepareBulkVideoBtn').click();await page.waitForFunction(() => !document.querySelector('#confirmBulkVideo').disabled);};
   let original;
   try {

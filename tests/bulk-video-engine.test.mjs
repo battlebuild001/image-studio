@@ -8,7 +8,7 @@ const stamp='2026-11-16T10:00:00.000Z',clone=value=>structuredClone(value);
 const image=new Blob(['synthetic-png-bytes'],{type:'image/png'});
 function fixture({filled=true,aspect='16:9'}={}){return{project:createProject({id:'original',title:'원본 영상',aspect,scenes:[createScene({id:'one',caption:'첫 번째 장면입니다.',duration:1,imageId:filled?'original-image':null}),createScene({id:'two',caption:'두 번째 장면입니다.',duration:1,imageId:filled?'original-image':null})],production:{version:1,budget:{...defaultProductionBudget(),enabled:true,limit:100,spentUsd:7,ledger:[]}}}),assets:new Map(filled?[['original-image',{name:'original.png',blob:image}]]:[])};}
 function memory(){const records=new Map();return{records,async loadAll(){return clone([...records.values()]);},async save(value){records.set(value.id,clone(value));},async get(id){return clone(records.get(id)||null);},async remove(id){records.delete(id);}};}
-function engine(options={}){let counter=0;return createBulkVideoEngine({store:memory(),saveLibrary:async()=>{},capabilities:async()=>({mp4:false,webm:true}),prepareMedia:async()=>{},getSettingsKey:()=>'',now:()=>new Date(stamp),idFactory:()=>`bulk-test-${++counter}`,...options});}
+function engine(options={}){let counter=0;const value=createBulkVideoEngine({store:memory(),saveLibrary:async()=>{},capabilities:async()=>({mp4:false,webm:true}),prepareMedia:async()=>{},getSettingsKey:()=>'',now:()=>new Date(stamp),idFactory:()=>`bulk-test-${++counter}`,...options});const prepare=value.prepare;value.prepare=options=>prepare({voice:false,upload:false,...options});return value;}
 const rendered=()=>({blob:new Blob(['actual-synthetic-video'],{type:'video/webm'}),extension:'webm'});
 
 test('added jobs are independent snapshots with fresh costs and media; review is readonly and actual format capability is respected',async()=>{
@@ -87,4 +87,59 @@ test('a malformed persisted record never partially duplicates the queue on repea
  const store=memory(),source=engine({store});await source.add(fixture());const valid=(await store.loadAll())[0];let fixed=false;
  const e=engine({store:{...store,loadAll:async()=>fixed?[valid]:[valid,{invalid:true}]}});
  await assert.rejects(e.load());assert.equal(e.getState().jobs.length,0);fixed=true;await e.load();assert.equal(e.getState().jobs.length,1);
+});
+
+const channelId='UC'+'a'.repeat(22),uploadClient={getSession:()=>({connected:true,channelId,channelTitle:'검증 채널'}),getUploadState:()=>({available:false})};
+const future='2027-02-01T09:00:00.000Z';
+function uploadReview({project,publishAt}){if(!publishAt)throw Error('publish time missing');return{metadata:{title:project.title,publishAt,privacyStatus:'private'},channelId,channelTitle:'검증 채널'};}
+function receiptFor(job,prepared){return{videoId:'abcdefghijk',videoUrl:'https://www.youtube.com/watch?v=abcdefghijk',title:prepared.metadata.title,privacyStatus:'private',channelId,channelTitle:'검증 채널',uploadedAt:stamp,fileName:'synthetic.webm',bytes:job.video.blob.size,publishAt:prepared.metadata.publishAt,scheduleTimeZone:'Asia/Seoul',scheduleConfirmed:true};}
+
+test('one reviewed run generates narration, retimes fixed slots, images, video and scheduled upload in order',async()=>{
+ const events=[],store=memory();let uploads=0;
+ const e=engine({store,uploadClient,prepareUpload:uploadReview,
+  prepareVoice:(project,settings,assets)=>({required:!assets.has(project.audio.narrationId),requestCount:assets.has(project.audio.narrationId)?0:1,payload:{text:'실제 읽을 대본'}}),
+  runVoice:async api=>{events.push('voice');api.getAssets().set('generated-voice',{name:'voice.wav',blob:new Blob(['wav'],{type:'audio/wav'})});api.mutate(project=>{project.audio.narrationId='generated-voice';project.scenes.forEach(scene=>{scene.duration=2;});});await api.persist();},
+  prepareImages:api=>({imageCalls:api.getProject().scenes.filter(scene=>!scene.imageId).length,planningCalls:0}),
+  runImages:async api=>{events.push('images');assert.equal(api.getProject().scenes.length,2);assert.equal(api.getProject().scenes.reduce((sum,s)=>sum+s.duration,0),4);for(const scene of api.getProject().scenes){await api.applyGeneratedImage({blob:image,name:'new.png',sceneId:scene.id});await api.persist();}},
+  renderVideo:async({project})=>{events.push('render');assert.equal(project.audio.narrationId,'generated-voice');return rendered();},
+  runUpload:async({job,prepared})=>{events.push('upload');uploads++;assert.equal((await store.get(job.id)).status,'uploading');return receiptFor(job,prepared);}});
+ const added=await e.add(fixture({filled:false}));await e.updateJob(added.id,{publishAt:future});const review=await e.prepare({voice:true,upload:true});assert.equal(review.counts.voiceCalls,1);assert.equal(review.counts.imageCalls,2);assert.equal(review.counts.planningCalls,1);assert.equal(review.counts.uploadCalls,1);assert.equal(events.length,0);
+ await e.run(review,{acknowledged:true});assert.deepEqual(events,['voice','images','render','upload']);assert.equal(e.getState().jobs[0].status,'uploaded');assert.equal(e.getState().jobs[0].videoUrl,'https://www.youtube.com/watch?v=abcdefghijk');assert.equal((await e.prepare({voice:true,upload:true})).counts.videos,0);assert.equal(uploads,1);
+});
+
+test('scheduled upload of a cached local video skips all generation and time edits preserve the video bytes',async()=>{
+ let renders=0,uploads=0,attempt=0;const store=memory(),e=engine({store,uploadClient,prepareUpload:uploadReview,renderVideo:async()=>{renders++;return rendered();},prepareVoice:()=>{throw Error('must not regenerate voice');},runUpload:async({job,prepared})=>{uploads++;if(++attempt===1){const error=Error('schedule expired before upload');error.uploadNotStarted=true;throw error;}return receiptFor(job,prepared);}});
+ const added=await e.add(fixture());await e.run(await e.prepare({voice:false,upload:false}),{acknowledged:true});const original=await e.getVideo(added.id);
+ await e.updateJob(added.id,{publishAt:future});let review=await e.prepare({voice:true,upload:true});assert.equal(review.counts.voiceCalls,0);assert.equal(review.counts.imageCalls,0);assert.equal(review.counts.renders,0);await assert.rejects(e.run(review,{acknowledged:true}),/schedule expired/u);assert.equal(e.getState().jobs[0].uploadStatus,'pending');
+ const later='2027-02-02T09:00:00.000Z';await e.updateJob(added.id,{publishAt:later});assert.equal((await e.getVideo(added.id)).blob.size,original.blob.size);review=await e.prepare({voice:true,upload:true});assert.equal(review.jobs[0].publishAt,later);await e.run(review,{acknowledged:true});assert.equal(renders,1);assert.equal(uploads,2);
+});
+
+test('uncertain upload blocks fresh dispatch across reload and user observation is kept distinct from a remote receipt',async()=>{
+ let requests=0;const store=memory(),e=engine({store,uploadClient,prepareUpload:uploadReview,renderVideo:async()=>rendered(),runUpload:async()=>{requests++;throw Error('unknown network outcome');}});
+ const added=await e.add(fixture());await e.updateJob(added.id,{publishAt:future});await assert.rejects(e.run(await e.prepare({voice:false,upload:true}),{acknowledged:true}),/unknown network/u);assert.equal(e.getState().jobs[0].status,'needs-check');
+ const restored=engine({store,uploadClient,prepareUpload:uploadReview,runUpload:async()=>{requests++;throw Error('duplicate');}});await restored.load();const review=await restored.prepare({voice:false,upload:true});assert.ok(review.blockers[0].includes('완료 여부'));await assert.rejects(restored.run(review,{acknowledged:true}),/완료 여부/u);assert.equal(requests,1);
+ await restored.resolveUpload(added.id,{videoId:'https://youtu.be/abcdefghijk'});const saved=await store.get(added.id);assert.equal(saved.status,'uploaded');assert.equal(saved.upload.receipt,undefined);assert.equal(saved.upload.manualConfirmation.source,'user-confirmed');assert.equal(restored.getState().jobs[0].uploadManuallyConfirmed,true);
+});
+
+test('reload of saved upload intent preserves uncertainty and never silently becomes a retryable render job',async()=>{
+ const store=memory(),source=engine({store,renderVideo:async()=>rendered()});const added=await source.add(fixture());await source.run(await source.prepare(),{acknowledged:true});const job=await store.get(added.id);job.status='uploading';job.upload={status:'uploading',channelId,attemptAt:stamp};await store.save(job);
+ let uploads=0;const e=engine({store,uploadClient,runUpload:async()=>{uploads++;}});await e.load();assert.equal(e.getState().jobs[0].status,'needs-check');assert.equal(e.getState().jobs[0].uploadStatus,'needs-check');assert.equal(uploads,0);
+});
+
+test('a canonical remote receipt survives cancellation immediately after success and prevents any duplicate run',async()=>{
+ const store=memory();let e,uploads=0;e=engine({store,uploadClient,prepareUpload:uploadReview,renderVideo:async()=>rendered(),runUpload:async({job,prepared})=>{uploads++;e.cancel();return receiptFor(job,prepared);}});const added=await e.add(fixture());await e.updateJob(added.id,{publishAt:future});await assert.rejects(e.run(await e.prepare({voice:false,upload:true}),{acknowledged:true}),{name:'AbortError'});const job=await store.get(added.id);assert.equal(job.status,'uploaded');assert.equal(job.upload.receipt.videoId,'abcdefghijk');assert.equal((await e.prepare({voice:false,upload:true})).counts.uploadCalls,0);assert.equal(uploads,1);
+});
+
+test('an upload receipt without echoed scheduling remains uploaded but accurately flags publication as unconfirmed',async()=>{
+ const e=engine({uploadClient,prepareUpload:uploadReview,renderVideo:async()=>rendered(),runUpload:async({job,prepared})=>({...receiptFor(job,prepared),scheduleConfirmed:false})});const added=await e.add(fixture());await e.updateJob(added.id,{publishAt:future});await e.run(await e.prepare({voice:false,upload:true}),{acknowledged:true});const state=e.getState();assert.equal(state.jobs[0].status,'uploaded');assert.equal(state.jobs[0].scheduleConfirmed,false);assert.equal(state.jobs[0].hasUnconfirmedSchedule,true);assert.match(state.message,/予約|예약 공개 상태/u);assert.equal((await e.prepare({voice:false,upload:true})).counts.uploadCalls,0);
+});
+
+test('manual upload recovery clears only the matching paused client session after confirmation is durable',async()=>{
+ for(const matching of [true,false]){
+  const store=memory();let transfer={available:false},clears=0,jobId;
+  const client={getSession:uploadClient.getSession,getUploadState:()=>transfer,clearUpload(){assert.equal(store.records.get(jobId).status,'uploaded');assert.equal(store.records.get(jobId).upload.manualConfirmation.source,'user-confirmed');clears++;transfer={available:false};}};
+  const e=engine({store,uploadClient:client,prepareUpload:uploadReview,renderVideo:async()=>rendered(),runUpload:async({job,prepared})=>{transfer={available:true,paused:true,totalBytes:job.video.blob.size,channelId:matching?channelId:'UC'+'b'.repeat(22),metadata:{title:prepared.metadata.title,publishAt:prepared.metadata.publishAt},fileName:'synthetic.webm'};throw Error('unknown transfer');}});
+  const added=await e.add(fixture());jobId=added.id;await e.updateJob(jobId,{publishAt:future});await assert.rejects(e.run(await e.prepare({voice:false,upload:true}),{acknowledged:true}),/unknown transfer/u);
+  if(matching){await e.resolveUpload(jobId,{videoId:'abcdefghijk'});assert.equal(clears,1);assert.equal(transfer.available,false);}else{await assert.rejects(e.resolveUpload(jobId,{videoId:'abcdefghijk'}),/다른 영상/u);assert.equal(clears,0);assert.equal(e.getState().jobs[0].status,'needs-check');assert.equal((await store.get(jobId)).upload.manualConfirmation,undefined);}
+ }
 });

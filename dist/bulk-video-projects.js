@@ -2,7 +2,7 @@ import {createProject, validateProject} from './project.js';
 import {planTimedScenes, narrationPlanKey} from './script-planning.js';
 import {normalizeBudgetSettings} from './production-budget.js';
 
-/** Create a separate, silent script project using the reviewed time/cadence.
+/** Create a separate script project before the queue synthesizes narration using the reviewed time/cadence.
  * This is local planning only. No existing scene/narration/result is reused and
  * no API request is dispatched until the queue's separate acknowledged run.
  */
@@ -26,6 +26,16 @@ export function buildBulkScriptProject({baseProject, script, title = '대량 제
     narrationKey: narrationPlanKey(project), items: timing.items,
     ...(base.scenePlan?.visualBrief === undefined ? {} : {visualBrief: base.scenePlan.visualBrief}),
     ...(base.scenePlan?.imageInstructions === undefined ? {} : {imageInstructions: base.scenePlan.imageInstructions})};
-  if (base.production?.budget) project.production = {version: 1, budget: {...normalizeBudgetSettings(base.production.budget), spentUsd: 0, ledger: []}};
+  const production = {version: 1};
+  if (base.production?.budget) production.budget = {...normalizeBudgetSettings(base.production.budget), spentUsd: 0, ledger: []};
+  if (base.production?.description) production.description = structuredClone(base.production.description);
+  if (base.production?.speech) {
+    const speech = {};
+    for (const key of ['pronunciations', 'voicePreferences']) if (base.production.speech[key] !== undefined) speech[key] = structuredClone(base.production.speech[key]);
+    if (Object.keys(speech).length) production.speech = speech;
+  }
+  if (project.audio.bgmId && base.production?.music?.appliedCandidate) production.music = {appliedCandidate: structuredClone(base.production.music.appliedCandidate)};
+  if (project.imageStudio.references.length && base.production?.referenceMedia?.imports?.length) production.referenceMedia = {imports: structuredClone(base.production.referenceMedia.imports)};
+  if (Object.keys(production).length > 1) project.production = production;
   return validateProject(project);
 }

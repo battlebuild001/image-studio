@@ -58,3 +58,25 @@ test('bulk script planning rejects unsupported sizes/timing and follows cadence 
   assert.equal(project.scenes.length, 48);assert.equal(project.scriptDraft.targetMinutes, 8);assert.equal(getScenePlanStatus(project).valid, true);
   assert.equal(buildBulkScriptProject({script: '짧은 영상', durationSeconds: 1}).scenes[0].duration, 1);
 });
+
+test('new scripts retain source credits and shared speech/description preferences without old upload materials', async () => {
+  const base = baseProject();
+  const candidate = kind => ({id: kind === 'image' ? 'commons-100' : 'commons-200', kind, title: '합성 출처 자료', mimeType: kind === 'image' ? 'image/png' : 'audio/wav',
+    mediaUrl: 'https://upload.wikimedia.org/wikipedia/commons/a/ab/Synthetic.' + (kind === 'image' ? 'png' : 'wav'), originalUrl: 'https://upload.wikimedia.org/wikipedia/commons/a/ab/Synthetic.' + (kind === 'image' ? 'png' : 'wav'),
+    sourceUrl: 'https://commons.wikimedia.org/?curid=' + (kind === 'image' ? '100' : '200'), artist: '합성 저작자', license: 'CC BY 4.0', licenseUrl: 'https://creativecommons.org/licenses/by/4.0/'});
+  base.production.music = {appliedCandidate: candidate('audio')};
+  base.production.referenceMedia = {imports: [candidate('image')]};
+  base.production.speech = {pronunciations: [{term: 'NASA', reading: '나사'}]};
+  base.production.description = {length: 'short', support: false, hashtags: false, channelIntro: false};
+  const canonical = validateProject(base);
+  const next = buildBulkScriptProject({baseProject: canonical, script, title: '출처 유지', durationSeconds: 30});
+  assert.deepEqual(next.production.music.appliedCandidate, canonical.production.music.appliedCandidate);
+  assert.deepEqual(next.production.referenceMedia.imports, canonical.production.referenceMedia.imports);
+  assert.deepEqual(next.production.speech.pronunciations, canonical.production.speech.pronunciations);
+  assert.deepEqual(next.production.description, canonical.production.description);
+  assert.equal(next.production.youtube, undefined);
+  const media = new Map([['music', {blob: new Blob(['audio'], {type: 'audio/wav'}), name: '음악.wav'}], ['fixed-reference', {blob: new Blob(['image'], {type: 'image/png'}), name: '기준.png'}]]);
+  const restored = await importProjectBackup(await exportProjectBackup(next, media));
+  assert.deepEqual(restored.project.production.referenceMedia, next.production.referenceMedia);
+  assert.deepEqual(restored.project.production.music, next.production.music);
+});
