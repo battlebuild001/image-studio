@@ -5,6 +5,7 @@ on:
     paths: [.github/workflows/content-studio-windows-release.yml]
 permissions:
   contents: write
+  actions: read
 jobs:
   windows-release:
     runs-on: windows-latest
@@ -17,12 +18,29 @@ jobs:
           cache: npm
       - name: Install pinned build dependencies
         run: npm ci --no-audit --no-fund
-      - name: Build and verify standalone Windows installers
+      - name: Restore the completed Windows installers
+        uses: actions/download-artifact@v4
+        with:
+          name: content-studio-windows-1.1.0
+          github-token: ${{ github.token }}
+          run-id: 44679324608
+          repository: battlebuild001/image-studio
+          path: ${{ runner.temp }}
+      - name: Verify retained installers with the full NSIS-capable 7-Zip
         shell: pwsh
+        env:
+          ELECTRON_BUILDER_7ZIP_PATH: C:\Program Files\7-Zip\7z.exe
         run: |
-          node scripts/desktop-build.mjs --win --source-archive --output "${{ runner.temp }}/content-studio-release"
+          if (-not (Test-Path $env:ELECTRON_BUILDER_7ZIP_PATH)) { throw 'Full 7-Zip was not found on the Windows runner.' }
+          $formats = & $env:ELECTRON_BUILDER_7ZIP_PATH i
+          if ($LASTEXITCODE -ne 0 -or -not (($formats -join "`n") -match '(?i)\bnsis\b')) { throw 'The archive verifier must support NSIS.' }
+          $folder = "${{ runner.temp }}/content-studio-release"
+          Expand-Archive -Path "$folder/Content-Studio-1.1.0-Windows-x64.zip" -DestinationPath "$folder/win-unpacked"
+          node --test tests/desktop-build-config.test.mjs tests/desktop-build-verification.test.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path "${{ runner.temp }}/content-studio-release/desktop-release.json")) { throw 'The verified desktop release manifest was not produced.' }
+          node scripts/desktop-build.mjs --win --verify-only --source-archive --output $folder
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "$folder/desktop-release.json")) { throw 'The verified desktop release manifest was not produced.' }
       - name: Install isolated UI test driver
         run: npm install --no-save --package-lock=false --no-audit --no-fund playwright
       - name: Execute the actual packaged Windows application
@@ -66,7 +84,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: content-studio-windows-1.1.0
+          name: content-studio-windows-1.1.0-verified
           path: |
             ${{ runner.temp }}/content-studio-release/*.exe
             ${{ runner.temp }}/content-studio-release/*.zip

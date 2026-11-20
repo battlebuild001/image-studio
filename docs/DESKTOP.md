@@ -51,6 +51,8 @@ node scripts/desktop-build.mjs --win --source-archive --output .desktop-build
 
 Windows 빌드는 x64 NSIS 설치 파일·휴대용 EXE·ZIP을 함께 만듭니다. Linux에서도 공식 Electron Windows 배포와 NSIS 빌드 도구를 사용해 교차 패키징할 수 있습니다. 위 빌드 스크립트는 고정한 electron-builder의 공식 `UninstallerReader`를 사용해 미서명 제거 프로그램을 추출하며, Linux에서 Windows 스텁을 실행하지 않습니다. Windows PC에는 Wine이 필요하지 않습니다. 네트워크가 제한된 실행 환경에서는 기존 프록시와 CA 신뢰 설정을 그대로 사용하세요.
 
+Windows 개발 PC에서 설치 파일의 내부 NSIS 압축까지 검증하려면 전체 7-Zip의 `7z.exe`와 `7z.dll`이 필요합니다. 표준 `Program Files/7-Zip` 설치를 자동으로 찾으며, 별도 위치는 `ELECTRON_BUILDER_7ZIP_PATH`로 지정합니다. electron-builder에 포함된 축소판 Windows `7za.exe`는 NSIS 형식을 읽지 못합니다. Linux에서는 기존 전체 도구를 사용합니다. 이 도구는 빌드 검증용이며 프로그램을 설치하거나 실행하는 사용자 PC에는 필요하지 않습니다.
+
 ```sh
 node scripts/desktop-build.mjs --win --verify-only --output .desktop-build
 node scripts/desktop-build.mjs --linux-smoke --output .desktop-linux
