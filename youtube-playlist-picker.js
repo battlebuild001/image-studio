@@ -73,6 +73,13 @@ export function setupYouTubePlaylistPicker({container,client,getProject,getWorks
   catch(cause){if(target===scope()&&seq===operationSerial){if(cause.name==='AbortError')status.textContent='재생목록 권한 연결을 중지했어요.';else report(cause);}}
   finally{if(seq===operationSerial){controller=null;activeChannel='';setBusy('');render();}}
  }
+ /** Persist the reviewed same-video playlist task before thumbnail/publication work. No Google call. */
+ async function prepareUploadedVideo(record,input){
+  const chosen=normalizePlaylistSelection(input);if(!chosen)return;const target=scope(),receipt=savedVideo({videoId:record?.videoId,channelId:chosen.channelId});
+  if(!receipt||receipt.channelId!==chosen.channelId)throw new Error('이미 전송한 영상과 선택한 재생목록의 채널을 확인해 주세요.');
+  const existing=entries().find(value=>value.videoId===receipt.videoId&&value.playlistId===chosen.id);if(existing)return;
+  updateTransfer({videoId:receipt.videoId,playlistId:chosen.id,playlistTitle:chosen.title,channelId:chosen.channelId,status:'pending',updatedAt:new Date().toISOString()},target);await persist?.();if(target!==scope())throw abort();
+ }
  async function applyUploadedVideo(record,input,{signal:externalSignal,guard}={}){
   let chosen;try{chosen=normalizePlaylistSelection(input);}catch(cause){report(cause);return{ok:false};}if(!chosen)return{ok:true,skipped:true};
   if(controller||busy){report(new Error('현재 재생목록 작업을 마친 뒤 다시 시도해 주세요.'));return{ok:false};}const target=scope(),seq=++operationSerial,localController=new AbortController();controller=localController;const signal=localController.signal,forwardAbort=()=>localController.abort();if(externalSignal?.aborted)localController.abort();else externalSignal?.addEventListener('abort',forwardAbort,{once:true});activeChannel='';setBusy('transfer');error.textContent='';status.textContent='영상은 업로드됐어요. 재생목록 추가 기록을 먼저 저장하고 있어요.';render();
@@ -89,5 +96,5 @@ export function setupYouTubePlaylistPicker({container,client,getProject,getWorks
  retry.addEventListener('click',async()=>{if(!editable())return;const value=selectedPending();if(!value)return;const receipt=savedVideo(value);if(!receipt){report(new Error('업로드된 영상 기록을 먼저 확인해 주세요.'));return;}await applyUploadedVideo(receipt,{id:value.playlistId,title:value.playlistTitle,channelId:value.channelId});});
  skip.addEventListener('click',async()=>{if(!editable())return;const value=selectedPending(),target=scope(),seq=++operationSerial;if(!value)return;setBusy('save');status.textContent='재생목록 추가 확인 상태를 저장하고 있어요.';error.textContent='';render();try{updateTransfer({...value,status:'skipped',updatedAt:new Date().toISOString()},target);await persist?.();check(target,seq);status.textContent='재생목록 추가 확인을 건너뛰었어요. 이미 업로드한 영상과 실제 재생목록은 변경하지 않았어요.';}catch(cause){if(target===scope()&&seq===operationSerial){try{updateTransfer(value,target);}catch{}report(cause);}}finally{if(seq===operationSerial){setBusy('');render();}}});
  const unsubscribe=client.subscribe?.(()=>render());render();
- return{render,getSelectionForUpload,getSelectionKey,getBlockingReason,hasPendingTransfer:()=>pendingEntries().length>0,applyUploadedVideo,onClose(){if(controller){cancelWork();render();}},reset(){owner='';cancelWork({silent:true});items=[];nextPageToken='';loadedChannel='';selectKey=pendingKey=pendingChoice=status.textContent=error.textContent='';render();},dispose(){disposed=true;cancelWork({silent:true});unsubscribe?.();root.remove();}};
+ return{render,getSelectionForUpload,getSelectionKey,getBlockingReason,hasPendingTransfer:()=>pendingEntries().length>0,prepareUploadedVideo,applyUploadedVideo,onClose(){if(controller){cancelWork();render();}},reset(){owner='';cancelWork({silent:true});items=[];nextPageToken='';loadedChannel='';selectKey=pendingKey=pendingChoice=status.textContent=error.textContent='';render();},dispose(){disposed=true;cancelWork({silent:true});unsubscribe?.();root.remove();}};
 }

@@ -5,6 +5,8 @@ import {prepareReferenceImageRequest, decodeReferenceImageResult} from './image-
 import {createOperationStatus, nextPaint} from './operation-status.js';
 import {storyboardInputForProject, storyboardContextKey, validateStoryboardResult, isStoryboardPlanCurrent} from './storyboard-protocol.js';
 import {sanitizeOpenAiDiagnostic} from './openai-provider-error.js';
+import {setupImageReferenceWorkflow} from './image-reference-workflow.js';
+import {estimateProductionImageBatch, defaultProductionBudget, formatBudgetAmount} from './production-budget.js';
 
 const clone = value => structuredClone(value);
 const $ = id => document.getElementById(id);
@@ -64,16 +66,18 @@ export function setupSceneImageBatch(api) {
   const title = node('h2', '', '영상 전체 이미지 만들기');title.id = 'sceneImageBatchTitle';titleGroup.append(title);
   const closeHeader = button('closeSceneImageBatchHeaderBtn', '×', 'icon-button');closeHeader.setAttribute('aria-label', '장면 이미지 생성 닫기');heading.append(titleGroup, closeHeader);dialog.append(heading);
   const body = node('div', 'dialog-body');dialog.append(body);
-  body.append(node('p', 'scene-batch-intro', '전체 대본과 공통 콘셉트로 모든 장면의 이미지 구성을 만든 뒤, 생성 장수를 확인하고 한 번에 시작하세요. 선택한 한 컷만이 아니라 확정한 영상 전체의 빈 장면을 차례로 채워요.'));
+  body.append(node('p', 'scene-batch-intro', '레퍼런스 한 장을 고르고 대본에 맞는 이미지 구성을 확인하세요. 생성할 장수를 확인한 뒤 모든 빈 장면을 순서대로 채워요.'));
+  const referenceHost=node('div');referenceHost.id='sceneBatchReferenceHost';body.append(referenceHost);
   const state = node('p', 'scene-batch-state');state.id = 'sceneImageBatchPlanState';state.setAttribute('role', 'status');body.append(state);
-  const actions = node('div', 'scene-batch-settings-actions'), timing = button('editSceneBatchTimingBtn', '전환 타이밍 다시 정하기'), references = button('editSceneBatchReferencesBtn', '레퍼런스·배경 설정'), configure = button('configureSceneImageBatchBtn', 'API 설정');actions.append(timing, references, configure);body.append(actions);
-  const settingsSummary = node('p', 'scene-batch-settings-summary');settingsSummary.id = 'sceneImageBatchSettings';body.append(settingsSummary);
+  const settingsPanel=node('details','scene-batch-advanced');settingsPanel.id='sceneImageBatchAdvancedSettings';settingsPanel.open=true;settingsPanel.append(node('summary','','이미지 품질·배경·고급 설정'));
+  const actions = node('div', 'scene-batch-settings-actions'), timing = button('editSceneBatchTimingBtn', '전환 타이밍 다시 정하기'), references = button('editSceneBatchReferencesBtn', '레퍼런스·배경 설정'), configure = button('configureSceneImageBatchBtn', 'API 설정');actions.append(timing, references, configure);settingsPanel.append(actions);
+  const settingsSummary = node('p', 'scene-batch-settings-summary');settingsSummary.id = 'sceneImageBatchSettings';settingsPanel.append(settingsSummary);body.append(settingsPanel);
   const planningSection = node('section', 'scene-batch-planning');planningSection.setAttribute('aria-labelledby', 'videoImagePlanningTitle');
-  const planningTitle = node('h3', '', '1. 전체 대본으로 이미지 구성');planningTitle.id = 'videoImagePlanningTitle';planningSection.append(planningTitle);
+  const planningTitle = node('h3', '', '2. 대본으로 이미지 구성');planningTitle.id = 'videoImagePlanningTitle';planningSection.append(planningTitle);
   const briefLabel = node('label', 'scene-batch-prompt');briefLabel.append(node('span', '', '영상 전체의 공통 콘셉트 (선택)'));
-  const brief = node('textarea');brief.id = 'videoImageConcept';brief.rows = 3;brief.maxLength = 6000;brief.placeholder = '예: 차분한 다큐멘터리 화풍. 초기 지구·우주 탐사·이주·정착·전쟁을 시대에 맞게 구분하고, 같은 인물과 장소의 디자인을 유지해 주세요.';briefLabel.append(brief);planningSection.append(briefLabel);
+  const brief = node('textarea');brief.id = 'videoImageConcept';brief.rows = 3;brief.maxLength = 6000;brief.placeholder = '예: 차분한 다큐멘터리 화풍. 초기 지구·우주 탐사·이주·정착·전쟁을 시대에 맞게 구분하고, 같은 인물과 장소의 디자인을 유지해 주세요.';briefLabel.append(brief);const briefPanel=node('details','scene-batch-advanced');briefPanel.open=true;briefPanel.append(node('summary','','공통 콘셉트 세부 설정'),briefLabel);planningSection.append(briefPanel);
   const instructionsLabel = node('label', 'scene-batch-prompt');instructionsLabel.append(node('span', '', '전체 이미지 생성 지시 (선택)'));
-  const instructions = node('textarea');instructions.id = 'videoImageInstructions';instructions.rows = 3;instructions.maxLength = 6000;instructions.placeholder = '예: 모든 장면을 넓은 구도로 만들고, 주요 인물의 의상과 외형을 유지해 주세요.';instructionsLabel.append(instructions);planningSection.append(instructionsLabel);
+  const instructions = node('textarea');instructions.id = 'videoImageInstructions';instructions.rows = 3;instructions.maxLength = 6000;instructions.placeholder = '예: 이번 영상은 워해머 룰 설명 영상입니다. 실제 게임 화면처럼 구성하고 대본의 룰 설명과 같은 상황을 이미지로 만들어 주세요.';instructionsLabel.append(instructions);planningSection.append(instructionsLabel);
   const instructionsHelp = node('p', 'scene-batch-planning-help', '전체 이미지 구성과 각 장면 이미지 생성에 함께 적용하며 프로젝트에 저장해요. 최대 6,000자까지 입력할 수 있어요.');instructionsHelp.id = 'videoImageInstructionsHelp';instructions.setAttribute('aria-describedby', instructionsHelp.id);planningSection.append(instructionsHelp);
   const planningState = node('p', 'scene-batch-planning-state');planningState.id = 'videoImagePlanningState';planningState.setAttribute('role', 'status');planningSection.append(planningState);
   planningSection.append(node('p', 'scene-batch-planning-help', '아래 버튼은 전체 대본과 모든 장면의 시간표를 텍스트 AI로 분석하며 별도 API 요금이 발생할 수 있어요. 이 단계에서는 이미지를 생성하지 않아요. 참조 이미지는 선택 사항이며, 등록하면 이미지 생성에 실제 파일을 함께 사용해요.'));
@@ -81,10 +85,13 @@ export function setupSceneImageBatch(api) {
   const planningActivity = createOperationStatus({container: planningSection, region: briefLabel, id: 'videoImagePlanningStatus'});
   const globalPanel = node('details', 'scene-batch-global-concept');globalPanel.id = 'videoImageGlobalConceptPanel';globalPanel.hidden = true;globalPanel.append(node('summary', '', '영상 전체의 공통 시각 콘셉트'));
   const globalText = node('p');globalText.id = 'videoImageGlobalConcept';globalPanel.append(globalText);planningSection.append(globalPanel);
-  body.append(node('h3', 'scene-batch-step-title', '2. 모든 장면 요청과 생성 장수 확인'));
-  const replaceLabel = node('label', 'scene-batch-check'), replace = node('input');replace.type = 'checkbox';replace.id = 'replaceSceneImages';replaceLabel.append(replace, node('span', '', '이미지가 있는 장면도 새로 생성해 교체하기'));body.append(replaceLabel);
+  body.append(node('h3', 'scene-batch-step-title', '3. 장수 확인 후 이미지 생성'));
+  const replacementOptions=node('details','scene-batch-advanced');replacementOptions.open=true;replacementOptions.append(node('summary','','기존 이미지 교체 옵션'));
+  const replaceLabel = node('label', 'scene-batch-check'), replace = node('input');replace.type = 'checkbox';replace.id = 'replaceSceneImages';replaceLabel.append(replace, node('span', '', '이미지가 있는 장면도 새로 생성해 교체하기'));replacementOptions.append(replaceLabel);body.append(replacementOptions);
   const count = node('p', 'scene-batch-count');count.id = 'sceneImageBatchCount';body.append(count);
-  const rows = node('div', 'scene-batch-rows');rows.id = 'sceneImageBatchRows';body.append(rows);
+  const estimate=node('p','scene-batch-estimate');estimate.id='sceneImageBatchEstimate';body.append(estimate);
+  const rowsPanel=node('details','scene-batch-advanced scene-batch-requests');rowsPanel.id='sceneImageBatchRequestsPanel';rowsPanel.open=true;rowsPanel.append(node('summary','','장면별 대본·이미지 요청 확인 및 수정'));
+  const rows = node('div', 'scene-batch-rows');rows.id = 'sceneImageBatchRows';rowsPanel.append(rows);body.append(rowsPanel);
   const confirmLabel = node('label', 'scene-batch-check scene-batch-confirm'), confirm = node('input');confirm.type = 'checkbox';confirm.id = 'confirmSceneImageBatch';
   confirmLabel.append(confirm, node('span', '', '영상 전체의 타이밍·공통 콘셉트·장면 요청과 이번 생성 장수를 확인했습니다. 장면당 API 사용료가 발생할 수 있습니다. 시작하면 모든 대상 장면을 순서대로 생성하고 해당 위치에 저장합니다.'));body.append(confirmLabel);
   const tools = node('div', 'scene-batch-generation-actions'), start = button('startSceneImageBatchBtn', '확정한 장면 이미지 생성 시작', 'primary'), cancel = button('cancelSceneImageBatchBtn', '생성 중지', 'ghost');cancel.hidden = true;tools.append(start, cancel);body.append(tools);
@@ -98,12 +105,13 @@ export function setupSceneImageBatch(api) {
   const connectionActivity = createOperationStatus({container: body, region: state, id: 'sceneImageBatchConnectionOperation'});state.after(connectionActivity.element);
   const footer = node('div', 'dialog-footer'), closeFooter = button('closeSceneImageBatchBtn', '닫기', 'ghost');footer.append(closeFooter);dialog.append(footer);document.body.append(dialog);
 
-  let activeRun = null, activePlan = null, applyingStoryboard = false, briefDirty = false, instructionsDirty = false, editTimer = 0, configured = false, connectionController = null, connectionSequence = 0;
+  let activeRun = null, activePlan = null, applyingStoryboard = false, briefDirty = false, instructionsDirty = false, editTimer = 0, configured = false, connectionController = null, connectionSequence = 0, embeddedContainer = null, referenceWorkflow = null, workflowRefreshQueued = false;
   let displayedScope = '', displayedPlan = '', displayedSettings = '', displayedReferences = [], draftPrompts = new Map(), promptDirty = false, applyingSceneId = null;
   const rowStatus = new Map();
   let failureAction = null;
   const scope = () => `${api.getWorkspaceId?.() || ''}\0${api.getProject().id}`;
   const planSignature = project => JSON.stringify(project.scenePlan || null);
+  function notifyWorkflow(){if(workflowRefreshQueued||typeof api.renderWorkflowState!=='function')return;workflowRefreshQueued=true;queueMicrotask(()=>{workflowRefreshQueued=false;api.renderWorkflowState();});}
   function showError(message, cause, run) {
     const item = run?.items.find(value => value.sceneId === run.currentSceneId);
     error.textContent = message ? `${item ? `${item.ordinal}번 장면 (${timestamp(item.start)}–${timestamp(item.end)}): ` : ''}${message}` : '';
@@ -130,7 +138,7 @@ export function setupSceneImageBatch(api) {
   fixError.addEventListener('click', () => {
     if (!failureAction || activeRun || activePlan || failureAction.scope !== scope() || failureAction.plan !== planSignature(api.getProject())) return;
     if (failureAction.kind === 'prompt') {
-      const input = rows.querySelector(`[data-scene-prompt="${CSS.escape(failureAction.sceneId)}"]`);input?.scrollIntoView({block: 'center'});input?.focus();
+      rowsPanel.open=true;const input = rows.querySelector(`[data-scene-prompt="${CSS.escape(failureAction.sceneId)}"]`);input?.scrollIntoView({block: 'center'});input?.focus();
     } else if (failureAction.kind === 'references') references.click();else configure.click();
   });
   function planned() {return getScenePlanStatus(api.getProject());}
@@ -139,24 +147,27 @@ export function setupSceneImageBatch(api) {
     return project.scenePlan.items.filter(item => replace.checked || !project.scenes.find(scene => scene.id === item.sceneId)?.imageId);
   }
   function refreshControls() {
-    const busy = Boolean(activeRun || activePlan), project = api.getProject(), valid = planned(), settings = imageSettings(project), selected = enabledReferences(settings), pending = eligible(project);
-    launcher.hidden = false;launcher.disabled = busy || Boolean(api.canUseSceneImages && !api.canUseSceneImages());
+    const busy = Boolean(activeRun || activePlan || referenceWorkflow?.isBusy()), project = api.getProject(), valid = planned(), settings = imageSettings(project), selected = enabledReferences(settings), pending = eligible(project);
+    const needsReference=Boolean(embeddedContainer&&!selected.some(reference=>api.getAssets().get(reference.assetId)?.blob));
+    launcher.hidden = Boolean(embeddedContainer);launcher.disabled = busy || Boolean(api.canUseSceneImages && !api.canUseSceneImages());
     const staleStoryboard = Boolean(project.scenePlan?.visualPlan && (briefDirty || instructionsDirty || !isStoryboardPlanCurrent(project)));
-    start.disabled = busy || !valid.valid || !configured || !pending.length || !confirm.checked || staleStoryboard;
-    plan.disabled = busy || !valid.valid || !configured || Boolean(api.canUseSceneImages && !api.canUseSceneImages());
+    start.disabled = busy || !valid.valid || !configured || !pending.length || !confirm.checked || staleStoryboard || needsReference;
+    plan.disabled = busy || !valid.valid || !configured || Boolean(api.canUseSceneImages && !api.canUseSceneImages()) || needsReference;
     brief.disabled = busy || !valid.valid;instructions.disabled = busy || !valid.valid;stopPlan.hidden = !activePlan;stopPlan.disabled = Boolean(activePlan?.cancelled);
     plan.textContent = activePlan ? '전체 대본을 분석하고 있어요…' : '전체 대본으로 이미지 구성 만들기';
     planningState.dataset.state = staleStoryboard ? 'stale' : project.scenePlan?.visualPlan ? 'ready' : 'basic';
-    planningState.textContent = staleStoryboard ? '대본·콘셉트·생성 지시·타이밍 또는 참조 설정이 바뀌었어요. 전체 이미지 구성을 다시 만든 뒤 시작해 주세요.' : project.scenePlan?.visualPlan ? '전체 대본을 분석한 공통 콘셉트와 장면별 구성이 준비됐어요. 아래 요청을 확인한 뒤 전체 생성을 시작하세요.' : 'AI 전체 구성 없음 · 현재는 기본 구간 요청입니다. 위 버튼으로 전체 대본을 분석하면 사건의 흐름과 공통 콘셉트를 모든 컷에 반영해요.';
+    planningState.textContent = needsReference ? '위에서 대본으로 자료를 찾아 한 장을 선택하거나 직접 레퍼런스 이미지를 넣어 주세요. 선택한 이미지를 기준으로 모든 장면을 구성해요.' : staleStoryboard ? '대본·콘셉트·생성 지시·타이밍 또는 참조 설정이 바뀌었어요. 전체 이미지 구성을 다시 만든 뒤 시작해 주세요.' : project.scenePlan?.visualPlan ? '전체 대본을 분석한 공통 콘셉트와 장면별 구성이 준비됐어요. 아래 요청을 확인한 뒤 전체 생성을 시작하세요.' : 'AI 전체 구성 없음 · 현재는 기본 구간 요청입니다. 위 버튼으로 전체 대본을 분석하면 사건의 흐름과 공통 콘셉트를 모든 컷에 반영해요.';
     globalPanel.hidden = !project.scenePlan?.visualPlan;globalText.textContent = project.scenePlan?.visualPlan?.globalConcept || '';
     cancel.hidden = !activeRun;cancel.disabled = Boolean(activeRun?.cancelled);
     for (const control of [replace, confirm, timing, references, configure]) control.disabled = busy;
     for (const input of rows.querySelectorAll('textarea')) input.disabled = busy;
     dialog.setAttribute('aria-busy', String(busy));
     count.textContent = valid.valid ? `전체 ${project.scenePlan.items.length}개 장면 · 이번 생성 ${pending.length}장${replace.checked ? ' · 기존 이미지 교체 포함' : ' · 이미지가 있는 장면은 유지'}` : '타이밍을 먼저 확정하면 생성할 장수를 보여드려요.';
+    estimate.hidden=!valid.valid;if(valid.valid){const budget=project.production?.budget||defaultProductionBudget(),cost=estimateProductionImageBatch({count:pending.length,quality:settings.quality||'medium'},budget);estimate.textContent=`이번 생성 추정: ${cost.count}장 × 장당 ${formatBudgetAmount(cost.unitUsd,budget)} = ${cost.label} · 예시 단가·여유 20% 포함, 누적 사용액 제외`;estimate.title=cost.note;}
     if (!busy) start.textContent = pending.length ? `영상 전체 이미지 ${pending.length}장 생성 시작` : '생성할 빈 장면이 없어요';
     state.textContent = valid.valid ? `${timestamp(project.scenePlan.durationSeconds)} · ${project.scenePlan.intervalSeconds}초 간격 · 타이밍 확정됨${configured ? ' · 이미지 API 설정됨' : ' · API 설정 필요'}` : valid.reason || '이미지 전환 타이밍을 먼저 정하고 확정해 주세요.';
     settingsSummary.textContent = `참조 이미지 ${selected.length}장 · ${settings.size || '1536x864'} · 품질 ${settings.quality || 'medium'}\n배경: ${settings.background || '별도 설정 없음'}\n화풍: ${settings.style || (selected.length ? '레퍼런스 기준' : '전체 대본·공통 콘셉트 기준')}\n피할 요소: ${settings.negativePrompt || '별도 지정 없음'}`;
+    referenceWorkflow?.render();
   }
   function setRowState(id, text) {rowStatus.set(id, text);const label = rows.querySelector(`[data-scene-state="${CSS.escape(id)}"]`);if (label) label.textContent = text;}
   function drawRows(project) {
@@ -216,15 +227,16 @@ export function setupSceneImageBatch(api) {
     return !run.cancelled && !run.controller.signal.aborted && scope() === run.scope && planned().valid && planSignature(project) === run.plan && JSON.stringify(imageSettings(project)) === run.settings && storyboardContextKey(project) === run.inputKey && !run.references.some(([id, blob]) => !blob || api.getAssets().get(id)?.blob !== blob) && !(api.canUseSceneImages && !api.canUseSceneImages());
   }
   async function planWholeVideo() {
-    if (activeRun || activePlan) return;
+    if (activeRun || activePlan || referenceWorkflow?.isBusy()) return;
     showError('');flushPrompts();
     if (!planned().valid) throw new Error('이미지 전환 타이밍을 먼저 확정해 주세요.');
+    if(embeddedContainer&&!enabledReferences(imageSettings(api.getProject())).some(reference=>api.getAssets().get(reference.assetId)?.blob))throw new Error('대본으로 자료를 찾거나 직접 이미지를 넣어 레퍼런스 한 장을 먼저 선택해 주세요.');
     if (!configured) throw new Error('API 설정에서 이미지 생성 연결을 확인해 주세요.');
     if (api.canUseSceneImages && !api.canUseSceneImages()) throw new Error('현재 파일 처리나 영상 출력이 끝난 뒤 이미지 구성을 만들어 주세요.');
     const project = api.getProject(), input = storyboardInputForProject(project), controller = new AbortController();
     const run = {scope: scope(), plan: planSignature(project), inputKey: storyboardContextKey(project), settings: JSON.stringify(imageSettings(project)), references: enabledReferences(imageSettings(project)).map(ref => [ref.assetId, api.getAssets().get(ref.assetId)?.blob]), controller, cancelled: false, timedOut: false};
     run.feedback = planningActivity.start('전체 대본과 모든 장면을 분석하고 있어요.', {detail: '공통 시각 콘셉트와 장면별 이미지 요청을 준비해요. 이 단계에서는 이미지 생성 API를 호출하지 않아요.'});
-    activePlan = run;confirm.checked = false;refreshControls();
+    activePlan = run;confirm.checked = false;refreshControls();notifyWorkflow();
     const timeout = setTimeout(() => {run.timedOut = true;controller.abort();}, 190000);
     let previousPlan = null, appliedSignature = null;
     try {
@@ -246,7 +258,7 @@ export function setupSceneImageBatch(api) {
       if (run.timedOut) {run.feedback.fail('전체 이미지 구성 응답 시간이 초과됐어요. 기존 요청과 이미지는 유지돼요.');showError('전체 이미지 구성 응답 시간이 초과됐어요. 대본이나 장면 수를 조절한 뒤 직접 다시 실행해 주세요.');}
       else if (cause?.name === 'AbortError' || run.cancelled || controller.signal.aborted) run.feedback.cancel('구성 만들기를 취소했어요. 기존 요청과 이미지는 유지돼요.');
       else {run.feedback.fail(cause.message || '전체 이미지 구성을 만들지 못했어요.');showError(cause.message || '전체 이미지 구성을 만들지 못했어요. 기존 요청과 이미지는 유지돼요.');}
-    } finally {clearTimeout(timeout);if (activePlan === run) activePlan = null;confirm.checked = false;refreshControls();}
+    } finally {clearTimeout(timeout);if (activePlan === run) activePlan = null;confirm.checked = false;refreshControls();notifyWorkflow();}
   }
   async function checkConnection() {
     const sequence = ++connectionSequence;connectionController?.abort();const controller = new AbortController();connectionController = controller;
@@ -258,12 +270,13 @@ export function setupSceneImageBatch(api) {
     finally {clearTimeout(timeout);if (sequence === connectionSequence) {connectionController = null;refreshControls();}}
   }
   async function startBatch() {
-    if (activeRun || activePlan) return;
+    if (activeRun || activePlan || referenceWorkflow?.isBusy()) return;
     showError('');
     try {
       flushPrompts();
       if (api.canUseSceneImages && !api.canUseSceneImages()) throw new Error('파일 처리나 영상 출력이 끝난 뒤 장면 이미지를 생성해 주세요.');
       const valid = planned();if (!valid.valid) throw new Error(valid.reason || '타이밍을 먼저 확정해 주세요.');
+      if(embeddedContainer&&!enabledReferences(imageSettings(api.getProject())).some(reference=>api.getAssets().get(reference.assetId)?.blob))throw new Error('대본으로 자료를 찾거나 직접 이미지를 넣어 레퍼런스 한 장을 먼저 선택해 주세요.');
       if (!confirm.checked) throw new Error('타이밍·요청·레퍼런스와 생성 장수를 확인한 뒤 체크해 주세요.');
       if (!configured) throw new Error('API 설정에서 이미지 생성 연결을 먼저 확인해 주세요.');
       if (api.getProject().scenePlan.visualPlan && !isStoryboardPlanCurrent(api.getProject())) throw new Error('전체 대본이나 콘셉트가 바뀌었어요. 이미지 구성을 다시 만든 뒤 생성해 주세요.');
@@ -273,7 +286,7 @@ export function setupSceneImageBatch(api) {
       run.startedSceneIds = new Set();
       const targets = new Set(run.items.map(item => item.sceneId));
       for (const item of run.allItems) setRowState(item.sceneId, targets.has(item.sceneId) ? (run.expectedImages.get(item.sceneId) ? '이번 요청 대기 · 기존 이미지 유지' : '이번 요청 대기') : '기존 이미지 유지 · 이번 요청 제외');
-      activeRun = run;progress.hidden = false;progress.max = run.items.length;progress.value = 0;refreshControls();
+      activeRun = run;progress.hidden = false;progress.max = run.items.length;progress.value = 0;refreshControls();notifyWorkflow();
       try {
         await nextPaint();
         // Confirmed timing and prompt edits must be saved successfully before
@@ -315,7 +328,7 @@ export function setupSceneImageBatch(api) {
         if (cause?.name === 'AbortError' || run.cancelled || run.controller.signal.aborted) {status.textContent = `${run.completed}/${run.items.length}장 완료 후 중지했어요. 완료한 이미지는 유지돼요. ${run.replaceExisting ? '교체 옵션을 유지하면 다음 시작에도 기존 이미지가 생성 대상에 포함돼요.' : '다시 시작하면 빈 장면부터 생성해요.'}`;run.feedback.cancel(`${run.completed}/${run.items.length}장 저장 후 중지했어요. 완료한 이미지는 유지돼요.`);}
         else {showError(cause.message || '이미지 생성이 중단됐어요.', cause, run);status.textContent = `${run.completed}/${run.items.length}장 완료 · 오류가 나서 다음 요청을 멈췄어요. 완료한 이미지는 유지돼요. 자동 재시도하지 않았어요.`;run.feedback.fail(`${run.completed}/${run.items.length}장 완료 · 오류로 다음 요청을 중단했어요.`);}
       } finally {
-        applyingSceneId = null;if (activeRun === run) activeRun = null;confirm.checked = false;refreshControls();
+        applyingSceneId = null;if (activeRun === run) activeRun = null;confirm.checked = false;refreshControls();notifyWorkflow();
       }
     } catch (cause) {showError(cause.message || '장면 생성을 시작하지 못했어요.');}
   }
@@ -336,23 +349,26 @@ export function setupSceneImageBatch(api) {
     refreshControls();
   }
   async function open() {
+    if(embeddedContainer){api.showWorkflowStep?.('images');render();if(!configured&&!connectionController)await checkConnection();return;}
     if (activeRun || activePlan) {if (!dialog.open) dialog.showModal();return;}
     api.pause?.();render();showError('');status.textContent = '';confirm.checked = false;activity.clear();
     if (!dialog.open) dialog.showModal();await checkConnection();
   }
-  function dismiss() {if (activeRun) cancelRun();else if (activePlan) cancelPlanning();else {try {flushPrompts();} catch (cause) {showError(cause.message);return;}}dialog.close();}
-  function reset() {clearTimeout(editTimer);editTimer = 0;cancelRun();cancelPlanning();activity.clear();planningActivity.clear();connectionActivity.clear();connectionSequence++;connectionController?.abort();connectionController = null;configured = false;displayedScope = '';displayedPlan = '';promptDirty = false;briefDirty = false;instructionsDirty = false;draftPrompts.clear();rowStatus.clear();if (dialog.open) dialog.close();render();}
+  function dismiss() {if (activeRun) cancelRun();else if (activePlan) cancelPlanning();else if(referenceWorkflow?.isBusy())referenceWorkflow.cancel();else {try {flushPrompts();} catch (cause) {showError(cause.message);return;}}dialog.close();}
+  function reset() {clearTimeout(editTimer);editTimer = 0;cancelRun();cancelPlanning();referenceWorkflow?.reset();activity.clear();planningActivity.clear();connectionActivity.clear();connectionSequence++;connectionController?.abort();connectionController = null;configured = false;displayedScope = '';displayedPlan = '';promptDirty = false;briefDirty = false;instructionsDirty = false;draftPrompts.clear();rowStatus.clear();if (dialog.open) dialog.close();render();if(embeddedContainer)checkConnection();}
   const run = callback => () => Promise.resolve().then(callback).catch(cause => showError(cause.message || '작업을 마치지 못했어요.'));
   brief.addEventListener('input', () => {briefDirty = true;confirm.checked = false;showError('');refreshControls();clearTimeout(editTimer);editTimer = setTimeout(() => {try {flushPrompts();} catch (cause) {showError(cause.message);}}, 650);});brief.addEventListener('change', run(flushPrompts));
   instructions.addEventListener('input', () => {instructionsDirty = true;confirm.checked = false;showError('');refreshControls();clearTimeout(editTimer);editTimer = setTimeout(() => {try {flushPrompts();} catch (cause) {showError(cause.message);}}, 650);});instructions.addEventListener('change', run(flushPrompts));
   plan.addEventListener('click', run(planWholeVideo));stopPlan.addEventListener('click', () => cancelPlanning());
   launcher.addEventListener('click', run(open));start.addEventListener('click', run(startBatch));cancel.addEventListener('click', () => cancelRun());
   for (const close of [closeHeader, closeFooter]) close.addEventListener('click', dismiss);
-  dialog.addEventListener('cancel', event => {event.preventDefault();dismiss();});dialog.addEventListener('close', () => {if (dialog.open) return;clearTimeout(editTimer);editTimer = 0;if (!activeRun && !activePlan) flush({strict: false});cancelRun();cancelPlanning();connectionSequence++;connectionController?.abort();connectionController = null;connectionActivity.cancel('연결 확인을 취소했어요.');});
-  timing.addEventListener('click', run(() => {if (activeRun || activePlan) return;flushPrompts();dialog.close();api.openTimingPlan?.();}));
+  dialog.addEventListener('cancel', event => {event.preventDefault();dismiss();});dialog.addEventListener('close', () => {if (dialog.open || embeddedContainer) return;clearTimeout(editTimer);editTimer = 0;if (!activeRun && !activePlan) flush({strict: false});cancelRun();cancelPlanning();referenceWorkflow?.cancel();connectionSequence++;connectionController?.abort();connectionController = null;connectionActivity.cancel('연결 확인을 취소했어요.');});
+  timing.addEventListener('click', run(() => {if (activeRun || activePlan || referenceWorkflow?.isBusy()) return;flushPrompts();if(embeddedContainer)api.showWorkflowStep?.('script');else{dialog.close();api.openTimingPlan?.();}}));
   references.addEventListener('click', run(() => {if (activeRun || activePlan) return;flushPrompts();dialog.close();api.openImageStudio?.();}));
   configure.addEventListener('click', run(() => api.openApiSettings?.()));
   replace.addEventListener('change', () => {confirm.checked = false;refreshControls();});confirm.addEventListener('change', refreshControls);
-  window.addEventListener('studio-api-settings-change', () => {cancelRun('API 설정이 바뀌어 이전 생성을 중지하고 있어요. 완료한 이미지는 유지돼요.');cancelPlanning('API 설정이 바뀌어 전체 구성을 취소했어요.');confirm.checked = false;if (dialog.open) checkConnection();else configured = false;});
-  render();return {open, render, reset, flush, isBusy: () => Boolean(activeRun || activePlan)};
+  window.addEventListener('studio-api-settings-change', () => {cancelRun('API 설정이 바뀌어 이전 생성을 중지하고 있어요. 완료한 이미지는 유지돼요.');cancelPlanning('API 설정이 바뀌어 전체 구성을 취소했어요.');confirm.checked = false;if (dialog.open || embeddedContainer) checkConnection();else configured = false;});
+  referenceWorkflow=setupImageReferenceWorkflow(api,{container:referenceHost,isBlocked:()=>Boolean(activeRun||activePlan),onChange:()=>{confirm.checked=false;refreshControls();notifyWorkflow();}});
+  function mount(container){if(!container?.append)throw new TypeError('이미지 단계 표시 영역이 필요해요.');if(embeddedContainer===container){render();return;}embeddedContainer=container;body.classList.add('scene-image-batch-embedded');rowsPanel.open=false;replacementOptions.open=false;settingsPanel.open=false;briefPanel.open=false;container.append(body);if(dialog.open)dialog.close();render();if(!connectionController)checkConnection();}
+  render();return {open, mount, render, reset, flush, isBusy: () => Boolean(activeRun || activePlan || referenceWorkflow?.isBusy())};
 }

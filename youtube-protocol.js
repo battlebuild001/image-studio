@@ -13,7 +13,7 @@ const encoder = new TextEncoder();
 const PRIVACY = new Set(['private', 'unlisted', 'public']);
 const DRAFT_FIELDS = new Set(['title', 'description', 'tags', 'privacyStatus', 'selfDeclaredMadeForKids', 'containsSyntheticMedia', 'publishAt', 'scheduleTimeZone']);
 const METADATA_FIELDS = new Set([...DRAFT_FIELDS, 'categoryId', 'defaultLanguage']);
-const RECORD_FIELDS = new Set(['videoId', 'videoUrl', 'title', 'privacyStatus', 'channelId', 'channelTitle', 'uploadedAt', 'fileName', 'bytes', 'publishAt', 'scheduleTimeZone', 'scheduleConfirmed']);
+const RECORD_FIELDS = new Set(['videoId', 'videoUrl', 'title', 'privacyStatus', 'channelId', 'channelTitle', 'uploadedAt', 'fileName', 'bytes', 'publishAt', 'scheduleTimeZone', 'scheduleConfirmed', 'thumbnailStatus', 'publicationStatus', 'intendedPrivacyStatus', 'sourceKey']);
 const VIDEO_MIME = new Set(['video/mp4', 'video/webm', 'video/x-matroska', 'video/quicktime', 'video/mpeg', 'video/mp2t', 'video/x-msvideo', 'video/avi', 'video/x-flv', 'video/x-ms-wmv', 'video/3gpp', 'video/3gpp2', 'video/ogg']);
 const FILE_MIME = new Map([['mp4', 'video/mp4'], ['m4v', 'video/mp4'], ['webm', 'video/webm'], ['mkv', 'video/x-matroska'], ['mov', 'video/quicktime'], ['mpeg', 'video/mpeg'], ['mpg', 'video/mpeg'], ['ts', 'video/mp2t'], ['avi', 'video/x-msvideo'], ['flv', 'video/x-flv'], ['wmv', 'video/x-ms-wmv'], ['3gp', 'video/3gpp'], ['3g2', 'video/3gpp2'], ['ogv', 'video/ogg']]);
 const CREDENTIAL = /\b(?:ya29\.[A-Za-z0-9_-]{16,}|sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,})\b/u;
@@ -68,7 +68,7 @@ export function normalizeYouTubeUploadDraft(input) {
     title: string(value.title ?? '', 100, '영상 제목', {trim: true}),
     description: string(value.description ?? '', 5000, '영상 설명', {multiline: true}),
     tags: tags(value.tags ?? []),
-    privacyStatus: privacy(value.privacyStatus ?? 'private'),
+    privacyStatus: privacy(value.privacyStatus ?? 'public'),
     selfDeclaredMadeForKids: bool(value.selfDeclaredMadeForKids ?? false, '아동용 여부'),
     containsSyntheticMedia: bool(value.containsSyntheticMedia ?? true, 'AI·합성 콘텐츠 여부'),
   };
@@ -117,6 +117,16 @@ export function normalizeYouTubeUploadRecord(input) {
   if (input.scheduleTimeZone !== undefined) result.scheduleTimeZone = normalizeScheduleTimeZone(input.scheduleTimeZone);
   if (input.publishAt !== undefined) {result.publishAt = normalizePublishAt(input.publishAt);result.scheduleConfirmed = bool(input.scheduleConfirmed ?? false, '예약 공개 확인 여부');if (result.scheduleConfirmed && result.privacyStatus !== 'private') fail('예약 확인 기록의 공개 상태를 확인해 주세요.');}
   else if (input.scheduleConfirmed !== undefined) fail('예약 확인 기록에는 요청한 공개 시각이 필요해요.');
+  const mainFields=['thumbnailStatus','publicationStatus','intendedPrivacyStatus','sourceKey'];
+  if(mainFields.some(key=>input[key]!==undefined)){
+    if(!['pending','uploaded'].includes(input.thumbnailStatus)||!['pending','completed'].includes(input.publicationStatus))fail('썸네일·공개 처리 상태를 확인해 주세요.');
+    result.thumbnailStatus=input.thumbnailStatus;result.publicationStatus=input.publicationStatus;result.intendedPrivacyStatus=privacy(input.intendedPrivacyStatus);
+    if(typeof input.sourceKey!=='string'||!/^youtube-export-v1-[a-f0-9]+-[a-f0-9]+-\d{1,9}$/u.test(input.sourceKey))fail('업로드한 원본 영상 정보를 확인해 주세요.');
+    result.sourceKey=input.sourceKey;
+    if(result.publicationStatus==='completed'&&result.thumbnailStatus!=='uploaded')fail('필수 썸네일 적용을 먼저 완료해 주세요.');
+    if(result.publishAt&&result.intendedPrivacyStatus!=='private')fail('예약 공개 영상의 비공개 전송 설정을 확인해 주세요.');
+    if(result.publicationStatus==='completed'&&(result.privacyStatus!==result.intendedPrivacyStatus||result.publishAt&&!result.scheduleConfirmed))fail('공개·예약 완료 기록을 확인해 주세요.');
+  }
   return result;
 }
 

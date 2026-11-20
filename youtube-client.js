@@ -11,6 +11,7 @@ const IDENTITY_URL = 'https://accounts.google.com/gsi/client';
 const THUMBNAIL_ENDPOINT = 'https://www.googleapis.com/upload/youtube/v3/thumbnails/set';
 const PLAYLIST_ENDPOINT = 'https://www.googleapis.com/youtube/v3/playlists';
 const PLAYLIST_ITEM_ENDPOINT = 'https://www.googleapis.com/youtube/v3/playlistItems';
+const VIDEO_ENDPOINT = 'https://www.googleapis.com/youtube/v3/videos';
 
 function failure(code, message, status, reason, phase) {const error = new Error(message);error.code = code;if (status) error.status = status;if (reason) error.reason = reason;if (phase) error.phase = phase;return error;}
 // Keep only recognized public reason codes. Google messages, metadata, credentials
@@ -156,7 +157,7 @@ export function createYouTubeClient(options = {}) {
   let credential = null, identity = null, identityPromise = null, connecting = null, job = null, upload = null, revision = 0, expiryTimer = null;
   const subscribers = new Set();
   function getSettings() {return {clientId};}
-  function getSession() {const connected = Boolean(credential && credential.clientId === clientId && now() < credential.expiresAt - 5000);return {connected, clientId, channelId: connected ? credential.channelId : '', channelTitle: connected ? credential.channelTitle : '', expiresAt: connected ? credential.expiresAt : 0, busy: Boolean(connecting || job), connecting: Boolean(connecting), uploading: Boolean(job), playlistAccess: connected && credential.playlistAccess === true};}
+  function getSession() {const connected = Boolean(credential && credential.clientId === clientId && now() < credential.expiresAt - 5000);return {connected, clientId, channelId: connected ? credential.channelId : '', channelTitle: connected ? credential.channelTitle : '', expiresAt: connected ? credential.expiresAt : 0, busy: Boolean(connecting || job), connecting: Boolean(connecting), uploading: Boolean(job), playlistAccess: connected && credential.playlistAccess === true, publicationAccess: connected && credential.publicationAccess === true};}
   function getUploadState() {return {available: Boolean(upload?.location && !upload.complete), paused: Boolean(upload?.location && !upload.complete && !job), uploadedBytes: upload?.uploadedBytes || 0, totalBytes: upload?.blob.size || 0, fileName: upload?.fileName || '', channelId: upload?.channelId || '', channelTitle: upload?.channelTitle || '', metadata: upload ? copy(upload.metadata) : null, uncertain: Boolean(upload?.uncertain), complete: Boolean(upload?.complete), expired: Boolean(upload?.expired)};}
   function emit(type) {const event = {type, session: getSession(), upload: getUploadState(), settings: getSettings()};for (const callback of subscribers) {try {callback(event);} catch {}}}
   function clearCredential() {clearTimeout(expiryTimer);expiryTimer = null;credential = null;}
@@ -224,11 +225,12 @@ export function createYouTubeClient(options = {}) {
       } catch {finish(failure('YOUTUBE_OAUTH_POPUP', 'Google 연결 창을 열지 못했어요. 팝업을 허용한 뒤 연결 버튼을 다시 눌러 주세요.'));}
     });
   }
-  function connect({signal, playlistAccess = false} = {}) {
+  function connect({signal, playlistAccess = false, publicationAccess = false} = {}) {
     if (typeof playlistAccess !== 'boolean') return Promise.reject(failure('YOUTUBE_PLAYLIST_SCOPE_REQUIRED','재생목록 연결 옵션을 확인해 주세요.'));
+    if (typeof publicationAccess !== 'boolean') return Promise.reject(failure('YOUTUBE_PUBLICATION_SCOPE_REQUIRED','동영상 공개 연결 옵션을 확인해 주세요.'));
     if (connecting || job) return Promise.reject(failure('YOUTUBE_BUSY', '진행 중인 유튜브 작업을 마치거나 중지한 뒤 연결해 주세요.'));
     if (!clientId) return Promise.reject(failure('YOUTUBE_CLIENT_ID_REQUIRED', globalThis.contentStudioDesktop?.youtube ? 'Google Cloud의 데스크톱 앱 OAuth JSON 파일을 먼저 가져와 주세요.' : 'Google 웹 애플리케이션의 공개 OAuth 클라이언트 ID를 먼저 저장해 주세요.'));
-    const requestedScopes = playlistAccess ? `${YOUTUBE_SCOPES} ${YOUTUBE_PLAYLIST_SCOPE}` : YOUTUBE_SCOPES;
+    const requestedScopes = playlistAccess || publicationAccess ? `${YOUTUBE_SCOPES} ${YOUTUBE_PLAYLIST_SCOPE}` : YOUTUBE_SCOPES;
     const scope = controlled(signal), controller = scope.controller, expected = revision, selectedClient = clientId;
     connecting = controller;clearCredential();emit('connecting');
     // An already loaded SDK reaches requestAccessToken synchronously in the click.
@@ -238,6 +240,7 @@ export function createYouTubeClient(options = {}) {
       const grantedScopes = new Set(typeof response?.scope === 'string' ? response.scope.split(/\s+/u) : []);
       if (!YOUTUBE_SCOPES.split(/\s+/u).every(item => grantedScopes.has(item))) throw failure('YOUTUBE_SCOPE_REQUIRED', '유튜브 업로드와 내 채널 확인 권한을 모두 허용해 주세요. 허용하지 않은 권한으로 업로드하지 않았어요.');
       if (playlistAccess && !grantedScopes.has(YOUTUBE_PLAYLIST_SCOPE)) throw failure('YOUTUBE_PLAYLIST_SCOPE_REQUIRED','재생목록 추가 권한이 허용되지 않았어요. 재생목록 권한 연결에서 동의해 주세요.');
+      if (publicationAccess && !grantedScopes.has(YOUTUBE_PLAYLIST_SCOPE)) throw failure('YOUTUBE_PUBLICATION_SCOPE_REQUIRED','썸네일 적용 후 공개·예약하려면 동영상 관리 권한에 동의해 주세요. 영상을 업로드하지 않았어요.');
       if (typeof response.access_token !== 'string' || !response.access_token || response.access_token.length > 8192 || /[\r\n]/u.test(response.access_token)) throw failure('YOUTUBE_OAUTH_RESPONSE', 'Google 연결 정보를 확인하지 못했어요. 다시 연결해 주세요.');
       const expiresAt = now() + expirySeconds(response.expires_in) * 1000;
       const channelResponse = await send(CHANNEL_ENDPOINT, {method: 'GET', headers: {Authorization: `Bearer ${response.access_token}`}}, controller.signal);
@@ -247,7 +250,7 @@ export function createYouTubeClient(options = {}) {
       if (items.length !== 1) throw failure('YOUTUBE_CHANNEL_AMBIGUOUS', '업로드할 채널을 하나로 확인하지 못했어요. Google 연결에서 사용할 유튜브 채널을 선택해 다시 연결해 주세요.');
       const channel = items[0];if (!/^UC[A-Za-z0-9_-]{22}$/u.test(channel?.id || '') || typeof channel?.snippet?.title !== 'string' || Array.from(channel.snippet.title).length > 150) throw failure('YOUTUBE_CHANNEL_RESPONSE', 'Google이 반환한 채널 정보를 확인하지 못했어요. 다시 연결해 주세요.');
       if (controller.signal.aborted || expected !== revision || selectedClient !== clientId) throw cancelled();
-      credential = {token: response.access_token, clientId, channelId: channel.id, channelTitle: channel.snippet.title.replace(/[\x00-\x1f\x7f]/gu, ''), expiresAt, playlistAccess: playlistAccess && grantedScopes.has(YOUTUBE_PLAYLIST_SCOPE)};
+      credential = {token: response.access_token, clientId, channelId: channel.id, channelTitle: channel.snippet.title.replace(/[\x00-\x1f\x7f]/gu, ''), expiresAt, playlistAccess: playlistAccess && grantedScopes.has(YOUTUBE_PLAYLIST_SCOPE), publicationAccess: (publicationAccess || playlistAccess) && grantedScopes.has(YOUTUBE_PLAYLIST_SCOPE)};
       expiryTimer = setTimeout(() => {if (credential?.expiresAt === expiresAt) {clearCredential();emit('expired');}}, Math.max(0, expiresAt - now() - 5000));expiryTimer.unref?.();emit('connected');return getSession();
     }).finally(() => {scope.release();if (connecting === controller) {connecting = null;emit('connection-finished');}});
   }
@@ -344,6 +347,33 @@ export function createYouTubeClient(options = {}) {
       throw cause;
     }finally{scope.release();if(job===controller){job=null;emit('thumbnail-finished');}}
   }
+  /** Same-video status update only, after a durable upload and required thumbnail receipt. */
+  async function publishVideo({videoId,channelId,privacyStatus,publishAt,scheduleTimeZone,signal}={}) {
+    if(typeof videoId!=='string'||!/^[A-Za-z0-9_-]{11}$/u.test(videoId)||typeof channelId!=='string'||!/^UC[A-Za-z0-9_-]{22}$/u.test(channelId)||!['public','private','unlisted'].includes(privacyStatus))throw failure('YOUTUBE_PUBLICATION_TARGET','공개할 기존 영상과 채널·공개 상태를 확인해 주세요.');
+    const plan={privacyStatus};if(publishAt!==undefined){plan.publishAt=normalizePublishAt(publishAt);plan.scheduleTimeZone=scheduleTimeZone||'Asia/Seoul';assertYouTubeScheduleFuture(plan,{now:now()});}
+    if(job||connecting)throw failure('YOUTUBE_BUSY','진행 중인 YouTube 작업을 마친 뒤 공개 설정을 적용해 주세요.');
+    if(upload?.location&&!upload.complete)throw failure('YOUTUBE_UPLOAD_PENDING','중단한 영상 전송을 먼저 확인해 주세요.');
+    const initial=requireAuth(channelId);if(!initial.publicationAccess)throw failure('YOUTUBE_PUBLICATION_SCOPE_REQUIRED','동영상 공개 권한이 필요해요. Google 연결 버튼으로 같은 채널에 연결하고 동영상 관리 권한에 동의해 주세요. 영상을 새로 업로드하지 않아요.');
+    const scope=controlled(signal),controller=scope.controller,expected=revision;job=controller;emit('publication-started');let putStarted=false;
+    const checkPublication=()=>{if(controller.signal.aborted||expected!==revision)throw cancelled();const auth=requireAuth(channelId);if(!auth.publicationAccess)throw failure('YOUTUBE_PUBLICATION_SCOPE_REQUIRED','동영상 공개 권한을 다시 연결해 주세요.');return auth;};
+    async function request(url,init){const auth=checkPublication(),response=await send(url,{...init,headers:{Authorization:`Bearer ${auth.token}`,...init.headers}},controller.signal);checkPublication();if(!response.ok)throw await uploadResponseError(response,controller.signal,'publication');const body=await json(response,256*1024,controller.signal,requestTimeout);checkPublication();return body;}
+    const matches=status=>status?.privacyStatus===privacyStatus&&(!plan.publishAt||(()=>{try{return normalizePublishAt(status.publishAt)===plan.publishAt;}catch{return false;}})());
+    try{
+      const lookup=new URL(VIDEO_ENDPOINT);lookup.searchParams.set('part','snippet,status');lookup.searchParams.set('id',videoId);lookup.searchParams.set('maxResults','1');
+      const body=await request(lookup.href,{method:'GET'}),item=body?.items?.[0];
+      if(!Array.isArray(body?.items)||body.items.length!==1||item?.id!==videoId||item?.snippet?.channelId!==channelId||!item.status||typeof item.status!=='object')throw failure('YOUTUBE_PUBLICATION_OWNERSHIP','기존 영상과 소유 채널을 확인하지 못했어요. 같은 채널의 YouTube Studio에서 먼저 확인해 주세요.');
+      if(matches(item.status))return{videoId,privacyStatus,...(plan.publishAt?{publishAt:plan.publishAt,scheduleConfirmed:true}:{})};
+      if(item.status.privacyStatus!=='private')throw failure('YOUTUBE_PUBLICATION_CHANGED','YouTube에서 영상 공개 상태가 변경됐어요. 자동으로 덮어쓰지 않았으니 YouTube Studio에서 확인해 주세요.');
+      if(plan.publishAt)assertYouTubeScheduleFuture(plan,{now:now()});
+      const status={};for(const key of['license','embeddable','publicStatsViewable','selfDeclaredMadeForKids','containsSyntheticMedia'])if(item.status[key]!==undefined)status[key]=item.status[key];
+      status.privacyStatus=privacyStatus;if(plan.publishAt)status.publishAt=plan.publishAt;
+      const update=new URL(VIDEO_ENDPOINT);update.searchParams.set('part','status');putStarted=true;
+      const result=await request(update.href,{method:'PUT',headers:{'Content-Type':'application/json; charset=UTF-8'},body:JSON.stringify({id:videoId,status})});
+      if(result?.id!==videoId||!matches(result?.status))throw failure('YOUTUBE_PUBLICATION_UNCERTAIN','공개·예약 적용 결과를 확인하지 못했어요. 같은 영상의 상태만 다시 확인해 주세요. 영상과 썸네일은 다시 업로드하지 않아요.');
+      emit('publication-complete');return{videoId,privacyStatus,...(plan.publishAt?{publishAt:plan.publishAt,scheduleConfirmed:true}:{})};
+    }catch(cause){if(['YOUTUBE_NETWORK','YOUTUBE_TIMEOUT','YOUTUBE_BAD_RESPONSE'].includes(cause?.code))throw failure(putStarted?'YOUTUBE_PUBLICATION_UNCERTAIN':'YOUTUBE_PUBLICATION_LOOKUP_FAILED','기존 영상의 공개 상태를 확인하지 못했어요. 재시도하면 같은 영상부터 조회하며 영상을 새로 올리지 않아요.',cause.status,undefined,'publication');throw cause;}
+    finally{scope.release();if(job===controller){job=null;emit('publication-finished');}}
+  }
   function playlistAuth(channelId, write = false) {
     const auth=requireAuth();
     if(channelId&&auth.channelId!==channelId)throw failure('YOUTUBE_PLAYLIST_CHANNEL_CHANGED','재생목록을 선택한 채널과 현재 연결한 채널이 달라요. 같은 채널로 다시 연결해 주세요.',undefined,undefined,'playlist');
@@ -410,7 +440,7 @@ export function createYouTubeClient(options = {}) {
   const storageTarget = options.eventTarget ?? (typeof window !== 'undefined' ? window : null);
   const changedElsewhere = event => {if (event.key !== SETTINGS_KEY && event.key !== null) return;let next = '';try {next = normalizeYouTubeClientId(getStorage()?.getItem(SETTINGS_KEY) || '');} catch {}if (next !== clientId) {revision++;stopActive();clearCredential();upload = null;clientId = next;emit('settings');}};
   storageTarget?.addEventListener?.('storage', changedElsewhere);
-  return {getSettings, saveClientId, getSession, subscribe, prepareIdentity, connect, disconnect, uploadVideo, getUploadState, resumeUpload, clearUpload, setThumbnail, listPlaylists, addVideoToPlaylist,
+  return {getSettings, saveClientId, getSession, subscribe, prepareIdentity, connect, disconnect, uploadVideo, getUploadState, resumeUpload, clearUpload, setThumbnail, publishVideo, listPlaylists, addVideoToPlaylist,
     dispose() {revision++;stopActive();clearCredential();upload = null;storageTarget?.removeEventListener?.('storage', changedElsewhere);subscribers.clear();}};
 }
 

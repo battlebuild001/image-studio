@@ -152,6 +152,7 @@ export function setupStudioLayout(api = {}) {
   }
   function showPane(id, {focus = false} = {}) {
     if (!panes.has(id)) return null;
+    if (document.body.classList.contains('three-step-workflow')) api.showWorkflowStep?.('delivery');
     activePane = id;updatePanes();if (focus && mobileQuery.matches) paneButtons.get(id).focus({preventScroll: true});
     return panes.get(id);
   }
@@ -173,6 +174,7 @@ export function setupStudioLayout(api = {}) {
   function reveal(target) {
     const element = typeof target === 'string' ? $(target) || document.querySelector(target) : target;
     if (!(element instanceof Element)) return null;
+    if (document.body.classList.contains('three-step-workflow') && workspace?.contains(element)) api.showWorkflowStep?.('delivery');
     const pane = [...panes].find(([, panel]) => panel === element || panel.contains(element));
     if (pane) showPane(pane[0]);
     const parents = [];for (let parent = element.parentElement; parent; parent = parent.parentElement) if (parent instanceof HTMLDetailsElement) parents.push(parent);
@@ -237,7 +239,7 @@ export function setupStudioLayout(api = {}) {
     const project = api.getProject?.();if (!project) return;
     // Empty projects keep the entry in optional tools; existing/timed projects
     // expose the whole-video action directly beside the image list.
-    if (wholeVideo) {
+    if (wholeVideo && !document.body.classList.contains('three-step-workflow')) {
       if (project.scenes?.length || project.scenePlan) {
         if (wholeVideo.nextElementSibling !== creation.details) creation.details.before(wholeVideo);
       } else if (wholeVideo.parentElement !== creation.body) {

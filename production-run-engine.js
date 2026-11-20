@@ -1,5 +1,6 @@
 import {normalizeProductionRunOptions,normalizeProductionRunState,normalizeProductionRunReport,PRODUCTION_RUN_STEP_LABELS,productionRunInput,productionRunSourceKey,productionRunStepKey,productionRunHash} from './production-run-protocol.js';
 import {normalizeBudgetSettings,estimateProductionRequest,formatBudgetAmount} from './production-budget.js';
+import {storyboardInputForProject} from './storyboard-protocol.js';
 
 const copy=value=>structuredClone(value),abort=message=>new DOMException(message||'작업을 중지했어요. 완료한 결과는 유지했어요.','AbortError');
 const owner=api=>JSON.stringify([api.getWorkspaceId?.()??null,api.getProject().id]);
@@ -88,7 +89,7 @@ export function createProductionRunEngine(api,{caption,images,review,now=()=>new
  }
  function estimateCost(project,captionPlan,counts,budget){
   const body=value=>({method:'POST',body:JSON.stringify(value)}),image=estimateProductionRequest('/api/image/generate',body({quality:project.imageStudio?.quality||'medium'}),budget).usd*counts.imageCalls,
-   plan=counts.planningCalls?estimateProductionRequest('/api/image/plan',body({fullScript:project.scenePlan?.sourceScript||'',items:project.scenePlan?.items||[]}),budget).usd:0,
+   plan=counts.planningCalls?estimateProductionRequest('/api/image/plan',body(storyboardInputForProject(project)),budget).usd:0,
    minutes=captionPlan?.source?Math.max(0,(captionPlan.source.sourceEnd-captionPlan.source.sourceStart)/60):0,
    transcription=counts.transcriptCalls?minutes*budget.rates.transcribePerMinute*1.2:0,
    reviews=counts.reviewCalls*estimateProductionRequest('/api/production/assist',body({task:'source-fidelity',context:{sourceText:project.scriptDraft?.sourceText||'',fullScript:project.scenePlan?.sourceScript||''},images:Array.from({length:Math.min(8,project.scenes.length)},()=>({}))}),budget).usd,
