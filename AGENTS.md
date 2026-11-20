@@ -67,12 +67,12 @@ Project tools show four goal groups: 프로젝트 설정, 대본·음성, 검토
 쇼츠 제작 and 시리즈 업로드 as two inner tabs inside the fourth delivery step.
 Keep the drama-series queue inside the shorts step and preserve reviewed title,
 description and thumbnail selection across Previous/Next navigation.
-Preserve the four primary workflow steps and route legacy section openers to the
+Preserve the three primary workflow steps (대본 입력 → 이미지 생성 → 편집·저장·업로드) and route legacy section openers to the
 correct dialog; never put delivery tools back inside project settings.
 
 - `production-run-studio.js/.css`, `production-run-engine.js`, `production-run-protocol.js`
   and `workflow-*-runner.js` provide the explicit combined production flow. Preserve the
-  four existing workflow steps and detailed tools. Opening or preparing the combined
+  three primary workflow steps and advanced detailed tools. Opening or preparing the combined
   screen performs no paid requests. One reviewed Run acknowledges concrete per-stage
   request/image counts and timing/caption changes; no extra step dialogs or hidden
   retries, video rendering or uploads. The recommended preset chooses applicable
@@ -321,7 +321,10 @@ publish user media as a regression check or claim authenticated upload success.
 - `dist/youtube-client.js`: official Google Identity Services token model and
   direct resumable YouTube REST transport. Require upload + readonly scopes for
   uploads and channel identity; this remains the default OAuth request. Optional
-  playlist insertion may add youtube.force-ssl only through its separate explicit
+  main-video publication management adds youtube.force-ssl only through the explicit
+  Google Connect action with publicationAccess:true; existing grants are not silently
+  expanded. This enables the required-thumbnail private staging flow and status update.
+  Optional playlist insertion may add youtube.force-ssl through its separate explicit
   user gesture and consent, never to diagnose a failure or silently widen access.
   Only public clientID is locally stored; tokens,
   channel auth state and resumable capability URLs stay in memory. SDK loading is
@@ -764,10 +767,17 @@ for credential values in chat. Inspect configured presence without exposing valu
 
 ## Behavior to preserve
 
-- Keep four primary actions: 대본 → 타이밍 → 이미지 → 편집·저장. Voice remains
-  optional in the initially closed 음성·자막 drawer. Group new/open/backup/library/
+- Keep three primary actions: 대본 입력 → 이미지 생성 → 편집·저장·업로드.
+  Manual script, cadence, voice and built-in local BGM generation belong in step 1.
+  Reference research/upload, one randomly shown real candidate, image direction,
+  composition and reviewed sequential count/cost generation belong in step 2.
+  Editing, project save, encoding, publishing and main upload belong in step 3.
+  Full-video uploads require a real thumbnail and newly created drafts default to public;
+  stage privately, attach the thumbnail and then apply the reviewed publication status.
+  Shorts remains available after a completed current-source main upload. Keep old
+  specialist tools in the initially closed advanced-tools group. Voice remains optional. Group new/open/backup/library/
   help/example actions in the top 프로젝트 menu while keeping API 설정 visible.
-  The primary whole-video image launcher stays outside 제작 도구 after timing confirmation.
+  The primary whole-video image flow is embedded in step 2 after timing confirmation.
   Optional manual/reference-single-image/template/PNG tools belong in 제작 도구;
   multiselect/bulk controls in 선택 장면 편집; motion/framing/actions in
   움직임·장면 도구; global transitions/caption style in 영상·자막 스타일.

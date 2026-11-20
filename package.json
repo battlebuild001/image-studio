@@ -98,7 +98,12 @@
     "test:bulk-video-browser": "node tests/bulk-video.browser.cjs",
     "desktop:start": "electron .",
     "desktop:build": "node scripts/desktop-build.mjs --win",
-    "desktop:build:linux": "node scripts/desktop-build.mjs --linux-smoke"
+    "desktop:build:linux": "node scripts/desktop-build.mjs --linux-smoke",
+    "test:three-step-browser": "node tests/three-step-studio.browser.cjs",
+    "test:three-step-export-browser": "STUDIO_NATIVE_EXPORT=1 node tests/three-step-studio.browser.cjs",
+    "test:thumbnail-required-browser": "node tests/youtube-required-thumbnail.browser.cjs",
+    "test:image-reference-workflow-browser": "node tests/image-reference-workflow.browser.cjs",
+    "test:bgm-browser": "node tests/bgm-studio.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

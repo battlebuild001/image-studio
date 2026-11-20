@@ -62,6 +62,11 @@ function route(url,method,configuredBase) {
       if(method!=='POST'||!/^[A-Za-z0-9_-]{11}$/u.test(params.videoId||'')||params.uploadType!=='media')throw invalid();
       return{provider:'youtube',responseLimit:2*1024*1024};
     }
+    if(path==='/youtube/v3/videos'&&(method==='PUT'||method==='GET'&&url.searchParams.get('part')==='snippet,status')){
+      const params=query(url,method==='PUT'?['part']:['part','id','maxResults']);
+      if(method==='PUT'?params.part!=='status':params.part!=='snippet,status'||!/^[A-Za-z0-9_-]{11}$/u.test(params.id||'')||params.maxResults!=='1')throw invalid();
+      return{provider:'youtube',responseLimit:2*1024*1024};
+    }
     const params=query(url,['part','mine','maxResults','pageToken','id','playlistId','videoId']);
     if(params.part!=='snippet'||(params.maxResults!==undefined&&!['1','50'].includes(params.maxResults))||(params.mine!==undefined&&params.mine!=='true')||(params.id!==undefined&&!/^[A-Za-z0-9_-]{1,200}$/u.test(params.id))||(params.playlistId!==undefined&&!/^[A-Za-z0-9_-]{1,200}$/u.test(params.playlistId))||(params.videoId!==undefined&&!/^[A-Za-z0-9_-]{11}$/u.test(params.videoId))||(params.pageToken!==undefined&&!/^[A-Za-z0-9._~+\/=\-]{1,1000}$/u.test(params.pageToken)))throw invalid();
     if(method==='GET'&&['/youtube/v3/channels','/youtube/v3/videos','/youtube/v3/playlists','/youtube/v3/playlistItems'].includes(path))return{provider:'youtube',responseLimit:2*1024*1024};

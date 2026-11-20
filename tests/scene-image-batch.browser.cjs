@@ -168,6 +168,18 @@ const {chromium} = require('playwright');
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));assert.ok(await page.locator('#sceneImageBatchDialog').evaluate(dialog => dialog.scrollWidth <= dialog.clientWidth + 1));
     await page.screenshot({path: '/tmp/scene-image-batch-mobile.png', fullPage: true});assert.deepEqual(errors, []);
     console.log('PASS mobile batch controls; generated results are synthetic fixtures, not live image quality validation');
+    await close();await reset();const beforeMissingReference=requests.length;
+    await page.evaluate(()=>{window.batchProject.imageStudio.references=[];window.batchUi.mount(document.querySelector('main'));window.batchUi.render();});
+    await page.waitForFunction(()=>document.querySelector('#sceneImageBatchPlanState').textContent.includes('이미지 API 설정됨'));
+    await page.locator('#confirmSceneImageBatch').check();
+    assert.equal(await page.locator('#startSceneImageBatchBtn').isDisabled(),true);assert.equal(await page.locator('#planVideoImagesBtn').isDisabled(),true);
+    assert.match(await page.locator('#videoImagePlanningState').innerText(),/레퍼런스/u);
+    await page.evaluate(()=>document.getElementById('startSceneImageBatchBtn').dispatchEvent(new MouseEvent('click',{bubbles:true})));
+    await idle();assert.equal(requests.length,beforeMissingReference);assert.match(await page.locator('#sceneImageBatchError').innerText(),/한 장을 먼저 선택/u);
+    assert.equal(await page.locator('#sceneImageBatchDialog').evaluate(dialog=>dialog.open),false);
+    assert.equal(await page.locator('#sceneImageBatchRequestsPanel').evaluate(panel=>panel.open),false);
+    assert.deepEqual(errors,[]);
+    console.log('PASS embedded workflow requires an actual selected reference before planning/generation, keeps prompts collapsed and never opens the legacy modal');
   } catch (error) {
     await page.screenshot({path: '/tmp/scene-image-batch-failure.png', fullPage: true}).catch(() => {});
     console.error('Batch UI state:', await page.locator('#sceneImageBatchStatus,#sceneImageBatchError,#sceneImageBatchPlanState').allTextContents().catch(() => []));console.error(await page.evaluate(async()=>({plan:(await import('/script-planning.js')).getScenePlanStatus(window.batchProject),direct:(await import('/direct-openai.js')).getDirectSettings(),checked:document.querySelector('#confirmSceneImageBatch').checked})).catch(()=>({})));throw error;

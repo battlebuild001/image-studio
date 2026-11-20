@@ -107,7 +107,7 @@ export function setupVoiceStudio(api) {
     audio.pause();audio.removeAttribute('src');audio.load();if (resultUrl) URL.revokeObjectURL(resultUrl);resultUrl = null;lastResult = null;result.hidden = true;
   }
   function stop(message = '음성 생성을 취소했어요. 대본과 기존 내레이션은 그대로 있어요.') {
-    operation++;controller?.abort();controller = null;active = null;if(busy&&message)operationProgress.cancel(message);else if(!message)operationProgress.clear();busy = false;dialog.setAttribute('aria-busy', 'false');status.textContent = message;refreshActions();
+    operation++;controller?.abort();controller = null;active = null;if(busy&&message)operationProgress.cancel(message);else if(!message)operationProgress.clear();busy = false;dialog.setAttribute('aria-busy', 'false');status.textContent = message;refreshActions();api.renderWorkflowState?.();
   }
   function cancelConnectionCheck() {connectionSequence++;connectionController?.abort();connectionController = null;connectionProgress.clear();}
   async function checkConnection() {
@@ -155,7 +155,7 @@ export function setupVoiceStudio(api) {
       if (requested !== operation) return;
       if (cause.name === 'AbortError'){status.textContent = '음성 생성을 취소했어요. 대본과 기존 내레이션은 유지했어요.';task.cancel('음성 생성을 취소했어요.');}
       else {error.textContent = cause.message || '음성 생성에 실패했어요.';status.textContent = '완성한 음성을 만들지 못했어요. 기존 결과와 내레이션은 유지했어요.';task.fail(error.textContent);}
-    } finally {if (requested === operation) {busy = false;controller = null;active = null;dialog.setAttribute('aria-busy', 'false');refreshActions();}}
+    } finally {if (requested === operation) {busy = false;controller = null;active = null;dialog.setAttribute('aria-busy', 'false');refreshActions();api.renderWorkflowState?.();}}
   }
   async function applyVoice() {
     if (!lastResult || busy || applying) return;if (!matchesResult()) throw new Error('이 샘플과 현재 읽을 대본이 달라요. 샘플은 보관되며, 적용할 대본을 확인해 주세요.');
@@ -166,7 +166,7 @@ export function setupVoiceStudio(api) {
       status.textContent = '생성한 음성을 내레이션으로 넣었어요. ‘다음: 영상 편집’으로 장면을 만들 수 있어요.';
       task.finish('내레이션 적용 완료');api.toast('생성한 음성을 내레이션으로 넣었어요. 이제 영상 장면과 자막을 편집할 수 있어요.');
     }catch(cause){task.fail(cause.message||'내레이션을 적용하지 못했어요.');throw cause;}
-    finally {applying = false;refreshActions();}
+    finally {applying = false;refreshActions();api.renderWorkflowState?.();}
   }
   async function open(options = {}) {
     if (busy) stop();operationProgress.clear();api.pause();audio.pause();error.textContent = '';status.textContent = '';
@@ -208,7 +208,7 @@ export function setupVoiceStudio(api) {
     const selected = file.files[0];if (!selected) return;applying = true;refreshActions();const task=operationProgress.start('음성 파일 읽는 중');
     try {await nextPaint();await api.addNarrationFile(selected);status.textContent = '음성 파일을 내레이션으로 넣었어요. ‘다음: 영상 편집’으로 이어갈 수 있어요.';task.finish('음성 파일 불러오기 완료');}
     catch(cause){task.fail(cause.message||'음성 파일을 불러오지 못했어요.');throw cause;}
-    finally {file.value = '';applying = false;refreshActions();}
+    finally {file.value = '';applying = false;refreshActions();api.renderWorkflowState?.();}
   }));
   next.addEventListener('click', run(() => {
     const script = stripEnglishParentheticalGlosses(text.input.value).trim();if (!script) throw new Error('먼저 대본을 작성해 주세요.');
@@ -216,6 +216,6 @@ export function setupVoiceStudio(api) {
     audio.pause();dialog.close();api.applyScriptDraft({script,...(hasDisplay ? {displayScript:getDisplayScript(project)}:{}), title: draftTitle, targetMinutes});
   }));
   function reset() {stop('');cancelConnectionCheck();providerControls.reset();clearResult();samplesFingerprint='';text.input.value = '';projectId = api.getProject().id;if (dialog.open) dialog.close();render();}
-  savedField.input.addEventListener('change',()=>selectStoredSample(savedField.input.value));deleteSample.addEventListener('click',run(async()=>{if(busy||applying||!lastResult?.record)return;const assetId=lastResult.record.assetId,job=operationProgress.start('선택한 음성 샘플을 보관함에서 지우고 있어요.');applying=true;refreshActions();try{await api.removeVoiceSample?.(assetId);if(lastResult?.record?.assetId===assetId)clearResult();samplesFingerprint='';job.finish('선택한 샘플을 보관함에서 지웠어요.');}catch(cause){job.fail(cause.message);throw cause;}finally{applying=false;renderSavedSamples();refreshActions();}}));
-  render();return {open, render, reset, canOpenToolNavigation};
+  savedField.input.addEventListener('change',()=>selectStoredSample(savedField.input.value));deleteSample.addEventListener('click',run(async()=>{if(busy||applying||!lastResult?.record)return;const assetId=lastResult.record.assetId,job=operationProgress.start('선택한 음성 샘플을 보관함에서 지우고 있어요.');applying=true;refreshActions();try{await api.removeVoiceSample?.(assetId);if(lastResult?.record?.assetId===assetId)clearResult();samplesFingerprint='';job.finish('선택한 샘플을 보관함에서 지웠어요.');}catch(cause){job.fail(cause.message);throw cause;}finally{applying=false;renderSavedSamples();refreshActions();api.renderWorkflowState?.();}}));
+  render();return {open, render, reset, canOpenToolNavigation, getBusy:()=>Boolean(busy||applying)};
 }

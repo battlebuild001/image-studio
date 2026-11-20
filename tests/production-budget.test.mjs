@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import {createApiClient} from '../dist/api-client.js';
 import {createProject,validateProject} from '../dist/project.js';
 import {defaultProductionBudget,normalizeBudgetSettings,estimateProductionRequest,isPaidProductionRequest,budgetLimitUsd,
-  configureProductionBudget,beginProductionBudgetRequest} from '../dist/production-budget.js';
+  configureProductionBudget,beginProductionBudgetRequest,estimateProductionImageBatch} from '../dist/production-budget.js';
 
 class Storage {values=new Map();getItem(key){return this.values.get(key)??null;}setItem(key,value){this.values.set(key,String(value));}removeItem(key){this.values.delete(key);}}
 const post=value=>({method:'POST',body:JSON.stringify(value)});
@@ -28,6 +28,16 @@ test('editable planning rates estimate text/search/quality/audio and never charg
   const noVision=estimateProductionRequest('/api/production/assist',post({task:'visual-review',context:{},images:[]}),budget),vision=estimateProductionRequest('/api/production/assist',post({task:'visual-review',context:{},images:[{data:'A'.repeat(200000)}]}),budget);assert.ok(Math.abs(vision.usd-noVision.usd-budget.rates.visionPerImage*1.2)<1e-8);
   assert.equal(budgetLimitUsd({...budget,currency:'KRW',limit:14000,exchangeRate:1400}),10);
   assert.throws(()=>normalizeBudgetSettings({...budget,limit:NaN}));assert.throws(()=>normalizeBudgetSettings({...budget,rates:{...budget.rates,imageLow:-1}}));
+});
+
+test('additional image quote uses the reviewed count once, includes the margin and excludes historical reservations',()=>{
+  const budget={...defaultProductionBudget(),currency:'KRW',spentUsd:999,ledger:[{id:'previous',estimatedUsd:999,status:'uncertain'}]};
+  const quote=estimateProductionImageBatch({count:48,quality:'medium'},budget);
+  assert.equal(quote.count,48);assert.equal(quote.unitUsd,.36);assert.equal(quote.usd,17.28);assert.equal(quote.label,'₩24,192');
+  assert.match(quote.note,/예시 단가.*20%/u);assert.match(quote.note,/실제 제공자 청구액이 아니/u);assert.match(quote.note,/누적 사용액은 포함하지/u);
+  assert.equal(estimateProductionImageBatch({count:24,quality:'medium'},budget).usd,8.64);
+  assert.equal(estimateProductionImageBatch({count:0,quality:'high'},budget).usd,0);
+  assert.throws(()=>estimateProductionImageBatch({count:1.5},budget));assert.throws(()=>estimateProductionImageBatch({count:-1},budget));
 });
 
 test('budget reservation blocks a second paid request before provider dispatch while GET/config/save stay free',async()=>{

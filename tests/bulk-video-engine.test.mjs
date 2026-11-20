@@ -3,7 +3,9 @@ import {test} from 'node:test';
 import {createProject,createScene} from '../dist/project.js';
 import {createBulkVideoEngine} from '../dist/bulk-video-engine.js';
 import {normalizeBulkVideoJob} from '../dist/bulk-video-store.js';
-import {beginProductionBudgetRequest,configureProductionBudget,defaultProductionBudget} from '../dist/production-budget.js';
+import {beginProductionBudgetRequest,configureProductionBudget,defaultProductionBudget,estimateProductionRequest} from '../dist/production-budget.js';
+import {buildBulkScriptProject} from '../dist/bulk-video-projects.js';
+import {storyboardInputForProject} from '../dist/storyboard-protocol.js';
 const stamp='2026-11-16T10:00:00.000Z',clone=value=>structuredClone(value);
 const image=new Blob(['synthetic-png-bytes'],{type:'image/png'});
 function fixture({filled=true,aspect='16:9'}={}){return{project:createProject({id:'original',title:'원본 영상',aspect,scenes:[createScene({id:'one',caption:'첫 번째 장면입니다.',duration:1,imageId:filled?'original-image':null}),createScene({id:'two',caption:'두 번째 장면입니다.',duration:1,imageId:filled?'original-image':null})],production:{version:1,budget:{...defaultProductionBudget(),enabled:true,limit:100,spentUsd:7,ledger:[]}}}),assets:new Map(filled?[['original-image',{name:'original.png',blob:image}]]:[])};}
@@ -21,6 +23,21 @@ test('added jobs are independent snapshots with fresh costs and media; review is
  await e.run(review,{acknowledged:true});assert.equal(calls.length,1);assert.equal(e.getState().jobs[0].status,'completed');assert.equal((await e.getVideo(job.id)).blob.size,rendered().blob.size);assert.deepEqual(f.project,before);
  await assert.rejects(e.run(review,{acknowledged:true}),/다시 확인/u);
  const finished=await e.prepare();assert.equal(finished.counts.videos,0);assert.ok(finished.blockers.length);
+});
+
+test('bulk storyboard quote counts the actual caption request rather than existing image prompts',async()=>{
+ const project=buildBulkScriptProject({baseProject:createProject(),script:'첫 장면의 규칙을 설명합니다. 다음 장면은 실제 이동을 보여 줍니다.',durationSeconds:10,intervalSeconds:5});
+ project.scenePlan.items.forEach(item=>{item.prompt='이전 이미지 생성용 긴 요청입니다. '.repeat(100);});
+ project.scenePlan.imageInstructions='대본과 같은 내용을 실제 게임 화면처럼 구성해 주세요.';
+ project.imageStudio.background='미니어처 게임 테이블';
+ const store=memory(),e=engine({store}),added=await e.add({project,assets:new Map()}),saved=await store.get(added.id),review=await e.prepare();
+ const post=value=>({method:'POST',body:JSON.stringify(value)}),budget=saved.project.production.budget;
+ const storyboard=estimateProductionRequest('/api/image/plan',post(storyboardInputForProject(saved.project)),budget).usd;
+ const images=2*estimateProductionRequest('/api/image/generate',post({quality:'medium'}),budget).usd;
+ const oldStoryboard=estimateProductionRequest('/api/image/plan',post({fullScript:saved.project.scenePlan.sourceScript,items:saved.project.scenePlan.items}),budget).usd;
+ assert.deepEqual(review.blockers,[]);assert.equal(review.counts.imageCalls,2);assert.equal(review.counts.planningCalls,1);
+ assert.equal(review.estimatedUsd,images+storyboard);assert.ok(oldStoryboard>storyboard);
+ assert.equal((await e.prepare()).estimatedUsd,review.estimatedUsd);assert.equal((await store.get(added.id)).project.production.budget.spentUsd,0);
 });
 
 test('each generated image is saved before the next request, failure stops later jobs, explicit resume preserves prior images',async()=>{

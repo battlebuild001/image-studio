@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createProductionRunEngine} from '../dist/production-run-engine.js';
 import {normalizeProductionRunOptions,normalizeProductionRunState,normalizeProductionRunReport,productionRunSourceKey,productionRunStepKey} from '../dist/production-run-protocol.js';
+import {defaultProductionBudget,estimateProductionRequest} from '../dist/production-budget.js';
+import {storyboardInputForProject} from '../dist/storyboard-protocol.js';
 
 const clone=value=>structuredClone(value);
 function fixture({failAfterFirstImage=false,timelineChanged=false,persistHook,captionHook}={}){
  let project={id:'project-one',title:'별의 기록',aspect:'16:9',settings:{subtitles:true,narrationVolume:1},audio:{narrationId:'voice',narrationStart:0,narrationEnd:8,narrationOffset:0},scenes:[{id:'scene-one',imageId:'kept-image',caption:'첫 사건입니다.',duration:4},{id:'scene-two',imageId:null,caption:'둘째 사건입니다.',duration:4},{id:'scene-three',imageId:null,caption:'셋째 사건입니다.',duration:4}],captionMode:'auto',captions:[],captionAnalysis:null,scriptDraft:{sourceText:'최초 신호와 이주와 정착의 세 사건입니다.',instructions:'원본을 지켜 주세요.',displayScript:'첫 사건입니다. 둘째 사건입니다. 셋째 사건입니다.',draftScript:'첫 사건입니다. 둘째 사건입니다. 셋째 사건입니다.'},imageStudio:{quality:'medium',references:[]},scenePlan:{sourceScript:'첫 사건입니다. 둘째 사건입니다. 셋째 사건입니다.',items:[],intervalSeconds:4,durationSeconds:12},production:{version:1}};
+ project.scenePlan.items=project.scenes.map((scene,index)=>({sceneId:scene.id,start:index*4,end:(index+1)*4,caption:scene.caption,prompt:scene.caption}));
  const assets=new Map([['voice',{blob:new Blob(['voice'],{type:'audio/wav'}),name:'voice.wav'}],['kept-image',{blob:new Blob(['kept'],{type:'image/png'}),name:'kept.png'}]]),calls=[],saved=[],applies=[];let busy=false,settings='model-one',workspace='workspace-one',persistCount=0;
  const api={getProject:()=>project,getAssets:()=>assets,getWorkspaceId:()=>workspace,canMutate:()=>!busy,setProductionRunBusy:value=>{busy=value;},getProductionRunSettingsKey:()=>settings,isProductionRunApiConfigured:()=>true,mutateProductionMetadata:action=>action(project),mutate:action=>action(project),persist:async()=>{persistCount++;await persistHook?.({api,project,calls,persistCount});saved.push(clone(project));},prepareWorkflowProject:async()=>({project:clone(project),changed:timelineChanged,summary:{message:'세 장면의 시간표를 유지합니다.'}}),applyWorkflowProject:async({project:incoming,guard})=>{assert.equal(guard(),true);const production=project.production;applies.push(clone(incoming));project={...clone(incoming),production};await api.persist();},flushProjectEditors(){}};
  const caption={prepareCaptionWork:async(current,options)=>({requestCount:options.mode==='precise'?1:0,label:options.mode==='precise'?'음성 분석 자막으로 교체':'추정 · 길이 기준 맞춤',source:{sourceStart:0,sourceEnd:8}}),runCaptionWork:async(current,prepared,{guard,signal,onProgress})=>{guard();if(signal.aborted)throw new DOMException('중지','AbortError');calls.push('asr');await captionHook?.({api,current,calls});guard();const next=clone(current.getProject());next.captionMode='speech';next.captions=[{start:0,end:4,text:'실제 발화 첫 사건입니다.'}];next.captionAnalysis={narrationId:'voice',sourceStart:0,sourceEnd:8};onProgress?.('실제 발화 시간을 확인했어요.');return{project:next,requestCount:prepared.requestCount,label:'실제 발화 시간 기준',guard};}};
@@ -32,6 +35,15 @@ test('local preparation computes bounded reviewed calls, preserves the project a
  assert.deepEqual(plan.counts,{transcriptCalls:1,planningCalls:1,imageCalls:2,reviewCalls:2,totalPaidCalls:6});assert.deepEqual(plan.blockingReasons,[]);assert.equal(plan.sceneCount,3);assert.equal(plan.stages.length,6);assert.ok(plan.estimatedCost.usd>0);
  assert.throws(()=>{plan.counts.imageCalls=200;});assert.throws(()=>{plan.options.sync='none';});
  await assert.rejects(f.engine.run(plan),/확인/u);assert.deepEqual(f.calls,[]);f.engine.dispose();
+});
+
+test('one-run storyboard quote matches the actual request and ignores old generated prompts',async()=>{
+ const f=fixture(),budget=defaultProductionBudget(),post=value=>({method:'POST',body:JSON.stringify(value)});
+ f.project.scenePlan.items.forEach(item=>{item.prompt='이전 이미지의 상세 연출 요청입니다. '.repeat(100);});
+ f.project.scenePlan.imageInstructions='대본과 같은 실제 게임 테이블을 보여 주세요.';
+ const plan=await f.engine.prepare({sync:'none',images:true,planImages:true,localReview:false,sourceReview:false,imageReview:false});
+ const expected=2*estimateProductionRequest('/api/image/generate',post({quality:'medium'}),budget).usd+estimateProductionRequest('/api/image/plan',post(storyboardInputForProject(f.project)),budget).usd;
+ assert.equal(plan.estimatedCost.usd,expected);assert.deepEqual(f.calls,[]);assert.equal(f.saved.length,0);f.engine.dispose();
 });
 
 test('one acknowledged run executes exact sequential stages, saves each image and retains unrelated files and script',async()=>{

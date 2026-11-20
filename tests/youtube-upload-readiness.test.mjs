@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {getYouTubeUploadReadiness} from '../dist/youtube-upload-readiness.js';
 
-const ready = {connected: true, videoReady: true, exportState: 'ready'};
+const ready = {connected: true, videoReady: true, thumbnailReady:true, exportState: 'ready'};
 
 test('a connected channel and ready thumbnail cannot substitute for an actual video file', () => {
   const result = getYouTubeUploadReadiness({connected: true, videoReady: false});
@@ -45,7 +45,7 @@ test('only complete unblocked preparations are marked ready across channel, file
   for (const connected of [false, true]) for (const videoReady of [false, true])
     for (const pausedUpload of [false, true]) for (const pendingThumbnail of [false, true])
       for (const scheduleValid of [false, true]) {
-        const input = Object.freeze({connected, videoReady, pausedUpload, pendingThumbnail, scheduleValid});
+        const input = Object.freeze({connected, videoReady, thumbnailReady:true, pausedUpload, pendingThumbnail, scheduleValid});
         const expected = connected && videoReady && !pausedUpload && !pendingThumbnail && scheduleValid;
         const result = getYouTubeUploadReadiness(input);
         assert.equal(result.ready, expected, JSON.stringify(input));
@@ -63,7 +63,7 @@ test('guidance is deterministic and readonly, with no project changes or transpo
 
 
 test('playlist and visible hashtag review must complete before a new prepared upload',()=>{
-  const ready={connected:true,videoReady:true};
+  const ready={connected:true,videoReady:true,thumbnailReady:true};
   assert.equal(getYouTubeUploadReadiness({...ready,receiptPending:true}).action,'receipt');
   assert.equal(getYouTubeUploadReadiness({...ready,playlistError:'재생목록 추가 권한을 연결해 주세요.'}).action,'playlist');
   assert.equal(getYouTubeUploadReadiness({...ready,hashtagError:'선택한 태그를 설명란에 반영해 주세요.'}).action,'hashtags');

@@ -17,6 +17,7 @@ function partition(project,assets,preserve){
  const intro=scenes.slice(0,first).reduce((sum,scene)=>sum+scene.duration,0),outro=scenes.slice(last).reduce((sum,scene)=>sum+scene.duration,0);
  return{first,last,intro,outro,body:scenes.slice(first,last)};
 }
+export function protectedTitleScenes(project,assets){const parts=partition(project,assets,true);return{intro:project.scenes.slice(0,parts.first),body:parts.body,outro:project.scenes.slice(parts.last)};}
 /** Same conservative detector used by repair; never guesses from empty captions. */
 export function protectedTitleDurations(project,assets){
  const parts=partition(project,assets,true);

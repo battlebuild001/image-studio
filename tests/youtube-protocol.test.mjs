@@ -42,7 +42,7 @@ test('tag limits include comma separators and quoted space tags without changing
 });
 
 test('portable drafts allow incomplete titles with private defaults and reject credential/raw session fields',()=>{
-  const value=normalizeYouTubeUploadDraft();assert.deepEqual(value,{title:'',description:'',tags:[],privacyStatus:'private',selfDeclaredMadeForKids:false,containsSyntheticMedia:true});
+  const value=normalizeYouTubeUploadDraft();assert.deepEqual(value,{title:'',description:'',tags:[],privacyStatus:'public',selfDeclaredMadeForKids:false,containsSyntheticMedia:true});
   assert.equal(normalizeYouTubeUploadDraft({description:'원문만 먼저 작성합니다.'}).title,'');
   for(const field of ['clientId','clientSecret','accessToken','refresh_token','authorization','uploadUrl','sessionUri','autoUpload','blob','rawResponse'])assert.throws(()=>normalizeYouTubeUploadDraft({...value,[field]:'forbidden'}));
   assert.throws(()=>normalizeYouTubeUploadDraft({title:'ya29.'+'a'.repeat(25)}));assert.throws(()=>normalizeYouTubeUploadDraft({description:'sk-synthetic-credential-value-never-portable'}));
@@ -61,7 +61,7 @@ test('publishing import preserves manual description and tags verbatim without a
   const source=project();source.scriptDraft={draftScript:'사용자가 공개하기로 하지 않은 긴 원본 대본'};source.production={publishing:{selectedTitle:1,result:{titles:['첫 후보','선택한 영상 제목'],description:'  사용자가 검토한 설명입니다.  ',tags:['세계관','우주'],chapters:[{start:0,title:'도입'},{start:65.7,title:'항해'},{start:3601,title:'정착'}]}}};
   const before=structuredClone(source),value=publishingToYouTubeMetadata(source);
   assert.equal(value.title,'선택한 영상 제목');assert.equal(value.description,'  사용자가 검토한 설명입니다.  ');assert.deepEqual(value.tags,['세계관','우주']);assert.equal(value.description.includes(source.scriptDraft.draftScript),false);assert.deepEqual(source,before);assert.deepEqual(source.production.publishing.result.chapters,before.production.publishing.result.chapters);
-  const noKit=publishingToYouTubeMetadata(project());assert.equal(noKit.title,'영상 제목');assert.equal(noKit.description,'');assert.equal(noKit.privacyStatus,'private');
+  const noKit=publishingToYouTubeMetadata(project());assert.equal(noKit.title,'영상 제목');assert.equal(noKit.description,'');assert.equal(noKit.privacyStatus,'public');
 });
 
 test('oversized publishing imports fail without truncating the source or current draft',()=>{
