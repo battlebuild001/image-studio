@@ -47,7 +47,7 @@ export function setupBulkVideoStudio(api) {
   const heading = node('div', 'dialog-heading'), title = node('h2', '', '영상 대량 제작');title.id = 'bulkVideoTitle';
   const closeHead = button('closeBulkVideoHeaderBtn', '×', 'icon-button');closeHead.setAttribute('aria-label', '영상 대량 제작 닫기');heading.append(title, closeHead);dialog.append(heading);
   const body = node('div', 'dialog-body');dialog.append(body);
-  body.append(node('p', 'bulk-video-intro', '여러 영상을 담고 한 번만 시작하세요. 음성 생성 → 음성 길이에 맞추기 → 이미지 생성 → 영상 제작까지 한 번에 진행합니다. 완성 영상을 재생해 확인하고 썸네일·소개글을 정리한 뒤 예약 업로드하세요. 원본은 유지하고 별도 복사본에 저장해요.'));
+  body.append(node('p', 'bulk-video-intro', '여러 영상을 담고 한 번만 시작하세요. 음성 생성 → 음성 길이에 맞추기 → 이미지 생성 → 영상 제작까지 한 번에 진행합니다. 완성 영상을 재생해 확인하고 썸네일·소개글과 공개 설정을 정리한 뒤 업로드하세요. 원본은 유지하고 별도 복사본에 저장해요.'));
   const columns = node('div', 'bulk-video-grid'), sources = node('section', 'bulk-video-sources'), queue = node('section', 'bulk-video-queue');columns.append(sources, queue);body.append(columns);
   sources.append(node('h3', '', '1. 만들 영상 담기'));
   const current = button('addBulkCurrentBtn', '현재 프로젝트 담기', 'outline full');sources.append(current);
@@ -79,21 +79,26 @@ export function setupBulkVideoStudio(api) {
   const images = check('bulkVideoImages', '빈 장면 이미지를 AI로 생성', true), planImages = check('bulkVideoPlanImages', '전체 대본으로 이미지 구성 먼저 만들기', true);
   const format = select('bulkVideoFormat', [['mp4', 'MP4'], ['webm', 'WebM']]), resolution = select('bulkVideoResolution', [['720', '720p'], ['1080', '1080p']]);
   const exportSettings = node('div', 'bulk-video-pair');exportSettings.append(label('영상 형식', format), label('해상도', resolution));options.append(exportSettings, node('p', 'bulk-video-help', '영상 출력은 실제 영상 길이만큼 걸려요. 실행 중에는 이 탭을 열어 두세요. 완료한 영상은 이 기기에 저장되며, 실패·중지하면 남은 작업을 다시 확인해 시작할 수 있어요. 최대 20개까지 담을 수 있어요.'));sources.append(options);
-  const upload = check('bulkVideoUpload', '재생 확인 후 YouTube 예약 업로드 준비', preferences.upload !== false);
+  const upload = check('bulkVideoUpload', '재생 확인 후 YouTube 업로드 준비', preferences.upload !== false);
   const uploadSection = node('section', 'bulk-video-upload');uploadSection.append(node('h4', '', '공통 업로드 설정'));
   const channelStatus = node('p', 'bulk-video-help');channelStatus.id = 'bulkVideoChannelStatus';channelStatus.setAttribute('role', 'status');
   const connect = button('bulkVideoYouTubeConnectBtn', 'YouTube 계정 연결'), uploadSettingsBtn = button('bulkVideoYouTubeSettingsBtn', 'YouTube 연결 설정');
   const connectActions = node('div', 'bulk-video-actions');connectActions.append(connect, uploadSettingsBtn);uploadSection.append(channelStatus, connectActions);
+  const privacy = select('bulkVideoPrivacy', [['public', '공개 · 기본'], ['unlisted', '일부 공개'], ['private', '비공개']]);
+  let privacyChoiceExplicit=['public','unlisted','private'].includes(preferences.privacyStatus);privacy.value=privacyChoiceExplicit?preferences.privacyStatus:'public';
+  uploadSection.append(label('공통 공개 상태 · 예약 없는 영상', privacy),node('p','bulk-video-help','새 영상은 공개가 기본이에요. 기존 영상의 개별 공개 상태는 이 공통 값을 직접 바꾸기 전까지 유지합니다.'));
   const kids = select('bulkVideoMadeForKids', [['false', '아동용이 아닙니다'], ['true', '아동용 콘텐츠입니다']]);kids.value = preferences.madeForKids === true ? 'true' : 'false';
   const synthetic = input('bulkVideoSynthetic', 'checkbox');synthetic.checked = preferences.synthetic !== false;
   const syntheticLabel = node('label', 'bulk-video-check');syntheticLabel.append(synthetic, node('span', '', '사실처럼 보이는 AI·합성 콘텐츠 포함'));
   uploadSection.append(label('모든 영상의 아동용 여부', kids), syntheticLabel);
+  const scheduleEnabled=input('bulkVideoScheduleEnabled','checkbox');scheduleEnabled.checked=preferences.scheduleEnabled===true;
+  const scheduleToggle=node('label','bulk-video-check');scheduleToggle.append(scheduleEnabled,node('span','','새로 담는 영상에 예약 시간 자동 적용'));uploadSection.append(scheduleToggle);
   const timeZone = select('bulkVideoTimeZone', [['Asia/Seoul', '한국 시간 · Asia/Seoul'], ['UTC', '세계 표준시 · UTC']]);timeZone.value = ['Asia/Seoul', 'UTC'].includes(preferences.timeZone) ? preferences.timeZone : 'Asia/Seoul';
   const firstPublish = input('bulkVideoFirstPublish', 'datetime-local');firstPublish.value = utcToLocalDateTime(new Date(Math.ceil((Date.now() + 86400000) / 60000) * 60000).toISOString(), timeZone.value);
   const scheduleInterval = input('bulkVideoScheduleInterval', 'number', String(preferences.intervalMinutes || 1440));scheduleInterval.min = '1';scheduleInterval.max = '525600';scheduleInterval.step = '1';
   const scheduleFields = node('div', 'bulk-video-pair');scheduleFields.append(label('첫 영상 예약 공개', firstPublish), label('다음 영상까지 간격 · 분', scheduleInterval));
   const applySchedule = button('applyBulkScheduleBtn', '대기 영상에 예약 시간 일괄 적용', 'outline full');
-  uploadSection.append(label('예약 시간대', timeZone), scheduleFields, applySchedule, node('p', 'bulk-video-help', '제목·설명은 각 대본에서 자동으로 준비합니다. 재생 확인과 게시 자료 검토 후 업로드를 직접 시작하면 비공개로 전송하고 YouTube가 지정한 시각에 공개해요. 아래 대기열에서 영상별 예약 시각만 바꿀 수 있어요. 실행 중에는 이 탭을 열어 두세요.'));
+  uploadSection.append(label('예약 시간대', timeZone), scheduleFields, applySchedule, node('p', 'bulk-video-help', '제목·설명은 각 대본에서 자동으로 준비합니다. 재생 확인과 게시 자료 검토 후 업로드를 직접 시작하면 비공개로 전송한 뒤 필수 썸네일을 적용한 뒤 선택한 공개 상태 또는 예약 공개를 설정해요. Google 연결에서는 이 후속 처리를 위한 동영상 관리 권한에 동의해 주세요. 예약은 선택 사항이며 아래에서 영상별 시각을 바꾸거나 비워 취소할 수 있어요. 실행 중에는 이 탭을 열어 두세요.'));
   options.append(uploadSection);
   queue.append(node('h3', '', '3. 전체 제작 → 재생 확인 → 게시 자료 → 업로드'));
   const previewPanel = node('section', 'bulk-video-preview-panel');previewPanel.id = 'bulkVideoPreviewPanel';previewPanel.hidden = true;
@@ -105,7 +110,7 @@ export function setupBulkVideoStudio(api) {
   const prepare = button('prepareBulkVideoBtn', '작업·생성 장수 확인', 'outline full');queue.append(prepare);
   const summary = node('div', 'bulk-video-summary');summary.id = 'bulkVideoSummary';summary.setAttribute('role', 'status');queue.append(summary);
   const ack = input('confirmBulkVideo', 'checkbox'), ackLabel = node('label', 'bulk-video-check');ackLabel.append(ack, node('span', '', '대본별 음성·이미지·영상 제작 범위와 예상 비용을 확인했습니다. 제작이 끝나면 재생 확인을 위해 대기합니다.'));queue.append(ackLabel);
-  const start = button('startBulkVideoBtn', '음성부터 예약 업로드까지 한 번에 실행', 'primary full'), cancel = button('cancelBulkVideoBtn', '현재 작업과 대기열 중지', 'outline full');cancel.hidden = true;queue.append(start, cancel);
+  const start = button('startBulkVideoBtn', '음성·이미지·영상 한 번에 제작 · 확인 대기', 'primary full'), cancel = button('cancelBulkVideoBtn', '현재 작업과 대기열 중지', 'outline full');cancel.hidden = true;queue.append(start, cancel);
   const status = node('p', 'bulk-video-status');status.id = 'bulkVideoStatus';status.setAttribute('role', 'status');status.setAttribute('aria-live', 'polite');
   const error = node('p', 'bulk-video-error');error.id = 'bulkVideoError';error.setAttribute('role', 'alert');queue.append(status, error);
   const activity = createOperationStatus({container: queue, region: jobs, id: 'bulkVideoOperation'});
@@ -116,16 +121,16 @@ export function setupBulkVideoStudio(api) {
   const packagingSummary = node('p', 'bulk-video-help');packagingSummary.id = 'bulkPackagingSummary';
   const packagingAck = input('confirmBulkPackaging', 'checkbox'), packagingAckLabel = node('label', 'bulk-video-check');packagingAckLabel.append(packagingAck, node('span', '', '작성 대상과 API 요청 수·비용을 확인했습니다. 선택한 항목을 새로 작성합니다.'));
   const packageStart = button('startBulkPackagingBtn', '확인한 게시 자료 일괄 작성', 'outline full');packagingPanel.append(packagingSummary, packagingAckLabel, packageStart);queue.append(packagingPanel);
-  const uploadPanel = node('section', 'bulk-video-upload-panel');uploadPanel.append(node('h3', '', '5. 확인한 영상 예약 업로드'));
-  const prepareUpload = button('prepareBulkUploadBtn', '재생 확인·게시 자료·예약 업로드 검토', 'outline full'), uploadSummary = node('div', 'bulk-video-summary');uploadSummary.id = 'bulkUploadSummary';uploadSummary.setAttribute('role', 'status');
-  const uploadAck = input('confirmBulkUpload', 'checkbox'), uploadAckLabel = node('label', 'bulk-video-check');uploadAckLabel.append(uploadAck, node('span', '', '각 영상 재생 확인과 선택한 썸네일·제목·소개글·채널·예약 시각을 검토했습니다.'));
-  const uploadStart = button('startBulkUploadBtn', '확인한 영상들 예약 업로드', 'primary full');uploadPanel.append(prepareUpload, uploadSummary, uploadAckLabel, uploadStart);queue.append(uploadPanel);
+  const uploadPanel = node('section', 'bulk-video-upload-panel');uploadPanel.append(node('h3', '', '5. 확인한 영상 업로드'));
+  const prepareUpload = button('prepareBulkUploadBtn', '재생 확인·게시 자료·공개 설정 검토', 'outline full'), uploadSummary = node('div', 'bulk-video-summary');uploadSummary.id = 'bulkUploadSummary';uploadSummary.setAttribute('role', 'status');
+  const uploadAck = input('confirmBulkUpload', 'checkbox'), uploadAckLabel = node('label', 'bulk-video-check');uploadAckLabel.append(uploadAck, node('span', '', '각 영상 재생 확인과 선택한 썸네일·제목·소개글·채널·공개 상태·예약 시각(선택)을 검토했습니다.'));
+  const uploadStart = button('startBulkUploadBtn', '확인한 영상들 업로드', 'primary full');uploadPanel.append(prepareUpload, uploadSummary, uploadAckLabel, uploadStart);queue.append(uploadPanel);
   const footer = node('div', 'dialog-footer'), close = button('closeBulkVideoBtn', '닫기', 'ghost');footer.append(close);dialog.append(footer);document.body.append(dialog);
 
   let engine, state = {jobs: [], busy: false}, review = null, uploadReview = null, packagingReview = null, working = false, ready = false;
   let selectedPreview = '', previewSequence = 0;
   const players = new Map(), thumbnailUrls = new Map(), metadataDrafts = new Map(), reviewDrafts = new Map();
-  const editable = [packageAll, packageDescriptions, packageThumbnails, prepareUpload, voice, upload, refreshVoice, connect, uploadSettingsBtn, kids, synthetic, timeZone, firstPublish, scheduleInterval, applySchedule, current, library, addLibrary, scripts, duration, interval, addScripts, images, planImages, format, resolution, prepare, clear];
+  const editable = [packageAll, packageDescriptions, packageThumbnails, prepareUpload, voice, upload, refreshVoice, connect, uploadSettingsBtn, privacy, kids, synthetic, scheduleEnabled, timeZone, firstPublish, scheduleInterval, applySchedule, current, library, addLibrary, scripts, duration, interval, addScripts, images, planImages, format, resolution, prepare, clear];
   function invalidateReviews({renderNow = true} = {}) {
     review = uploadReview = packagingReview = null;ack.checked = uploadAck.checked = packagingAck.checked = false;
     summary.replaceChildren();uploadSummary.replaceChildren();packagingSummary.textContent = '';
@@ -173,7 +178,7 @@ export function setupBulkVideoStudio(api) {
     const settings = !voiceConfigured && preferences.voiceSettings ? preferences.voiceSettings : voiceControls.snapshot();
     let savedVoice;
     try {savedVoice = settings.provider === 'typecast' ? normalizeVoicePreferences(settings) : {speaker: String(settings.speaker).slice(0, 180), speed: settings.speed, pitch: settings.pitch, volume: settings.volume};} catch {savedVoice = undefined;}
-    preferences = {voice: voice.checked, upload: upload.checked, voiceSettings: savedVoice, madeForKids: kids.value === 'true', synthetic: synthetic.checked, timeZone: timeZone.value, intervalMinutes: Number(scheduleInterval.value)};
+    preferences = {voice: voice.checked, upload: upload.checked, voiceSettings: savedVoice,...(privacyChoiceExplicit?{privacyStatus:privacy.value}:{}),scheduleEnabled:scheduleEnabled.checked, madeForKids: kids.value === 'true', synthetic: synthetic.checked, timeZone: timeZone.value, intervalMinutes: Number(scheduleInterval.value)};
     try {localStorage.setItem(preferenceKey, JSON.stringify(preferences));} catch {status.textContent = '공통 설정을 브라우저에 저장하지 못했어요. 현재 화면에서는 계속 사용할 수 있어요.';}
   }
   const fail = cause => {error.textContent = cause?.message || '대량 제작 작업을 마치지 못했어요.';};
@@ -186,7 +191,7 @@ export function setupBulkVideoStudio(api) {
     voiceSection.hidden = !voice.checked;uploadSection.hidden = !upload.checked;
     voiceControls.setDisabled(busy || !ready || !voice.checked || checkingVoice);
     refreshVoice.disabled ||= checkingVoice;
-    const session = client.getSession();channelStatus.textContent = session.connected ? `업로드 채널: ${session.channelTitle} · ${session.channelId}` : 'YouTube 계정을 한 번 연결하면 모든 대기 영상을 같은 채널로 예약 업로드해요.';
+    const session = client.getSession();channelStatus.textContent = session.connected ? `업로드 채널: ${session.channelTitle} · ${session.channelId}` : 'YouTube 계정을 한 번 연결하면 확인한 영상들을 같은 채널로 업로드해요.';
     connect.disabled ||= session.busy;connect.textContent = session.connected ? 'YouTube 다시 연결' : 'YouTube 계정 연결';
     start.textContent = '음성·이미지·영상 한 번에 제작 · 확인 대기';
     uploadPanel.hidden = !upload.checked;
@@ -205,13 +210,13 @@ export function setupBulkVideoStudio(api) {
     if (!state.jobs.length) jobs.append(node('li', 'bulk-video-empty', '프로젝트 또는 대본을 담으면 제작 순서를 보여드려요.'));
     for (const [index, job] of state.jobs.entries()) {
       const row = node('li', 'bulk-video-job');row.dataset.bulkJob = job.id;row.dataset.status = job.status;
-      const text = node('div', 'bulk-video-job-copy');text.append(node('strong', '', `${index + 1}. ${job.title}`), node('span', '', `${job.uploadStatus === 'uploaded' && !job.scheduleConfirmed ? '업로드 완료 · 예약 확인 필요' : statusNames[job.status] || job.status} · ${job.sceneCount}장면 · ${minutes(job.duration)}${job.totalImages ? ` · 이미지 ${job.completedImages || 0}/${job.totalImages}` : ''}`));
+      const text = node('div', 'bulk-video-job-copy');text.append(node('strong', '', `${index + 1}. ${job.title}`), node('span', '', `${job.upload?.receipt?.publicationStatus === 'pending' ? '비공개 전송 완료 · 썸네일·공개 처리 대기' : job.uploadStatus === 'uploaded' && job.publishAt && !job.scheduleConfirmed ? '업로드 완료 · 예약 확인 필요' : job.uploadStatus === 'uploaded' && !job.publishAt ? '업로드 완료' : statusNames[job.status] || job.status} · ${job.sceneCount}장면 · ${minutes(job.duration)}${job.totalImages ? ` · 이미지 ${job.completedImages || 0}/${job.totalImages}` : ''}`));
       if (job.uploadStatus === 'uploaded' && job.videoUrl) {
         const watch = node('a', '', job.uploadManuallyConfirmed ? '사용자가 확인한 영상 · 예약 등록 미확인' : '업로드한 영상 열기');watch.href = job.videoUrl;watch.target = '_blank';watch.rel = 'noopener noreferrer';text.append(watch);
       }
       if (upload.checked && job.uploadStatus !== 'uploaded') {
         const publish = input('', 'datetime-local');publish.dataset.bulkPublish = job.id;publish.value = job.publishAt ? utcToLocalDateTime(job.publishAt, job.scheduleTimeZone || timeZone.value) : '';publish.disabled = busy || job.uploadStatus === 'needs-check';
-        publish.addEventListener('change', perform(async () => {const next = localDateTimeToUtc(publish.value, job.scheduleTimeZone || timeZone.value);invalidate();await engine.updateJob(job.id, {publishAt: next, scheduleTimeZone: job.scheduleTimeZone || timeZone.value});}));
+        publish.addEventListener('change', perform(async () => {const next = publish.value ? localDateTimeToUtc(publish.value, job.scheduleTimeZone || timeZone.value) : '';invalidate();await engine.updateJob(job.id, {publishAt: next, scheduleTimeZone: job.scheduleTimeZone || timeZone.value});}));
         text.append(label(`예약 공개 · ${job.scheduleTimeZone || timeZone.value}`, publish));
       } else if (job.publishAt) text.append(node('span', '', formatScheduleTime(job.publishAt, job.scheduleTimeZone || timeZone.value)));
       if (job.hasVideo) {
@@ -228,10 +233,10 @@ export function setupBulkVideoStudio(api) {
       for (const field of [jobTitle, jobDescription]) field.addEventListener('change', perform(flushMetadata));
       materials.append(label('업로드 제목', jobTitle), label('소개글', jobDescription));
       if (job.hasThumbnail) {const img = node('img', 'bulk-video-thumbnail');img.dataset.bulkThumbnail = job.id;img.alt = `${job.uploadTitle || job.title} 업로드 썸네일`;materials.append(img);loadThumbnail(job.id, img).catch(fail);}
-      const thumbnailFile = input('', 'file');thumbnailFile.dataset.bulkThumbnailFile = job.id;thumbnailFile.accept = 'image/png,image/jpeg';thumbnailFile.disabled = metadataDisabled;
+      const thumbnailFile = input('', 'file');thumbnailFile.dataset.bulkThumbnailFile = job.id;thumbnailFile.accept = 'image/png,image/jpeg';thumbnailFile.disabled = busy || job.uploadStatus === 'needs-check' || job.uploadStatus === 'uploaded' && job.upload?.receipt?.publicationStatus !== 'pending';
       thumbnailFile.addEventListener('change', perform(async () => {const file = thumbnailFile.files?.[0];if (!file) return;await flushMetadata();invalidate();await engine.setThumbnail(job.id, {blob: file, name: file.name});}));materials.append(label('썸네일 PNG·JPEG 직접 선택', thumbnailFile));
-      if (job.thumbnailUploadStatus === 'failed' || job.thumbnailUploadStatus === 'pending' && job.uploadStatus === 'uploaded') {
-        const retry = button('', '이 영상 썸네일만 다시 적용');retry.dataset.bulkThumbnailRetry = job.id;retry.disabled = busy;
+      if (job.thumbnailUploadStatus === 'failed' || job.thumbnailUploadStatus === 'pending' && job.uploadStatus === 'uploaded' || job.upload?.receipt?.publicationStatus === 'pending') {
+        const retry = button('', job.upload?.receipt?.thumbnailStatus === 'uploaded' ? '이 영상 공개·예약 처리 이어하기' : '이 영상 썸네일·공개 처리 이어하기');retry.dataset.bulkThumbnailRetry = job.id;retry.disabled = busy;
         retry.addEventListener('click', perform(async () => {api.setUploadBatchBusy?.(true);try {await engine.retryThumbnail(job.id);} finally {api.setUploadBatchBusy?.(false);}}));materials.append(retry);
         if (job.thumbnailUploadError) materials.append(node('p', 'bulk-video-error', job.thumbnailUploadError));
       }
@@ -251,7 +256,8 @@ export function setupBulkVideoStudio(api) {
   }
   function perform(action) {return async () => {if (working || state.busy) return;working = true;error.textContent = '';render();try {await action();} catch (cause) {fail(cause);} finally {working = false;render();}};}
   const restoreBudget = {getProject: api.getProject, getWorkspaceId: api.getWorkspaceId, mutate: api.mutateProductionMetadata || api.mutate};
-  engine = createBulkVideoEngine({restoreBudget, uploadClient: client, onChange: next => {state = next;render();}});
+  engine = api.bulkVideoEngine || createBulkVideoEngine({restoreBudget, uploadClient: client, onChange: next => {state = next;render();}});
+  if(api.bulkVideoEngine)engine.subscribe(next=>{state=next;render();});
   const initialized = engine.load().then(() => {state = engine.getState();ready = true;render();}).catch(cause => {fail(cause);});
   async function refreshLibrary() {
     const entries = await listLibraryProjects();library.replaceChildren();
@@ -289,19 +295,19 @@ export function setupBulkVideoStudio(api) {
   }));
   duration.addEventListener('input', () => {durationEdited = true;});
   scripts.addEventListener('input', () => {if (durationEdited || !voice.checked) return;const first = scripts.value.split(/^\s*===\s*$/mu)[0];duration.value = String(Math.max(.05, Math.min(60, Math.ceil(scriptLength(first).estimatedMinutes * 20) / 20)));});
-  for (const element of [images, planImages, format, resolution, voice, upload, kids, synthetic, timeZone, firstPublish, scheduleInterval]) element.addEventListener('change', () => {invalidate();savePreferences();if (element === voice && voice.checked && !voiceConfigured) checkVoiceConnection().catch(fail);});
+  for (const element of [images, planImages, format, resolution, voice, upload, privacy, kids, synthetic, scheduleEnabled, timeZone, firstPublish, scheduleInterval]) element.addEventListener('change', () => {if(element===privacy)privacyChoiceExplicit=true;invalidate();savePreferences();if (element === voice && voice.checked && !voiceConfigured) checkVoiceConnection().catch(fail);});
   ack.addEventListener('change', render);
   prepare.addEventListener('click', perform(async () => {
     await flushMetadata();invalidate();const height = Number(resolution.value);
     const voiceSettings = voiceControls.snapshot();savePreferences();
-    review = await engine.prepare({mode: 'produce', voice: voice.checked, voiceSettings, upload: false, uploadSettings: {channelId: client.getSession().channelId, selfDeclaredMadeForKids: kids.value === 'true', containsSyntheticMedia: synthetic.checked, privacyStatus: 'private', scheduleTimeZone: timeZone.value}, images: images.checked, planImages: images.checked && planImages.checked, format: format.value, width: height === 720 ? 1280 : 1920, height, fps: 30});
+    review = await engine.prepare({mode: 'produce', voice: voice.checked, voiceSettings, upload: false, uploadSettings: {channelId: client.getSession().channelId, selfDeclaredMadeForKids: kids.value === 'true', containsSyntheticMedia: synthetic.checked, ...(privacyChoiceExplicit?{privacyStatus:privacy.value}:{}), scheduleTimeZone: timeZone.value}, images: images.checked, planImages: images.checked && planImages.checked, format: format.value, width: height === 720 ? 1280 : 1920, height, fps: 30});
     if (review.counts.voiceCalls && (!voiceConfigured || !voiceControls.isSelectionValid())) {review = null;throw new Error('공통 목소리의 API 연결과 사용할 목소리를 먼저 확인해 주세요.');}
     summary.append(node('strong', '', `영상 ${review.counts.videos}개 · 음성 ${review.counts.voiceCalls || 0}회 · 이미지 ${review.counts.imageCalls}장 · 전체 구성 ${review.counts.planningCalls}회 · 예약 업로드 ${review.counts.uploadCalls || 0}개`), node('p', '', `예상 API 비용 $${review.estimatedUsd.toFixed(4)} · 저장된 예시 단가 기준이며 실제 청구액과 다를 수 있어요.`));
     for (const job of review.jobs) {
       const details = node('details', 'bulk-video-review-job');
       details.append(node('summary', '', `${job.title} · ${job.sceneCount}장면 / ${minutes(job.duration)} · 이미지 ${job.imageCalls}장 / 구성 ${job.planningCalls}회`));
       if (job.voiceCalls) details.append(node('p', '', `대본 전체를 음성으로 합성한 뒤 실제 음성 길이에 맞춥니다. 아래 시간은 생성 전 예상이며, 장면 수는 그대로 유지해요. 음성 요청 ${job.voiceCalls}회 · 제공자 합성 구간 ${job.voiceProviderChunks || 1}개.`));
-      if (job.upload) details.append(node('p', '', `업로드 채널: ${job.upload.channelTitle || job.upload.channelId}\n예약 공개: ${formatScheduleTime(job.upload.metadata.publishAt, timeZone.value)}\n제목: ${job.upload.metadata.title}\n설명: ${job.upload.metadata.description}`));
+      if (job.upload) details.append(node('p', '', `업로드 채널: ${job.upload.channelTitle || job.upload.channelId}\n공개 설정: ${job.upload.metadata.publishAt ? formatScheduleTime(job.upload.metadata.publishAt, timeZone.value) : job.upload.metadata.privacyStatus}\n제목: ${job.upload.metadata.title}\n설명: ${job.upload.metadata.description}`));
       details.append(node('p', '', `레퍼런스 ${job.referenceCount}장 · ${job.size} · ${job.quality}`));
       if (job.visualBrief) details.append(node('p', '', `공통 콘셉트: ${job.visualBrief}`));
       if (job.imageInstructions) details.append(node('p', '', `전체 이미지 생성 지시: ${job.imageInstructions}`));
@@ -344,15 +350,15 @@ export function setupBulkVideoStudio(api) {
     catch (cause) {if (cause.name === 'AbortError') feedback.cancel(cause.message);else feedback.fail(cause.message);throw cause;}finally {api.setUploadBatchBusy?.(false);}
   }));
   prepareUpload.addEventListener('click', perform(async () => {
-    await flushMetadata();invalidate();uploadReview = await engine.prepare({mode: 'upload', upload: true, voice: false, images: false, planImages: false, uploadSettings: {channelId: client.getSession().channelId, selfDeclaredMadeForKids: kids.value === 'true', containsSyntheticMedia: synthetic.checked, privacyStatus: 'private', scheduleTimeZone: timeZone.value}, format: format.value});
+    await flushMetadata();invalidate();uploadReview = await engine.prepare({mode: 'upload', upload: true, voice: false, images: false, planImages: false, uploadSettings: {channelId: client.getSession().channelId, selfDeclaredMadeForKids: kids.value === 'true', containsSyntheticMedia: synthetic.checked, ...(privacyChoiceExplicit?{privacyStatus:privacy.value}:{}), scheduleTimeZone: timeZone.value}, format: format.value});
     uploadSummary.append(node('strong', '', `영상 ${uploadReview.counts.uploadCalls}개 · 썸네일 적용 ${uploadReview.counts.thumbnailCalls || 0}회 · 재생 확인 후 업로드`));
-    for (const job of uploadReview.jobs) if (job.upload) {const details = node('details', 'bulk-video-review-job');details.append(node('summary', '', job.upload.metadata.title), node('p', '', `채널: ${job.upload.channelTitle}\n예약: ${formatScheduleTime(job.upload.metadata.publishAt, timeZone.value)}\n소개글: ${job.upload.metadata.description}`));const thumb = node('img', 'bulk-video-thumbnail');thumb.alt = `${job.upload.metadata.title} 최종 업로드 썸네일`;details.append(thumb);loadThumbnail(job.id, thumb).catch(fail);uploadSummary.append(details);}
+    for (const job of uploadReview.jobs) if (job.upload) {const details = node('details', 'bulk-video-review-job');details.append(node('summary', '', job.upload.metadata.title), node('p', '', `채널: ${job.upload.channelTitle}\n공개: ${job.upload.metadata.publishAt ? formatScheduleTime(job.upload.metadata.publishAt, timeZone.value) : {public:'공개',unlisted:'일부 공개',private:'비공개'}[job.upload.metadata.privacyStatus]}\n소개글: ${job.upload.metadata.description}`));const thumb = node('img', 'bulk-video-thumbnail');thumb.alt = `${job.upload.metadata.title} 최종 업로드 썸네일`;details.append(thumb);loadThumbnail(job.id, thumb).catch(fail);uploadSummary.append(details);}
     for (const blocker of uploadReview.blockers) uploadSummary.append(node('p', 'bulk-video-error', blocker));
   }));
   uploadStart.addEventListener('click', perform(async () => {
     if (!uploadReview || !uploadAck.checked) return;await flushMetadata();const prepared = uploadReview;invalidate();
-    const feedback = activity.start('재생 확인한 영상과 선택한 썸네일을 예약 업로드하고 있어요.');api.setUploadBatchBusy?.(true);
-    try {await engine.run(prepared, {acknowledged: true});feedback.finish(engine.getState().jobs.some(job => job.hasUnconfirmedSchedule) ? '업로드를 마쳤어요. 예약 공개 상태를 YouTube에서 확인하세요.' : '확인한 영상·썸네일의 예약 업로드를 마쳤어요.');}
+    const feedback = activity.start('재생 확인한 영상과 필수 썸네일을 선택한 공개 설정으로 업로드하고 있어요.');api.setUploadBatchBusy?.(true);
+    try {await engine.run(prepared, {acknowledged: true});feedback.finish(engine.getState().jobs.some(job => job.hasUnconfirmedSchedule) ? '업로드를 마쳤어요. 예약 공개 상태를 YouTube에서 확인하세요.' : '확인한 영상·썸네일의 업로드와 공개 설정을 마쳤어요.');}
     catch (cause) {if (cause.name === 'AbortError') feedback.cancel(cause.message);else feedback.fail(cause.message);throw cause;}finally {api.setUploadBatchBusy?.(false);}
   }));
   async function checkVoiceConnection() {
@@ -369,14 +375,14 @@ export function setupBulkVideoStudio(api) {
     for (const [index, job] of pending.entries()) if (!missingOnly || !job.publishAt) await engine.updateJob(job.id, {publishAt: new Date(first + index * gap * 60000).toISOString(), scheduleTimeZone: timeZone.value});
     savePreferences();
   }
-  async function assignMissingSchedules() {await applyTimes({missingOnly: true});}
+  async function assignMissingSchedules() {if(scheduleEnabled.checked)await applyTimes({missingOnly: true});}
   refreshVoice.addEventListener('click', perform(checkVoiceConnection));
-  applySchedule.addEventListener('click', perform(async () => {invalidate();await applyTimes();}));
+  applySchedule.addEventListener('click', perform(async () => {scheduleEnabled.checked=true;invalidate();await applyTimes();}));
   uploadSettingsBtn.addEventListener('click', () => {if (state.busy || working) return;dialog.close();api.openProductionSection?.('settings');});
   connect.addEventListener('click', () => {
     if (state.busy || working) return;
     if (!client.getSettings().clientId) {dialog.close();api.openProductionSection?.('settings');return;}
-    error.textContent = '';client.connect().catch(cause => {fail(cause);render();});
+    error.textContent = '';client.connect({publicationAccess:true}).catch(cause => {fail(cause);render();});
   });
   client.subscribe(event => {if (state.busy && ['disconnected', 'settings', 'expired'].includes(event.type)) engine.cancel();if (!state.busy && ['connected', 'disconnected', 'settings', 'expired'].includes(event.type)) invalidate();else render();});
   cancel.addEventListener('click', () => engine.cancel());

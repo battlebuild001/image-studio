@@ -1,8 +1,9 @@
 import {youtubeClient} from './youtube-client.js';
-import {normalizeYouTubeMetadata,normalizeYouTubeUploadDraft,normalizeYouTubeUploadRecord,publishingToYouTubeMetadata,validateYouTubeVideoFile,YOUTUBE_MAX_THUMBNAIL_BYTES} from './youtube-protocol.js';
+import {normalizeYouTubeMetadata,normalizeYouTubeUploadDraft,normalizeYouTubeUploadRecord,publishingToYouTubeMetadata,validateYouTubeVideoFile,validateYouTubeThumbnailFile,youtubeExportSourceKey,YOUTUBE_MAX_THUMBNAIL_BYTES} from './youtube-protocol.js';
 import {assertYouTubeScheduleFuture,normalizePublishAt,normalizeScheduleTimeZone} from './youtube-schedule.js';
 import {composeVideoDescription,getDescriptionPreferences} from './description-preferences.js';
 import {getDisplayScript} from './production-speech.js';
+import {stageMainVideoMetadata,mainVideoReceipt,mainVideoPublication} from './youtube-main-upload.js';
 
 const CHANNEL = /^UC[A-Za-z0-9_-]{22}$/u;
 const VIDEO = /^[A-Za-z0-9_-]{11}$/u;
@@ -32,19 +33,21 @@ function currentMetadata(project) {
 }
 
 /** Pure preflight. Exact metadata and destination are displayed before one run. */
-export function prepareBulkUpload({project,publishAt,settings = {},session,client = youtubeClient,thumbnail,now = Date.now()} = {}) {
+export function prepareBulkUpload(input = {}) {
+  const {project,publishAt,settings = {},session,client = youtubeClient,thumbnail,now = Date.now()}=input;
   if (!plain(project) || !plain(settings) || Object.keys(settings).some(key => !settingsFields.has(key))) throw new Error('대량 업로드의 공통 설정을 확인해 주세요. 인증 정보는 프로젝트에 저장하지 않아요.');
   const target = session || validateBulkUploadChannel(null,client);
   if (!target.connected || !CHANNEL.test(target.channelId || '')) throw new Error('YouTube 채널을 먼저 연결해 주세요.');
   if (settings.channelId && settings.channelId !== target.channelId) throw new Error('대량 업로드 대상 채널이 연결한 채널과 달라요.');
   if (target.uploading || client.getUploadState?.().available) throw new Error('기존 YouTube 전송의 완료 여부를 먼저 확인해 주세요. 새 영상을 자동으로 올리지 않아요.');
-  if (settings.privacyStatus !== undefined && settings.privacyStatus !== 'private') throw new Error('예약 공개 영상은 비공개로 먼저 업로드해야 해요.');
-  const source = currentMetadata(project);
-  const metadata = normalizeYouTubeMetadata({...source,privacyStatus:'private',
-    selfDeclaredMadeForKids:settings.selfDeclaredMadeForKids ?? false,
-    containsSyntheticMedia:settings.containsSyntheticMedia ?? true,
-    publishAt:normalizePublishAt(publishAt),scheduleTimeZone:normalizeScheduleTimeZone(settings.scheduleTimeZone || 'Asia/Seoul'),
+  const source = currentMetadata(project),scheduledAt=Object.hasOwn(input,'publishAt')?(publishAt||undefined):source.publishAt;
+  const {publishAt:_oldSchedule,scheduleTimeZone:_oldZone,...base}=source;
+  const metadata = normalizeYouTubeMetadata({...base,privacyStatus:scheduledAt?'private':settings.privacyStatus??source.privacyStatus??'public',
+    selfDeclaredMadeForKids:settings.selfDeclaredMadeForKids ?? source.selfDeclaredMadeForKids,
+    containsSyntheticMedia:settings.containsSyntheticMedia ?? source.containsSyntheticMedia,
+    ...(scheduledAt?{publishAt:normalizePublishAt(scheduledAt),scheduleTimeZone:normalizeScheduleTimeZone(settings.scheduleTimeZone || source.scheduleTimeZone || 'Asia/Seoul')}:{ }),
     defaultLanguage:settings.defaultLanguage || 'ko'});
+  if((metadata.privacyStatus!=='private'||metadata.publishAt)&&target.publicationAccess!==true)throw new Error('썸네일 적용 후 공개·예약하려면 Google 연결에서 동영상 관리 권한에 동의해 주세요. 영상을 업로드하지 않았어요.');
   assertYouTubeScheduleFuture(metadata,{now:instant(now)});
   const channelTitle = typeof target.channelTitle === 'string' ? target.channelTitle : target.channelId;
   if (!channelTitle || Array.from(channelTitle).length > 150 || /[\u0000-\u001f\u007f]/u.test(channelTitle)) throw new Error('업로드 채널 이름을 확인하지 못했어요.');
@@ -57,7 +60,8 @@ export function prepareBulkUpload({project,publishAt,settings = {},session,clien
     if (typeof name !== 'string' || !name.trim() || Array.from(name).length > 180 || /[\\/\u0000-\u001f\u007f]/u.test(name)) throw new Error('썸네일 파일 이름을 확인해 주세요.');
     selectedThumbnail = {blob:value.blob,name,type:mime,...(Number.isInteger(value.width)?{width:value.width}:{}),...(Number.isInteger(value.height)?{height:value.height}:{})};
   }
-  return immutable({metadata,channelId:target.channelId,channelTitle,scheduled:true,uploadCalls:1,thumbnailCalls:selectedThumbnail?1:0,...(selectedThumbnail?{thumbnail:selectedThumbnail}:{})});
+  if(!selectedThumbnail)throw new Error('일반 영상에는 실제 썸네일을 선택하거나 생성한 뒤 업로드해 주세요.');
+  return immutable({metadata,sourceKey:youtubeExportSourceKey(project),channelId:target.channelId,channelTitle,scheduled:Boolean(metadata.publishAt),uploadCalls:1,thumbnailCalls:1,thumbnail:selectedThumbnail});
 }
 
 /** Engine persists its uploading intent before calling this guarded transport.
@@ -71,22 +75,26 @@ export async function runBulkUpload({job,video,prepared,client = youtubeClient,s
     if (!(video?.blob instanceof Blob) || !['mp4','webm'].includes(video.extension)) throw new Error('업로드할 실제 영상 파일을 먼저 만들어 주세요.');
     validateYouTubeVideoFile(video.blob);
     metadata = normalizeYouTubeMetadata(prepared.metadata);
+    if(!prepared.thumbnail)throw new Error('일반 영상에는 필수 썸네일이 필요해요.');
+    await validateYouTubeThumbnailFile(prepared.thumbnail.blob);
+    if(prepared.sourceKey!==youtubeExportSourceKey(job.project))throw new Error('검토한 원본 영상이 바뀌었어요. 업로드 범위를 다시 확인해 주세요.');
     validateBulkUploadChannel(prepared,client);
     if (client.getUploadState?.().available) throw new Error('중단된 YouTube 전송이 있어요. 완료 여부를 먼저 확인해 주세요.');
     assertYouTubeScheduleFuture(metadata);
     check(signal,guard);
     fileName = `${job.project.title || metadata.title}.${video.extension}`.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').slice(0,170);
   } catch (cause) {cause.uploadNotStarted = true;throw cause;}
-  const received = await client.uploadVideo({blob:video.blob,fileName,metadata,signal,onProgress,
+  const received = await client.uploadVideo({blob:video.blob,fileName,metadata:stageMainVideoMetadata(metadata),signal,onProgress,
     onSession:() => {onProgress?.({phase:'uploading',progress:0,uploadedBytes:0,totalBytes:video.blob.size,message:'영상 전송을 시작했어요. 응답이 불확실하면 새 업로드를 만들지 않아요.'});}});
   // A returned, canonical receipt must survive cancellation or a local-save error.
   // Never discard known remote completion and then initialize a duplicate upload.
-  const receipt = normalizeYouTubeUploadRecord(received);
+  const receipt = mainVideoReceipt(normalizeYouTubeUploadRecord(received),metadata,prepared.sourceKey);
   if (receipt.channelId !== prepared.channelId || receipt.bytes !== video.blob.size) throw new Error('업로드 결과의 채널이나 파일 크기가 확인한 영상과 달라요. YouTube에서 먼저 확인해 주세요.');
   const {categoryId,defaultLanguage,...draft} = metadata;
   job.project.production ||= {version:1};
   job.project.production.youtube = {...job.project.production.youtube,draft,
     uploads:[...(job.project.production.youtube?.uploads || []).filter(item => item.videoId !== receipt.videoId),receipt].slice(-10)};
+  job.upload={...job.upload,status:'uploaded',receipt,thumbnailStatus:'pending'};job.status='uploaded';
   if (persist) {
     try {await persist(job);} catch {
       const cause = new Error('YouTube 업로드는 완료됐지만 기록을 저장하지 못했어요. 같은 영상을 다시 올리지 말고 저장 공간을 확인해 주세요.');
@@ -115,18 +123,40 @@ export function resolveBulkUploadConfirmation({videoId,channelId,session,now = D
 /** The video receipt must already be durable before this separate thumbnail action.
  * Failure retries this image only against the same uploaded video, never a new video.
  */
-export async function runBulkThumbnail({receipt,thumbnail,client = youtubeClient,signal,guard,onProgress,validateThumbnail} = {}) {
-  const record = normalizeYouTubeUploadRecord(receipt);
+export async function runBulkThumbnail({job,receipt,thumbnail,client = youtubeClient,signal,guard,onProgress,persist,validateThumbnail} = {}) {
+  let record=normalizeYouTubeUploadRecord(receipt);
+  const save=async()=>{
+    if(job){
+      job.project.production||={version:1};job.project.production.youtube||={};
+      job.project.production.youtube.uploads=[...(job.project.production.youtube.uploads||[]).filter(item=>item.videoId!==record.videoId),record].slice(-10);
+      job.upload={...job.upload,status:'uploaded',receipt:record};job.status='uploaded';
+      if(record.thumbnailStatus==='uploaded')job.upload.thumbnailStatus='completed';
+      if(persist)await persist(job);
+    }
+  };
   try {
-    check(signal,guard);validateBulkUploadChannel(record,client);
-    const validate = validateThumbnail || (await import('./bulk-video-packaging.js')).validateBulkThumbnail;
-    const selected = await validate(thumbnail instanceof Blob ? {blob:thumbnail,name:'썸네일.png'} : thumbnail);
-    check(signal,guard);validateBulkUploadChannel(record,client);
-    onProgress?.({phase:'thumbnail',message:'업로드한 같은 영상에 확인한 썸네일을 적용하고 있어요.'});
-    const result = await client.setThumbnail({videoId:record.videoId,channelId:record.channelId,blob:selected.blob,signal});
-    if (result?.videoId !== record.videoId || result?.uploaded !== true) throw new Error('썸네일 적용 결과를 확인하지 못했어요. 영상 업로드 결과는 유지돼요.');
-    return {status:'completed',videoId:record.videoId,bytes:selected.blob.size};
-  } catch (cause) {
-    cause.bulkThumbnailOnly = true;cause.receipt = record;throw cause;
-  }
+    check(signal,guard);const session=validateBulkUploadChannel(record,client);
+    if(record.sourceKey&&job&&record.sourceKey!==youtubeExportSourceKey(job.project))throw new Error('업로드한 원본 영상이 바뀌었어요. 원래 프로젝트를 복원하거나 YouTube Studio에서 확인해 주세요.');
+    const plan=record.intendedPrivacyStatus?mainVideoPublication(record):null;
+    if(plan&&(plan.privacyStatus!=='private'||plan.publishAt)&&session.publicationAccess!==true)throw new Error('같은 채널을 다시 연결하고 동영상 관리 권한에 동의해 주세요. 같은 영상의 공개 처리만 이어서 완료해요.');
+    if(record.thumbnailStatus!=='uploaded'){
+      const validate=validateThumbnail||(await import('./bulk-video-packaging.js')).validateBulkThumbnail;
+      const selected=await validate(thumbnail instanceof Blob?{blob:thumbnail,name:'썸네일.png'}:thumbnail);
+      check(signal,guard);validateBulkUploadChannel(record,client);
+      onProgress?.({phase:'thumbnail',message:'비공개로 전송한 같은 영상에 필수 썸네일을 적용하고 있어요.'});
+      const result=await client.setThumbnail({videoId:record.videoId,channelId:record.channelId,blob:selected.blob,signal});
+      if(result?.videoId!==record.videoId||result?.uploaded!==true)throw new Error('썸네일 적용 결과를 확인하지 못했어요. 비공개 영상 기록은 유지돼요.');
+      if(plan)record=normalizeYouTubeUploadRecord({...record,thumbnailStatus:'uploaded'});
+      await save();check(signal,guard);
+    }
+    if(plan&&record.publicationStatus!=='completed'){
+      onProgress?.({phase:'publication',message:'필수 썸네일을 적용했어요. 같은 영상의 공개·예약 설정을 완료하고 있어요.'});
+      const result=plan.privacyStatus==='private'&&!plan.publishAt?{videoId:record.videoId,privacyStatus:'private'}:await client.publishVideo({videoId:record.videoId,channelId:record.channelId,...plan,signal});
+      if(result.videoId!==undefined&&result.videoId!==record.videoId)throw new Error('같은 영상의 공개 처리 결과를 확인하지 못했어요.');
+      record=normalizeYouTubeUploadRecord({...record,privacyStatus:result.privacyStatus,publicationStatus:'completed',...(record.publishAt?{scheduleConfirmed:result.scheduleConfirmed===true}:{})});
+      // Retain a known remote completion even if cancellation arrives at this point.
+      await save();check(signal,guard);
+    }
+    return{status:'completed',videoId:record.videoId,bytes:thumbnail instanceof Blob?thumbnail.size:thumbnail.blob.size,...(plan?{receipt:record}:{})};
+  }catch(cause){cause.bulkThumbnailOnly=true;cause.receipt=record;throw cause;}
 }
