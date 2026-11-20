@@ -18,7 +18,11 @@ jobs:
       - name: Install pinned build dependencies
         run: npm ci --no-audit --no-fund
       - name: Build and verify standalone Windows installers
-        run: node scripts/desktop-build.mjs --win --source-archive --output "${{ runner.temp }}/content-studio-release"
+        shell: pwsh
+        run: |
+          node scripts/desktop-build.mjs --win --source-archive --output "${{ runner.temp }}/content-studio-release"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "${{ runner.temp }}/content-studio-release/desktop-release.json")) { throw 'The verified desktop release manifest was not produced.' }
       - name: Install isolated UI test driver
         run: npm install --no-save --package-lock=false --no-audit --no-fund playwright
       - name: Execute the actual packaged Windows application
@@ -58,3 +62,17 @@ jobs:
           $paths = $names | ForEach-Object { Join-Path $folder $_ }
           gh release upload desktop-v1.1.0 --repo battlebuild001/image-studio --clobber @paths
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain completed installers and verification files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: content-studio-windows-1.1.0
+          path: |
+            ${{ runner.temp }}/content-studio-release/*.exe
+            ${{ runner.temp }}/content-studio-release/*.zip
+            ${{ runner.temp }}/content-studio-release/*.json
+            ${{ runner.temp }}/content-studio-release/*.txt
+            ${{ runner.temp }}/desktop-app-browser-result.json
+          compression-level: 0
+          if-no-files-found: ignore
+          retention-days: 5
