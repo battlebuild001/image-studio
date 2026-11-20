@@ -70,7 +70,7 @@ export function setupThreeStepStudio(api, {imageBatch, bgm} = {}) {
   const voiceRow = node('div', 'three-step-audio-row'), voiceLabel = node('div');voiceLabel.append(node('strong', '', '보이스'));const voiceInfo = node('p');voiceInfo.id = 'simpleNarrationState';voiceLabel.append(voiceInfo);
   const voiceButtons = node('div', 'three-step-audio-actions'), voiceGenerate = button('simpleVoiceGenerateBtn', '보이스 생성'), voiceUpload = button('simpleVoiceUploadBtn', '파일 추가', 'ghost');voiceButtons.append(voiceGenerate, voiceUpload);voiceRow.append(voiceLabel, voiceButtons);
   const musicRow = node('div', 'three-step-audio-row'), musicLabel = node('div');musicLabel.append(node('strong', '', '배경음악'));const musicInfo = node('p');musicInfo.id = 'simpleBgmState';musicLabel.append(musicInfo);
-  const musicButtons = node('div', 'three-step-audio-actions'), musicGenerate = button('simpleBgmGenerateBtn', '배경음악 생성'), musicUpload = button('simpleBgmUploadBtn', '파일 추가', 'ghost');musicButtons.append(musicGenerate, musicUpload);musicRow.append(musicLabel, musicButtons);audioCard.append(voiceRow, musicRow);
+  const musicButtons = node('div', 'three-step-audio-actions'), musicChoose = button('simpleBgmChooseBtn', '배경음악 고르기'), musicGenerate = button('simpleBgmGenerateBtn', '내장 음악 만들기', 'ghost'), musicUpload = button('simpleBgmUploadBtn', '파일 추가', 'ghost');musicButtons.append(musicChoose, musicUpload);musicRow.append(musicLabel, musicButtons);audioCard.append(voiceRow, musicRow);
   preparation.append(timingCard, audioCard);scriptGrid.append(scriptCard, preparation);scriptPanel.append(scriptGrid);
   const status = node('p', 'three-step-status');status.id = 'simpleScriptStatus';status.setAttribute('role', 'status');status.setAttribute('aria-live', 'polite');scriptPanel.append(status);
   const applyStatus = createOperationStatus({container: scriptPanel, region: scriptGrid, id: 'simpleScriptOperation'});
@@ -112,7 +112,7 @@ export function setupThreeStepStudio(api, {imageBatch, bgm} = {}) {
     for (const card of document.querySelectorAll('.production-run-launch')) {card.hidden = true;card.inert = true;}
     const legacyExport = $('exportBtn');if (legacyExport && legacyExport.parentElement !== advancedActions) advancedActions.append(legacyExport);
   }
-  collectAdvancedTools();
+  collectAdvancedTools();advancedActions.append(musicGenerate);
   function positionAdvancedMenu() {
     if (!advanced.open) return;
     const top = Math.min(Math.max(8, advancedSummary.getBoundingClientRect().bottom + 8), Math.max(8, innerHeight - 120));
@@ -170,7 +170,7 @@ export function setupThreeStepStudio(api, {imageBatch, bgm} = {}) {
     for (const preset of presets.querySelectorAll('button')) preset.setAttribute('aria-pressed', String(Number(preset.dataset.simpleInterval) === seconds));
     const blocked = !mutable(), hasText = Boolean(text.trim());
     apply.disabled = blocked || !hasText;next.disabled = blocked || !hasText;
-    voiceGenerate.disabled = blocked || !hasText;voiceUpload.disabled = blocked;musicGenerate.disabled = blocked;musicUpload.disabled = blocked;
+    voiceGenerate.disabled = blocked || !hasText;voiceUpload.disabled = blocked;musicChoose.disabled = blocked;musicGenerate.disabled = blocked;musicUpload.disabled = blocked;
   }
   async function applyDraft(destination) {
     if (!mutable()) return false;
@@ -251,6 +251,7 @@ export function setupThreeStepStudio(api, {imageBatch, bgm} = {}) {
   interval.addEventListener('input', () => {intervalDirty = true;status.textContent = '';renderSummary();});
   apply.addEventListener('click', () => applyDraft());next.addEventListener('click', () => applyDraft('images'));
   voiceGenerate.addEventListener('click', () => invoke(() => api.openVoiceStudio?.()));voiceUpload.addEventListener('click', () => invoke(() => api.openNarrationFile?.()));
+  musicChoose.addEventListener('click', () => invoke(() => api.openMusicRecommendations?.()));
   musicGenerate.addEventListener('click', () => invoke(() => typeof api.openBgmGenerator === 'function' ? api.openBgmGenerator() : bgm?.open?.()));musicUpload.addEventListener('click', () => invoke(() => api.openBgmFile?.()));
   imagesBack.addEventListener('click', () => navigate('script'));imagesNext.addEventListener('click', () => navigate('delivery'));editBack.addEventListener('click', () => navigate('images'));
   save.addEventListener('click', () => invoke(() => api.saveCurrentProject?.()));encode.addEventListener('click', () => invoke(() => api.openExport?.()));
