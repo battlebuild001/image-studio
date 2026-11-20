@@ -29,7 +29,7 @@ const {launchDesktop,stopDesktop}=require('./desktop-app.browser.cjs');
    // shared runner's anonymous rate limit. No token enters the renderer, fetch
    // options, asset requests or production updater implementation.
    const ciToken=process.env.GITHUB_ACTIONS==='true'?process.env.CONTENT_STUDIO_CI_GITHUB_TOKEN||'':'';
-   if(ciToken&&!/^[A-Za-z0-9_]{10,1024}$/u.test(ciToken))throw Error('The CI metadata token format is invalid');
+   if(ciToken&&!/^[\x21-\x7e]{1,16384}$/u.test(ciToken))throw Error('The CI metadata token is not a safe HTTP header value');
    const metadataAuthentication=ciToken?'github-actions-read-only-api':'anonymous';
    let authenticatedMetadataRequests=0,authenticatedAssetRequests=0;
 
