@@ -53,7 +53,7 @@ const {narrationWave}=require('./three-step-qa-helpers.browser.cjs');
   assert.deepEqual([...new Set(available)].sort(),catalog);await closeTools();
   await page.locator('#threeStepImagesTab').click();await page.locator('#videoImageInstructions').fill('첫 영상만 붉은 조명을 사용하고 원래 규칙 설명을 지켜 주세요.');
   await page.locator('#threeStepScriptTab').click();await page.locator('#projectTitle').fill('첫 영상 개별 편집');await page.locator('#projectTitle').press('Tab');
-  await page.locator('#simpleBgmGenerateBtn').click();await page.locator('#bgmGeneratorDialog').waitFor({state:'visible'});assert.ok(await page.locator('#bgmGenerateBtn').isVisible());await page.locator('#bgmGeneratorHeaderClose').click();
+  await reveal(page,'#simpleBgmGenerateBtn');await page.locator('#simpleBgmGenerateBtn').click();await page.locator('#bgmGeneratorDialog').waitFor({state:'visible'});assert.ok(await page.locator('#bgmGenerateBtn').isVisible());await page.locator('#bgmGeneratorHeaderClose').click();
   await route('sync','#syncStudioDialog');await page.keyboard.press('Escape');await page.locator('#syncStudioDialog').waitFor({state:'hidden'});
   await route('scene-image-replace','#sceneImageReplaceDialog');assert.equal(await page.locator('#sceneImageReplaceSelect option').count(),2);await page.keyboard.press('Escape');await page.locator('#sceneImageReplaceDialog').waitFor({state:'hidden'});
   await route('quality','#aiAssistantDialog');await page.keyboard.press('Escape');await page.locator('#aiAssistantDialog').waitFor({state:'hidden'});

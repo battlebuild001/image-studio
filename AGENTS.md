@@ -819,7 +819,9 @@ for credential values in chat. Inspect configured presence without exposing valu
 ## Behavior to preserve
 
 - Keep three primary actions: 대본 입력 → 이미지 생성 → 편집·저장·업로드.
-  Manual script, cadence, voice and built-in local BGM generation belong in step 1.
+  Manual script, cadence and voice belong in step 1. Its default music action opens
+  the original recommendation/search/preview/selection screen; preserve current BGM
+  until explicit Apply. Built-in local music generation remains in advanced tools.
   Reference research/upload, one randomly shown real candidate, image direction,
   composition and reviewed sequential count/cost generation belong in step 2.
   Editing, project save, encoding, publishing and main upload belong in step 3.

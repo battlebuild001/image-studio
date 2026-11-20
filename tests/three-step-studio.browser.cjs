@@ -115,7 +115,7 @@ const {narrationWave, storedProject, waitProject, mediaHashes, verifyNativeExpor
     assert.deepEqual(project.scenes.map(scene => scene.duration), [3, 3]);assert.equal(project.scenePlan.durationSeconds, 6);
     assert.equal(project.scenes.map(scene => scene.caption).join('').replace(/\s/gu, ''), script.replace(/\s/gu, ''));
     const narrationId = project.audio.narrationId;assert.equal(posts.length, 0);
-    await page.locator('#simpleBgmGenerateBtn').click();await page.locator('#bgmGeneratorDialog').waitFor({state: 'visible'});
+    await reveal(page,'#simpleBgmGenerateBtn');await page.locator('#simpleBgmGenerateBtn').click();await page.locator('#bgmGeneratorDialog').waitFor({state: 'visible'});
     assert.equal(posts.length, 0);assert.equal((await storedProject(page)).audio.bgmId, null);
     await page.locator('#bgmPreset').selectOption('explanation');await page.locator('#bgmGenerateBtn').click();
     await page.waitForFunction(() => !document.querySelector('#bgmApplyBtn').disabled);
