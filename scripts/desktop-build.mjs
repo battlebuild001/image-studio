@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {execFile} from 'node:child_process';
 import {copyFile,lstat,mkdir,mkdtemp,open,readFile,readdir,rm,stat,writeFile} from 'node:fs/promises';
-import {dirname,extname,join,resolve} from 'node:path';
+import {dirname,extname,join,resolve,sep} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
@@ -62,12 +62,13 @@ async function zipBytes(path,entry){
 }
 
 function asarTools(){try{return require('@electron/asar');}catch{const fromBuilder=createRequire(require.resolve('app-builder-lib/package.json'));return fromBuilder('@electron/asar');}}
-async function verifyAsar(path){
- const asar=asarTools(),paths=asar.listPackage(path).filter(name=>!asar.statFile(path,name.replace(/^\//u,'')).files),names=paths.map(name=>name.replace(/^\//u,''));
+export async function verifyAsar(path,{asar=asarTools()}={}){
+ const native=name=>name.split('/').join(sep);
+ const names=asar.listPackage(path).map(entry=>{const name=entry.replaceAll('\\','/').replace(/^\/+/u,'');assert.ok(safeEntry(name),'Unsafe ASAR path');return name;}).filter(name=>!asar.statFile(path,native(name)).files);
  for(const name of names){assert.ok(safeEntry(name));assert.ok(name==='package.json'||name.startsWith('dist/')||/^desktop\/(?:[^/]+\.cjs|assets\/icon\.(?:png|ico))$/u.test(name),`Unexpected packaged source: ${name}`);assert.doesNotMatch(name,/(?:\.env(?:\.|$)|\.bth\.json$|\.pem$|\.key$|node_modules\/|test-results\/|credentials?\/)/iu);}
- const manifest=JSON.parse(asar.extractFile(path,'package.json').toString('utf8'));assert.equal(manifest.main,'desktop/main.cjs');assert.equal(manifest.productName??'Content Studio','Content Studio');
+ const manifest=JSON.parse(asar.extractFile(path,native('package.json')).toString('utf8'));assert.equal(manifest.main,'desktop/main.cjs');assert.equal(manifest.productName??'Content Studio','Content Studio');
  for(const name of ['desktop/main.cjs','desktop/preload.cjs','dist/index.html','dist/main.js','dist/production-run-engine.js','dist/scene-image-replace.js'])assert.ok(names.includes(name),`Missing packaged file: ${name}`);
- for(const name of names){if(!name.startsWith('dist/')&&!name.endsWith('.cjs')&&!name.startsWith('desktop/assets/'))continue;const expected=await readFile(join(root,name));assert.deepEqual(asar.extractFile(path,name),expected,`Packaged bytes differ: ${name}`);}
+ for(const name of names){if(!name.startsWith('dist/')&&!name.endsWith('.cjs')&&!name.startsWith('desktop/assets/'))continue;const expected=await readFile(join(root,name));assert.deepEqual(asar.extractFile(path,native(name)),expected,`Packaged bytes differ: ${name}`);}
  return{files:names.length,version:manifest.version,main:manifest.main,sha256:digest(await readFile(path))};
 }
 
@@ -165,4 +166,4 @@ export async function runDesktopBuild(args=process.argv.slice(2)){
  const output=join(settings.output,settings.target==='win'?'desktop-release.json':'desktop-linux-smoke-build.json');await writeFile(output,JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify({verified:true,platform:result.platform,version:result.version,artifacts:result.artifacts,manifest:output}));return result;
 }
 
-if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))runDesktopBuild().catch(cause=>{console.error('데스크톱 빌드 실패:',cause?.message||'빌드 결과를 확인해 주세요.');process.exitCode=1;});
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))runDesktopBuild().catch(cause=>{console.error('데스크톱 빌드 실패:',cause?.message||'빌드 결과를 확인해 주세요.');process.exitCode=1;process.on('exit',()=>{process.exitCode=1;});});
