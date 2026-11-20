@@ -28,6 +28,18 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or -not (($formats -join "`n") -match '(?i)\bnsis\b')) { throw 'The archive verifier must support NSIS.' }
           node --test tests/desktop-build-config.test.mjs tests/desktop-build-verification.test.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install isolated UI test driver
+        run: npm install --no-save --package-lock=false --no-audit --no-fund playwright
+      - name: Verify real Windows download before packaging
+        shell: pwsh
+        run: |
+          $env:CONTENT_STUDIO_ELECTRON = Join-Path $PWD 'node_modules/electron/dist/electron.exe'
+          $env:CONTENT_STUDIO_PACKAGED = '0'
+          node tests/desktop-update-download.browser.cjs
+          $verifyExit = $LASTEXITCODE
+          $sourceReport = Join-Path ([IO.Path]::GetTempPath()) 'desktop-update-download-result.json'
+          if (Test-Path $sourceReport) { Copy-Item $sourceReport "${{ runner.temp }}/desktop-source-update-download-result.json" }
+          if ($verifyExit -ne 0) { exit $verifyExit }
       - name: Build and strictly verify the new Windows installers
         shell: pwsh
         run: |
@@ -35,8 +47,6 @@ jobs:
           node scripts/desktop-build.mjs --win --source-archive --output $folder
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path "$folder/desktop-release.json")) { throw 'The verified desktop release manifest was not produced.' }
-      - name: Install isolated UI test driver
-        run: npm install --no-save --package-lock=false --no-audit --no-fund playwright
       - name: Execute the actual packaged Windows application
         shell: pwsh
         run: |
@@ -117,6 +127,7 @@ jobs:
             ${{ runner.temp }}/desktop-update-native-result.json
             ${{ runner.temp }}/desktop-bgm-selection-result.json
             ${{ runner.temp }}/desktop-update-download-result.json
+            ${{ runner.temp }}/desktop-source-update-download-result.json
           compression-level: 0
           if-no-files-found: ignore
           retention-days: 5

@@ -48,30 +48,50 @@ function detectDistribution({env=process.env,executable=process.execPath,isPacka
  if(env.PORTABLE_EXECUTABLE_FILE||env.PORTABLE_EXECUTABLE_DIR)return'portable';
  return isPackaged&&isFile(path.join(path.dirname(executable),'Uninstall Content Studio.exe'))?'installed':'unpacked';
 }
-async function secureDirectory(directory){
- if(typeof directory!=='string'||!path.isAbsolute(directory))throw failure('DESKTOP_UPDATE_STORAGE','업데이트 저장 위치를 확인하지 못했어요.');
- const resolved=path.resolve(directory),root=path.parse(resolved).root;
- let current=root;
- for(const segment of resolved.slice(root.length).split(path.sep).filter(Boolean)){
-  current=path.join(current,segment);let info;
-  try{info=await fs.lstat(current);}catch(cause){if(cause.code!=='ENOENT')throw cause;try{await fs.mkdir(current,{mode:0o700});}catch(cause){if(cause.code!=='EEXIST')throw cause;}info=await fs.lstat(current);}
-  if(!info.isDirectory()||info.isSymbolicLink())throw failure('DESKTOP_UPDATE_STORAGE','업데이트 저장 폴더가 안전한 일반 폴더인지 확인해 주세요.');
+const directoryFailure=()=>failure('DESKTOP_UPDATE_STORAGE','업데이트 저장 폴더의 경로와 안전한 접근 권한을 확인해 주세요.');
+const fileIdentity=info=>({dev:String(info.dev),ino:String(info.ino)});
+const sameIdentity=(left,right)=>left.dev===right.dev&&left.ino===right.ino;
+const directoryInfo=info=>{if(!info.isDirectory()||info.isSymbolicLink())throw directoryFailure();return fileIdentity(info);};
+/** Resolve Windows case/8.3 aliases only after checking every path component and
+ * proving that both spellings still refer to the same physical directory. */
+async function secureDirectory(directory,{create=true,io=fs,pathImpl=path}={}){
+ if(typeof directory!=='string'||!pathImpl.isAbsolute(directory))throw directoryFailure();
+ const resolved=pathImpl.resolve(directory),root=pathImpl.parse(resolved).root;
+ async function inspect(value,mayCreate){
+  let current=pathImpl.parse(value).root,last=await io.lstat(current,{bigint:true});directoryInfo(last);
+  for(const segment of value.slice(current.length).split(pathImpl.sep).filter(Boolean)){
+   current=pathImpl.join(current,segment);
+   try{last=await io.lstat(current,{bigint:true});}catch(cause){if(cause.code!=='ENOENT'||!mayCreate)throw cause;try{await io.mkdir(current,{mode:0o700});}catch(cause){if(cause.code!=='EEXIST')throw cause;}last=await io.lstat(current,{bigint:true});}
+   directoryInfo(last);
+  }
+  return last;
  }
- directory=resolved;
- if(await fs.realpath(directory)!==path.resolve(directory))throw failure('DESKTOP_UPDATE_STORAGE','업데이트 저장 폴더의 경로를 확인해 주세요.');
+ const before=directoryInfo(await inspect(resolved,create)),parentBefore=directoryInfo(await io.lstat(pathImpl.dirname(resolved),{bigint:true}));
+ const real=await io.realpath(resolved);if(typeof real!=='string'||!pathImpl.isAbsolute(real))throw directoryFailure();
+ const canonical=pathImpl.resolve(real);
+ const physical=directoryInfo(await inspect(canonical,false)),parentPhysical=directoryInfo(await io.lstat(pathImpl.dirname(canonical),{bigint:true}));
+ const after=directoryInfo(await io.lstat(resolved,{bigint:true})),physicalAfter=directoryInfo(await io.lstat(canonical,{bigint:true})),parentAfter=directoryInfo(await io.lstat(pathImpl.dirname(canonical),{bigint:true}));
+ if(!sameIdentity(before,physical)||!sameIdentity(before,after)||!sameIdentity(before,physicalAfter)||!sameIdentity(parentBefore,parentPhysical)||!sameIdentity(parentPhysical,parentAfter))throw directoryFailure();
+ return Object.freeze({path:canonical,...physical,parent:Object.freeze(parentPhysical)});
 }
+async function assertDirectoryGrant(grant){
+ if(!grant||typeof grant.path!=='string')throw directoryFailure();
+ try{const actual=await secureDirectory(grant.path,{create:false});if(!sameIdentity(actual,grant)||!sameIdentity(actual.parent,grant.parent))throw directoryFailure();return actual;}
+ catch(cause){throw cause.code?.startsWith('DESKTOP_')?cause:directoryFailure();}
+}
+
 async function verifyInstaller(file,candidate,expected){
  const flags=syncFs.constants.O_RDONLY|(syncFs.constants.O_NOFOLLOW||0);let handle;
  try{handle=await fs.open(file,flags);
-  const info=await handle.stat(),link=await fs.lstat(file);
-  if(!info.isFile()||link.isSymbolicLink()||!link.isFile()||info.nlink!==1||info.size!==candidate.bytes||info.dev!==link.dev||info.ino!==link.ino||(expected&&(expected.dev!==info.dev||expected.ino!==info.ino||expected.size!==info.size)))throw failure('DESKTOP_UPDATE_FILE','업데이트 파일이 변경됐어요. 다시 다운로드해 주세요.');
+  const info=await handle.stat({bigint:true}),link=await fs.lstat(file,{bigint:true});
+  if(!info.isFile()||link.isSymbolicLink()||!link.isFile()||info.nlink!==1n||info.size!==BigInt(candidate.bytes)||info.dev!==link.dev||info.ino!==link.ino||(expected&&(expected.dev!==String(info.dev)||expected.ino!==String(info.ino)||expected.size!==String(info.size))))throw failure('DESKTOP_UPDATE_FILE','업데이트 파일이 변경됐어요. 다시 다운로드해 주세요.');
   const hash=crypto.createHash('sha256'),header=Buffer.alloc(1024);let at=0;
   for await(const chunk of handle.createReadStream({autoClose:false})){if(at<header.length)chunk.copy(header,at,0,Math.min(chunk.length,header.length-at));at+=chunk.length;if(at>candidate.bytes)throw failure('DESKTOP_UPDATE_FILE','업데이트 파일 크기가 달라요. 다시 다운로드해 주세요.');hash.update(chunk);}
-  const after=await handle.stat();
-  if(at!==candidate.bytes||hash.digest('hex')!==candidate.sha256||info.mtimeMs!==after.mtimeMs||info.size!==after.size||header.subarray(0,2).toString()!=='MZ')throw failure('DESKTOP_UPDATE_FILE','업데이트 파일 검증에 실패했어요. 다시 다운로드해 주세요.');
+  const after=await handle.stat({bigint:true});
+  if(at!==candidate.bytes||hash.digest('hex')!==candidate.sha256||info.mtimeNs!==after.mtimeNs||info.size!==after.size||header.subarray(0,2).toString()!=='MZ')throw failure('DESKTOP_UPDATE_FILE','업데이트 파일 검증에 실패했어요. 다시 다운로드해 주세요.');
   const pe=header.readUInt32LE(60);if(pe<64||pe>header.length-6||header.subarray(pe,pe+4).toString('binary')!=='PE\0\0'||![0x14c,0x8664].includes(header.readUInt16LE(pe+4)))throw failure('DESKTOP_UPDATE_FILE','올바른 Windows 업데이트 파일이 아니에요.');
-  const latest=await fs.lstat(file);if(latest.isSymbolicLink()||latest.ino!==info.ino||latest.dev!==info.dev||latest.size!==info.size||latest.mtimeMs!==info.mtimeMs)throw failure('DESKTOP_UPDATE_FILE','업데이트 파일이 변경됐어요. 다시 다운로드해 주세요.');
-  return{handle,stat:{dev:info.dev,ino:info.ino,size:info.size}};
+  const latest=await fs.lstat(file,{bigint:true});if(latest.isSymbolicLink()||latest.ino!==info.ino||latest.dev!==info.dev||latest.size!==info.size||latest.mtimeNs!==info.mtimeNs)throw failure('DESKTOP_UPDATE_FILE','업데이트 파일이 변경됐어요. 다시 다운로드해 주세요.');
+  return{handle,stat:{...fileIdentity(info),size:String(info.size)}};
  }catch(cause){await handle?.close().catch(()=>{});throw cause.code?.startsWith('DESKTOP_')?cause:failure('DESKTOP_UPDATE_FILE','업데이트 파일을 확인하지 못했어요. 다시 다운로드해 주세요.');}
 }
 function launchInstaller(file,args){
@@ -82,15 +102,23 @@ function createDesktopUpdater({currentVersion,directory,fetchImpl=globalThis.fet
  versionParts(currentVersion);
  if(!['installed','portable','unpacked'].includes(distribution))throw new TypeError('Invalid updater distribution');
  const supported=platform==='win32'&&architecture==='x64'&&isPackaged;
- let state={status:supported?'idle':'unsupported',currentVersion,distribution,message:supported?'업데이트 버튼으로 새 버전을 확인할 수 있어요.':'Windows 64비트 배포 프로그램에서 업데이트할 수 있어요.'},candidate=null,prepared=null,active=null,disposed=false;
+ let state={status:supported?'idle':'unsupported',currentVersion,distribution,message:supported?'업데이트 버튼으로 새 버전을 확인할 수 있어요.':'Windows 64비트 배포 프로그램에서 업데이트할 수 있어요.'},candidate=null,prepared=null,active=null,disposed=false,cacheGrant=null;
  const getState=()=>clone(state),emit=patch=>{state={...state,...patch};try{onProgress(getState());}catch{}return getState();};
  const assertSupported=()=>{if(disposed)throw failure('DESKTOP_UPDATE_DISPOSED','업데이트 창을 다시 열어 주세요.');if(!supported)throw failure('DESKTOP_UPDATE_UNSUPPORTED','Windows 64비트 배포 프로그램에서 업데이트할 수 있어요.');};
  const assertIdle=()=>{assertSupported();if(active||state.status==='installing')throw failure('DESKTOP_UPDATE_BUSY','진행 중인 업데이트 작업을 마친 뒤 다시 시도해 주세요.');};
  const assertCanInstall=()=>{const activity=getActivity()||{};if(activity.busy)throw failure('DESKTOP_UPDATE_WORK_ACTIVE','제작·인코딩·업로드 작업이 끝난 뒤 업데이트해 주세요.');if(activity.unsaved)throw failure('DESKTOP_UPDATE_UNSAVED','변경한 프로젝트와 제목을 먼저 저장한 뒤 업데이트해 주세요.');};
- async function removeOwned(folder){
-  try{if(path.dirname(folder)!==path.resolve(directory)||!/^download-[A-Za-z0-9_-]+$/u.test(path.basename(folder)))return;const parent=await fs.lstat(directory);if(!parent.isDirectory()||parent.isSymbolicLink()||await fs.realpath(directory)!==path.resolve(directory))return;const info=await fs.lstat(folder);if(info.isSymbolicLink())await fs.unlink(folder);else if(info.isDirectory()&&await fs.realpath(folder)===path.resolve(folder))await fs.rm(folder,{recursive:true,force:true});}catch{}
+ async function removeOwned(grant){
+  try{
+   if(!cacheGrant||!grant||!/^download-[A-Za-z0-9_-]+$/u.test(path.basename(grant.path)))return;
+   await assertDirectoryGrant(cacheGrant);
+   const parent=directoryInfo(await fs.lstat(path.dirname(grant.path),{bigint:true}));if(!sameIdentity(parent,cacheGrant))return;
+   const info=await fs.lstat(grant.path,{bigint:true});
+   if(info.isSymbolicLink())await fs.unlink(grant.path);
+   else if(info.isDirectory()&&sameIdentity(fileIdentity(info),grant)){await assertDirectoryGrant(grant);await fs.rm(grant.path,{recursive:true,force:true});}
+  }catch{}
  }
- async function cleanupPrepared(){const previous=prepared;prepared=null;if(previous)await removeOwned(previous.directory);}
+ async function cleanupPrepared(){const previous=prepared;prepared=null;if(previous)await removeOwned(previous.directoryGrant);}
+
  async function responseFor(url,{signal,metadata=false}={}){
   let selected=trustedUrl(url,{api:metadata});
   for(let count=0;count<=4;count++){
@@ -123,14 +151,14 @@ function createDesktopUpdater({currentVersion,directory,fetchImpl=globalThis.fet
   const selected={...candidate},controller=new AbortController();active=controller;let staging,handle,timeout,timedOut=false,stage='folder';
   emit({status:'downloading',version:selected.version,bytes:selected.bytes,downloadedBytes:0,progress:0,message:'업데이트 파일을 다운로드하고 있어요.',error:'',errorCode:''});
   try{
-   timeout=setTimeout(()=>{timedOut=true;controller.abort();},downloadTimeoutMs);await secureDirectory(directory);if(controller.signal.aborted)throw cancelled();staging=await fs.mkdtemp(path.join(directory,'download-'));await fs.chmod(staging,0o700);const partial=path.join(staging,selected.name+'.partial'),destination=path.join(staging,selected.name);
+   timeout=setTimeout(()=>{timedOut=true;controller.abort();},downloadTimeoutMs);cacheGrant=cacheGrant?await assertDirectoryGrant(cacheGrant):await secureDirectory(directory);if(controller.signal.aborted)throw cancelled();const created=await fs.mkdtemp(path.join(cacheGrant.path,'download-'));staging=await secureDirectory(created,{create:false});if(!sameIdentity(staging.parent,cacheGrant))throw directoryFailure();await assertDirectoryGrant(cacheGrant);await fs.chmod(staging.path,0o700);const partial=path.join(staging.path,selected.name+'.partial'),destination=path.join(staging.path,selected.name);
    stage='write';handle=await fs.open(partial,syncFs.constants.O_CREAT|syncFs.constants.O_EXCL|syncFs.constants.O_WRONLY|(syncFs.constants.O_NOFOLLOW||0),0o600);
    stage='connect';const response=await responseFor(selected.url,{signal:controller.signal});const length=response.headers.get('content-length');if(length!==null&&(!/^\d+$/u.test(length)||Number(length)!==selected.bytes))throw failure('DESKTOP_UPDATE_FILE','업데이트 파일 크기가 달라요. 다시 다운로드해 주세요.');
    stage='stream';let bytes=0,lastProgress=0;const hash=crypto.createHash('sha256');
    for await(const value of response.body){if(controller.signal.aborted)throw cancelled();const chunk=Buffer.from(value);bytes+=chunk.length;if(bytes>selected.bytes||bytes>MAX_INSTALLER_BYTES)throw failure('DESKTOP_UPDATE_FILE','업데이트 파일 크기가 달라요. 다시 다운로드해 주세요.');hash.update(chunk);let offset=0;while(offset<chunk.length){stage='write';const written=await handle.write(chunk,offset,chunk.length-offset);if(!written.bytesWritten)throw failure('DESKTOP_UPDATE_STORAGE','업데이트 파일을 저장하지 못했어요.');offset+=written.bytesWritten;}stage='stream';const progress=bytes/selected.bytes;if(progress-lastProgress>=.01||bytes===selected.bytes){lastProgress=progress;emit({downloadedBytes:bytes,progress});}}
    if(bytes!==selected.bytes||hash.digest('hex')!==selected.sha256)throw failure('DESKTOP_UPDATE_FILE','업데이트 파일 검증에 실패했어요. 다시 다운로드해 주세요.');
-   stage='write';await handle.sync();await handle.close();handle=null;await fs.rename(partial,destination);const verified=await verifyInstaller(destination,selected);await verified.handle.close();if(controller.signal.aborted)throw cancelled();
-   prepared={directory:staging,file:destination,stat:verified.stat};staging=null;return emit({status:'ready',downloadedBytes:bytes,progress:1,message:'다운로드와 파일 검증을 마쳤어요. 저장한 작업을 유지하며 업데이트할 수 있어요.',error:'',errorCode:''});
+   stage='write';await handle.sync();await handle.close();handle=null;await assertDirectoryGrant(cacheGrant);await assertDirectoryGrant(staging);await fs.rename(partial,destination);const verified=await verifyInstaller(destination,selected);await verified.handle.close();if(controller.signal.aborted)throw cancelled();
+   prepared={directory:staging.path,directoryGrant:staging,file:destination,stat:verified.stat};staging=null;return emit({status:'ready',downloadedBytes:bytes,progress:1,message:'다운로드와 파일 검증을 마쳤어요. 저장한 작업을 유지하며 업데이트할 수 있어요.',error:'',errorCode:''});
   }catch(cause){if(controller.signal.aborted&&!timedOut){emit({status:'cancelled',message:'업데이트 다운로드를 취소했어요.',error:'',errorCode:''});throw cancelled();}const safe=timedOut?failure('DESKTOP_UPDATE_TIMEOUT','업데이트 다운로드 시간이 초과됐어요. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.'):downloadFailure(cause,stage);emit({status:'failed',message:'업데이트 파일을 준비하지 못했어요.',error:safe.message,errorCode:safe.code});throw safe;}
   finally{clearTimeout(timeout);await handle?.close().catch(()=>{});if(staging)await removeOwned(staging);if(active===controller)active=null;}
  }
@@ -140,11 +168,11 @@ function createDesktopUpdater({currentVersion,directory,fetchImpl=globalThis.fet
   assertCanInstall();if(!prepared||!candidate||state.status!=='ready')throw failure('DESKTOP_UPDATE_NOT_READY','먼저 새 버전을 다운로드하고 파일 검증을 마쳐 주세요.');
   const controller=new AbortController();active=controller;emit({status:'installing',message:'업데이트 설치를 시작하고 있어요.',error:'',errorCode:''});let verified;
   try{
-   await secureDirectory(prepared.directory);verified=await verifyInstaller(prepared.file,candidate,prepared.stat);assertCanInstall();if(controller.signal.aborted)throw cancelled();
+   await assertDirectoryGrant(cacheGrant);await assertDirectoryGrant(prepared.directoryGrant);verified=await verifyInstaller(prepared.file,candidate,prepared.stat);assertCanInstall();if(controller.signal.aborted)throw cancelled();
    await launch(prepared.file,['/S','--updated','--force-run','/currentuser']);await verified.handle.close();verified=null;quit();return getState();
   }catch(cause){const safe=cause.code?.startsWith('DESKTOP_')?cause:failure('DESKTOP_UPDATE_INSTALL','업데이트 설치를 시작하지 못했어요. 다시 시도해 주세요.');emit({status:['DESKTOP_UPDATE_FILE','DESKTOP_UPDATE_STORAGE'].includes(safe.code)?'failed':'ready',message:'설치를 시작하지 못했어요. 현재 프로그램과 프로젝트는 유지됩니다.',error:safe.message,errorCode:safe.code});if(['DESKTOP_UPDATE_FILE','DESKTOP_UPDATE_STORAGE'].includes(safe.code))await cleanupPrepared();throw safe;}
   finally{await verified?.handle.close().catch(()=>{});if(active===controller)active=null;}
  }
  return{check,download,install,getState,cancel(){if(active&&state.status!=='installing'){active.abort();return{cancelled:true};}return{cancelled:false};},isBusy:()=>Boolean(active)||state.status==='installing',dispose(){disposed=true;active?.abort();if(state.status!=='installing')cleanupPrepared().catch(()=>{});}};
 }
-module.exports={REPOSITORY,RELEASE_API,MAX_RELEASE_BYTES,MIN_INSTALLER_BYTES,MAX_INSTALLER_BYTES,compareVersions,normalizeRelease,detectDistribution,createDesktopUpdater};
+module.exports={REPOSITORY,RELEASE_API,MAX_RELEASE_BYTES,MIN_INSTALLER_BYTES,MAX_INSTALLER_BYTES,compareVersions,normalizeRelease,detectDistribution,verifyUpdateDirectory:secureDirectory,createDesktopUpdater};
