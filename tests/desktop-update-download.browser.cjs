@@ -20,6 +20,9 @@ const {launchDesktop,stopDesktop}=require('./desktop-app.browser.cjs');
    const {createDesktopUpdater,RELEASE_API}=req(path.join(app.getAppPath(),'desktop','updater.cjs'));
    const {createElectronUpdateFetch}=req(path.join(app.getAppPath(),'desktop','update-transport.cjs'));
    const directory=await fs.mkdtemp(path.join(os.tmpdir(),'content-studio-verified-update-'));
+   // Observe the OS alias without replacing the caller's original input path.
+   const canonicalDirectory=await fs.realpath(directory),originalInfo=await fs.lstat(directory,{bigint:true}),canonicalInfo=await fs.lstat(canonicalDirectory,{bigint:true});
+   const aliasChanged=directory!==canonicalDirectory,samePhysicalDirectory=originalInfo.dev===canonicalInfo.dev&&originalInfo.ino===canonicalInfo.ino;
    const allowed=new Set(['api.github.com','github.com','release-assets.githubusercontent.com','objects.githubusercontent.com']);
    const events=[],progress=[];let metadata,controller,launches=0,quits=0,report;
    const safeError=cause=>({name:String(cause?.name||'Error'),code:String(cause?.code||''),message:String(cause?.message||'').replace(/https?:\/\/[^\s'"<>]+/giu,'[URL]').slice(0,500)});
@@ -54,7 +57,7 @@ const {launchDesktop,stopDesktop}=require('./desktop-app.browser.cjs');
     report={passed:true,transport:'electron-net-request',comparisonVersion:'1.1.1',offeredVersion:completed.version,bytes:info.size,sha256,realDownload:true,verifiedInstaller:true,independentSha256:true,windowsPeVerified:true,installerNotExecuted:true,installerLaunches:launches,installerQuitCalls:quits,metadataVersion:metadata.tag_name,requestEvents:events,progress};
    }catch(cause){report={passed:false,transport:'electron-net-request',error:safeError(cause),state:controller?.getState?.(),requestEvents:events,progress,installerNotExecuted:launches===0&&quits===0,installerLaunches:launches,installerQuitCalls:quits};}
    finally{controller?.dispose();await fs.rm(directory,{recursive:true,force:true}).catch(()=>{});}
-   return report;
+   return{...report,aliasChanged,samePhysicalDirectory};
   });
   const report={...result,hostPlatform:process.platform,windowsRuntimeExecuted:process.platform==='win32',actualElectron:true,application,realProviderRequests:0,realGoogleRequests:0};
   await fs.writeFile(output,JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report));

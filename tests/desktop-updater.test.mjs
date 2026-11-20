@@ -6,7 +6,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url);
-const {RELEASE_API,MIN_INSTALLER_BYTES,MAX_RELEASE_BYTES,compareVersions,normalizeRelease,detectDistribution,createDesktopUpdater}=require('../desktop/updater.cjs');
+const {RELEASE_API,MIN_INSTALLER_BYTES,MAX_RELEASE_BYTES,compareVersions,normalizeRelease,detectDistribution,verifyUpdateDirectory,createDesktopUpdater}=require('../desktop/updater.cjs');
 const bytes=Buffer.alloc(MIN_INSTALLER_BYTES);bytes.write('MZ');bytes.writeUInt32LE(128,60);bytes.write('PE\0\0',128,'binary');bytes.writeUInt16LE(0x14c,132);
 const digest=crypto.createHash('sha256').update(bytes).digest('hex');
 const clone=value=>structuredClone(value);
@@ -96,4 +96,51 @@ test('a replaced cache directory cannot execute an installer or remove another d
 test('cache symlinks are rejected without writing through them and portable conversion needs explicit intent',async t=>{
  const directory=await temp(t),outside=await temp(t),link=path.join(directory,'redirect');await fs.symlink(outside,link,'dir');const controller=updater(path.join(link,'updates'),{fetchImpl:transport().fetch});await controller.check();await assert.rejects(controller.download(),cause=>cause.code==='DESKTOP_UPDATE_STORAGE');assert.deepEqual(await fs.readdir(outside),[]);
  const conversion=updater(await temp(t),{distribution:'portable',fetchImpl:transport().fetch,launch:async()=>{}});await conversion.check();await conversion.download();await assert.rejects(conversion.install(),cause=>cause.code==='DESKTOP_UPDATE_CONVERSION');await conversion.install({convertToInstalled:true});assert.equal(conversion.getState().status,'installing');
+});
+
+function windowsAliasDirectory({differentTarget=false,changedParent=false}={}){
+ const win=path.win32,canonical='C:\\Users\\Runner Administrator\\AppData\\Local\\Temp\\updates',alias='c:\\users\\RUNNER~1\\AppData\\Local\\Temp\\updates';
+ const segments=['C:\\','C:\\Users','C:\\Users\\Runner Administrator','C:\\Users\\Runner Administrator\\AppData','C:\\Users\\Runner Administrator\\AppData\\Local','C:\\Users\\Runner Administrator\\AppData\\Local\\Temp',canonical];
+ const map=new Map(segments.map((name,index)=>[name.toLowerCase(),(2n**62n)+BigInt(index+1)]));
+ const foreign=win.join(win.dirname(canonical),'foreign');map.set(foreign.toLowerCase(),(2n**62n)+8n);
+ let resolved=false;const calls=[];
+ const physical=value=>win.resolve(value).toLowerCase().replace('c:\\users\\runner~1','c:\\users\\runner administrator');
+ const io={async lstat(value,options){assert.equal(options.bigint,true);calls.push(value);const key=physical(value),ino=map.get(key);if(!ino)throw Object.assign(new Error('Missing synthetic Windows directory'),{code:'ENOENT'});return{dev:99n,ino:ino+(changedParent&&resolved&&key===win.dirname(canonical).toLowerCase()?100n:0n),isDirectory:()=>true,isSymbolicLink:()=>false};},async realpath(){resolved=true;return differentTarget?foreign:canonical;},async mkdir(){assert.fail('Existing aliases must not create new directories');}};
+ return{alias,canonical,io,calls,pathImpl:win};
+}
+
+test('Windows case and 8.3 aliases grant the same BigInt physical directory and return its canonical path',async()=>{
+ const fixture=windowsAliasDirectory(),grant=await verifyUpdateDirectory(fixture.alias,{create:false,io:fixture.io,pathImpl:fixture.pathImpl});
+ assert.equal(grant.path,fixture.canonical);assert.equal(grant.dev,'99');assert.equal(grant.ino,String((2n**62n)+7n));assert.equal(grant.parent.ino,String((2n**62n)+6n));assert.ok(fixture.calls.some(value=>value.includes('RUNNER~1')));assert.ok(fixture.calls.some(value=>value.includes('Runner Administrator')));
+});
+
+test('canonical resolution cannot switch to another inode or a parent changed during alias verification',async()=>{
+ for(const options of[{differentTarget:true},{changedParent:true}]){const fixture=windowsAliasDirectory(options);await assert.rejects(verifyUpdateDirectory(fixture.alias,{create:false,io:fixture.io,pathImpl:fixture.pathImpl}),cause=>cause.code==='DESKTOP_UPDATE_STORAGE');}
+});
+
+test('real platform aliases use the canonical grant for download, final verification and installer launch',async t=>{
+ const directory=await temp(t),spelling=process.platform==='win32'?directory.toUpperCase():path.join(directory,'.'),canonical=await fs.realpath(directory),physical=await fs.lstat(canonical,{bigint:true});
+ const grant=await verifyUpdateDirectory(spelling,{create:false});assert.equal(grant.path,canonical);assert.equal(grant.dev,String(physical.dev));assert.equal(grant.ino,String(physical.ino));
+ let launched;const controller=updater(spelling,{fetchImpl:transport().fetch,launch:async file=>launched=file});await controller.check();await controller.download();await controller.install();assert.equal(path.dirname(path.dirname(launched)),canonical);assert.equal((await fs.stat(launched)).size,bytes.length);
+});
+
+test('prepared alias grants clean their own canonical staging directory when no update is needed',async t=>{
+ const directory=await temp(t),spelling=process.platform==='win32'?directory.toUpperCase():path.join(directory,'.'),metadata=release(),network=transport({metadata}),controller=updater(spelling,{fetchImpl:network.fetch});await controller.check();await controller.download();assert.equal((await fs.readdir(directory)).length,1);
+ Object.assign(metadata,release('1.1.1'));assert.equal((await controller.check()).status,'up-to-date');assert.deepEqual(await fs.readdir(directory),[]);
+});
+
+test('a replacement regular cache directory cannot regain the old grant or have its foreign contents removed',async t=>{
+ const parent=await temp(t),directory=path.join(parent,'updates'),retained=path.join(parent,'original-cache'),controller=updater(directory,{fetchImpl:transport().fetch,launch:async()=>assert.fail('Replaced cache must not execute')});await controller.check();await controller.download();const staging=(await fs.readdir(directory))[0];await fs.rename(directory,retained);await fs.mkdir(path.join(directory,staging),{recursive:true});const foreign=path.join(directory,staging,'keep.txt');await fs.writeFile(foreign,'foreign directory contents');
+ await assert.rejects(controller.install(),cause=>cause.code==='DESKTOP_UPDATE_STORAGE');assert.equal(await fs.readFile(foreign,'utf8'),'foreign directory contents');assert.equal((await fs.stat(path.join(retained,staging,release().assets[0].name))).size,bytes.length);
+});
+
+test('a different ordinary directory substituted for the staged inode is never executed or deleted as owned cache',async t=>{
+ const parent=await temp(t),directory=path.join(parent,'updates'),retained=path.join(parent,'retained-installer'),controller=updater(directory,{fetchImpl:transport().fetch,launch:async()=>assert.fail('Replaced staging must not execute')});await controller.check();await controller.download();const staging=path.join(directory,(await fs.readdir(directory))[0]);await fs.rename(staging,retained);await fs.mkdir(staging);const foreign=path.join(staging,'keep.txt');await fs.writeFile(foreign,'not the granted staged directory');
+ await assert.rejects(controller.install(),cause=>cause.code==='DESKTOP_UPDATE_STORAGE');assert.equal(await fs.readFile(foreign,'utf8'),'not the granted staged directory');assert.equal((await fs.stat(path.join(retained,release().assets[0].name))).size,bytes.length);
+});
+
+test('a removed cache or staging directory invalidates its grant instead of leaving a stale ready installer',async t=>{
+ for(const mode of['cache','staging']){
+  const directory=await temp(t),controller=updater(directory,{fetchImpl:transport().fetch,launch:async()=>assert.fail('Removed directories must not execute')});await controller.check();await controller.download();const staging=path.join(directory,(await fs.readdir(directory))[0]);await fs.rm(mode==='cache'?directory:staging,{recursive:true});await assert.rejects(controller.install(),cause=>cause.code==='DESKTOP_UPDATE_STORAGE');assert.equal(controller.getState().status,'failed');
+ }
 });
