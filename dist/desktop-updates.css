@@ -1,0 +1,17 @@
+.desktop-app #desktopUpdateBtn{display:inline-flex!important;align-items:center;justify-content:center;min-height:38px;padding:8px 11px;font-size:12px;white-space:nowrap;color:#e1c894;border:1px solid #746747}
+.desktop-updates-dialog{width:min(560px,calc(100vw - 28px));color:#dfe8e2}
+.desktop-updates-dialog .dialog-body{display:grid;gap:16px;padding:24px;min-width:0}
+.desktop-updates-dialog .dialog-body p{margin:0;overflow-wrap:anywhere;line-height:1.85}
+.desktop-update-version{font-size:13px;color:#e8d1a6}
+.desktop-update-status{font-size:15px;color:#e1e8de}
+.desktop-update-help{font-size:12px;color:#afc0b5}
+.desktop-update-conversion{border:1px solid #8e784d;background:#302f23;padding:12px;border-radius:6px;color:#e5d3b4;font-size:12px}
+.desktop-update-error{font-size:12px;color:#efb49c}
+.desktop-update-error:empty{display:none}
+.desktop-update-progress{display:block;width:100%;height:9px;accent-color:#dfbb84}
+.desktop-updates-dialog [hidden]{display:none!important}
+.desktop-updates-dialog .dialog-footer{display:flex;flex-wrap:wrap;gap:10px}
+.desktop-updates-dialog .dialog-footer button{min-height:43px;white-space:normal}
+.desktop-updates-dialog #desktopUpdateInstallBtn{margin-left:auto}
+.desktop-updates-dialog :is(button,progress):focus-visible{outline:2px solid #e7bd7a;outline-offset:3px}
+@media(max-width:620px){.desktop-app #desktopUpdateBtn{padding:7px 8px;font-size:11px;min-height:38px}.desktop-updates-dialog .dialog-body{padding:19px}.desktop-updates-dialog .dialog-footer>button{flex:1 1 130px;min-height:44px}.desktop-updates-dialog #desktopUpdateInstallBtn{margin-left:0;flex-basis:100%;order:-1;word-break:keep-all}}
