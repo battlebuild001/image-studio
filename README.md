@@ -612,6 +612,12 @@ npm start
 npm test
 ```
 
+2026-11-20 배포 검증에서는 단위 검사 **985개**, 음성·저장/이미지·검수/게시·업로드 분야별 브라우저 검사 **31개**, 별도 다중 제작 경계·실사이트 검사를 통과했습니다. 실제 배포 사이트에서 단일 영상 1개와 동시 제작 영상 2개를 MP4로 출력하고 디코딩하여 장면·자막·서로 다른 음성·생성 BGM을 확인했습니다. 유료 제공자 응답과 Google 전송은 합성 응답이므로 실제 계정 승인·과금·공개 게시 성공을 의미하지 않습니다.
+
+검증 중 발견한 병렬 오류 후 대기 요청 전송, 기존 수동 편집본의 탐색 중 재분할, 작업공간/모달 포커스, 모바일 고급 메뉴 잘림을 수정했습니다. 회귀는 `test:loaded-navigation-browser`, `test:multi-error-recovery-browser`, `tests/verification-multi-edge-cases.test.mjs`, `test:workspace-browser`, `test:project-upload-browser`에 보관합니다. `test:live-release-browser`는 실제 공개 주소의 정적 자원만 허용하고 AI·Google 요청을 모의 응답으로 검사합니다. 실제 인코딩 검사는 항상 하나씩 실행합니다.
+
+기존 `test:youtube-schedule-single-browser`의 초기 전송 `publishAt`/썸네일 선택 생략 모의 응답은 이전 정책입니다. 현재 필수 썸네일 적용 후 공개·예약하는 흐름은 `test:thumbnail-required-browser`, `test:youtube-upload-readiness-browser`, `test:youtube-schedule-series-browser`로 검증합니다.
+
 Playwright와 Chromium이 설치된 개발 환경에서는 서버를 켠 상태로
 `npm run test:browser`를 실행해 실제 편집·저장·복원·영상 출력을 검증합니다.
 이 클라우드 환경에는 두 도구가 준비되어 있습니다. 기본 서버는 4173 포트이며,

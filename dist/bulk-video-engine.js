@@ -127,11 +127,11 @@ export function createBulkVideoEngine({store=createBulkVideoStore(),renderVideo=
  async function retryThumbnail(id){await load();checkIdle();return exclusive(async()=>{await assertStoreMatches();const job=jobs.find(item=>item.id===id);if(!job?.videoReview||job.videoReview.digest!==job.video?.digest||!job.upload?.receipt||!job.thumbnail)throw new Error('확인한 영상의 실제 업로드 기록과 선택한 썸네일이 필요해요.');
   const controller=new AbortController();active=controller;emit();try{await applyThumbnail(job,controller.signal,()=>{if(controller.signal.aborted)throw abort();return true;});revision++;return publicJob(job);}finally{active=null;emit();}
  });}
- function adapterFor(job,signal){
+ function adapterFor(job,signal,{onFailure}={}){
   const check=()=>{if(signal?.aborted)throw abort();return true;};
   const mutate=action=>{check();const next=clone(job.project);action(next);job.project=validateProject(next);emit();};
   const adapter={getProject:()=>job.project,getAssets:()=>job.assets,getWorkspaceId:()=>`bulk-${job.id}`,canUseSceneImages:()=>!signal?.aborted,mutate,mutateProductionMetadata:mutate,
-   apiFetch:async(path,options={})=>runPaidVideoRequest(async()=>{check();configureProductionBudget(adapter);try{const response=await request(path,{...options,signal:options.signal||signal});if(!response.ok)throw new Error('제작 API 요청이 실패했어요. API 연결·사용 한도와 이미지 요청을 확인해 주세요. 완료한 결과는 유지했어요.');return response;}finally{configureProductionBudget(restoreBudget);}},{signal:options.signal||signal}),persist:()=>persist(job),
+   apiFetch:async(path,options={})=>runPaidVideoRequest(async()=>{check();configureProductionBudget(adapter);try{const response=await request(path,{...options,signal:options.signal||signal});if(!response.ok)throw new Error('제작 API 요청이 실패했어요. API 연결·사용 한도와 이미지 요청을 확인해 주세요. 완료한 결과는 유지했어요.');return response;}catch(cause){onFailure?.(cause);throw cause;}finally{configureProductionBudget(restoreBudget);}},{signal:options.signal||signal}),persist:()=>persist(job),
    async applyGeneratedImage({blob,name,sceneId,guard}){check();if(guard&&guard()===false)throw abort();const scene=job.project.scenes.find(item=>item.id===sceneId);if(!scene)throw new Error('생성한 이미지를 넣을 장면이 없어요.');const assetId=idFactory();job.assets.set(assetId,{blob,name,type:blob.type});mutate(project=>{project.scenes.find(item=>item.id===sceneId).imageId=assetId;});},
   };return adapter;
  }
@@ -248,9 +248,11 @@ export function createBulkVideoEngine({store=createBulkVideoStore(),renderVideo=
   await persist(job);guard();
  }
  async function executeParallelProduction(review,saved,controller,check){
-  await runConcurrentVideoJobs(saved.prepared,async planned=>{
+  let firstFailure=null;
+  const stop=(cause)=>{if(controller.signal.aborted&&!firstFailure)return;if(!firstFailure)firstFailure=cause;controller.abort();};
+  try{await runConcurrentVideoJobs(saved.prepared,async planned=>{
    check();const job=jobs.find(item=>item.id===planned.id);if(!job)return;
-   activeJobIds.add(job.id);job.project=clone(planned.project);job.status='running';job.error='';const adapter=adapterFor(job,controller.signal);
+   activeJobIds.add(job.id);job.project=clone(planned.project);job.status='running';job.error='';const adapter=adapterFor(job,controller.signal,{onFailure:stop});
    try{
     jobProgress(job,'preparing',{message:'제작 준비'});await persist(job);check();
     if(!job.video)await runExtraPhase(job,adapter,planned.extraReview,'before-voice',controller.signal,check);
@@ -281,11 +283,14 @@ export function createBulkVideoEngine({store=createBulkVideoStore(),renderVideo=
     await runExtraPhase(job,adapter,planned.extraReview,'after-render',controller.signal,check);
     job.status='completed';job.error='';await persist(job);jobProgress(job,'completed',{message:'완료',progress:1});
    }catch(cause){
-    job.status=cause?.name==='AbortError'||controller.signal.aborted?'stopped':'failed';job.error=cause?.name==='AbortError'?'중지했어요. 완료한 결과를 유지하며 다시 시작할 수 있어요.':safeError(cause);
+    const interrupted=cause?.name==='AbortError'||controller.signal.aborted&&firstFailure!==cause;
+    stop(cause);
+    job.status=interrupted?'stopped':'failed';job.error=cause?.name==='AbortError'?'중지했어요. 완료한 결과를 유지하며 다시 시작할 수 있어요.':safeError(cause);
     try{await persist(job);}catch{job.error+=' 저장 공간을 확인해 주세요.';}
     jobProgress(job,job.status,{message:job.error});throw cause;
    }finally{activeJobIds.delete(job.id);releaseAssets(job.assets);emit();}
-  },{concurrency:review.options.concurrency,signal:controller.signal,onFailure:()=>controller.abort()});
+  },{concurrency:review.options.concurrency,signal:controller.signal,onFailure:stop});
+  }catch(cause){if(firstFailure)throw firstFailure;if(controller.signal.aborted)throw abort();throw cause;}
  }
  async function executeRun(review,{acknowledged=false}={}){
   await load();checkIdle();const saved=reviews.get(review);

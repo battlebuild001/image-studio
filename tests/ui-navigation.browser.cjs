@@ -4,11 +4,16 @@ async function reveal(page, selector) {
   await target.first().waitFor({state: 'attached'});
   const location = await target.first().evaluate(element => {
     const panel = element.closest('[id^="productionPanel-"]');
-    return {pane: element.closest('.center-stage') ? 'preview' : element.closest('.scenes-panel') ? 'scenes' : element.closest('.inspector') ? 'inspector' : '',
+    return {workflow: element.closest('#threeStepScriptPanel,#threeStepImagesPanel,#threeStepDeliveryPanel')?.id || '', pane: element.closest('.center-stage') ? 'preview' : element.closest('.scenes-panel') ? 'scenes' : element.closest('.inspector') ? 'inspector' : '',
       project: element.id.startsWith('productionTab-') ? element.id.slice(14) : panel?.id.slice(16),
       series: Boolean(element.closest('#uploadSeriesSection,#uploadPanel-series')),
       create: Boolean(element.closest('#uploadShortsTools'))};
   });
+  if (location.workflow) {
+    const tabs={threeStepScriptPanel:'#threeStepScriptTab',threeStepImagesPanel:'#threeStepImagesTab',threeStepDeliveryPanel:'#threeStepDeliveryTab'};
+    const tab=page.locator(tabs[location.workflow]);
+    if(await tab.count()&&await tab.getAttribute('aria-current')!=='step')await tab.click();
+  }
   if (location.pane && await page.locator('#mobileEditorTabs').isVisible()) {
     const tab = page.locator('#mobileEditorTab-' + location.pane);
     if (await tab.getAttribute('aria-selected') !== 'true') await tab.click();

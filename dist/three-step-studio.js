@@ -113,12 +113,20 @@ export function setupThreeStepStudio(api, {imageBatch, bgm} = {}) {
     const legacyExport = $('exportBtn');if (legacyExport && legacyExport.parentElement !== advancedActions) advancedActions.append(legacyExport);
   }
   collectAdvancedTools();
-  document.addEventListener('pointerdown', event => {if (advanced.open && !advanced.contains(event.target)) advanced.open = false;});
+  function positionAdvancedMenu() {
+    if (!advanced.open) return;
+    const top = Math.min(Math.max(8, advancedSummary.getBoundingClientRect().bottom + 8), Math.max(8, innerHeight - 120));
+    advancedBody.style.setProperty('--advanced-menu-top', `${top}px`);
+  }
+  advanced.addEventListener('toggle', positionAdvancedMenu);
+  window.addEventListener('resize', positionAdvancedMenu);
+  window.addEventListener('scroll', positionAdvancedMenu, {passive:true});
+  document.addEventListener('pointerdown', event => {if (advanced.open && !advanced.contains(event.target) && !event.target.closest?.('dialog[open]')) advanced.open = false;});
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && advanced.open && !document.querySelector('dialog[open]')) {event.preventDefault();advanced.open = false;advancedSummary.focus({preventScroll: true});}
   });
 
-  let activeStep = 'script', owner = '', dirty = false, intervalDirty = false, timer = null, applying = false, rendering = false, saving = false, draftRevision = 0;
+  let activeStep = 'script', owner = '', dirty = false, intervalDirty = false, needsTimelineApply = false, timer = null, applying = false, rendering = false, saving = false, draftRevision = 0;
   const scope = () => JSON.stringify([api.getWorkspaceId?.() ?? null, api.getProject?.()?.id ?? null]);
   const state = () => api.getSimpleScriptState?.() || {text: api.getDisplayScript?.() || '', intervalSeconds: 10, sceneCount: api.getProject?.()?.scenes?.length || 0};
   const busy = () => applying || Boolean(api.isWorkflowBusy?.()) || Boolean(imageBatch?.isBusy?.()) || Boolean(bgm?.isBusy?.());
@@ -140,7 +148,7 @@ export function setupThreeStepStudio(api, {imageBatch, bgm} = {}) {
     } catch (error) {saving = false;throw error;}
   }
   function draftInput() {
-    dirty = true;draftRevision++;status.textContent = '';draftStatus.textContent = '자동 저장 중…';
+    dirty = true;needsTimelineApply = true;draftRevision++;status.textContent = '';draftStatus.textContent = '자동 저장 중…';
     if (timer) clearTimeout(timer);const capturedOwner = owner;
     timer = setTimeout(() => {timer = null;if (capturedOwner !== scope()) return;try {const result = flush();result?.catch?.(report);} catch (error) {report(error);}}, 450);
     renderSummary();
@@ -174,7 +182,7 @@ export function setupThreeStepStudio(api, {imageBatch, bgm} = {}) {
     try {
       await nextPaint();await flush({strict: true});await api.commitSimpleScript?.({text, intervalSeconds});
       if (actionOwner !== scope()) {operation.cancel('프로젝트가 바뀌어 현재 적용을 마쳤어요.');return false;}
-      if (revision === draftRevision) {dirty = false;intervalDirty = false;}
+      if (revision === draftRevision) {dirty = false;intervalDirty = false;needsTimelineApply = false;}
       operation.finish('대본과 이미지 전환 시간표를 저장했어요.');
       status.textContent = '대본과 전환 간격을 적용했어요. 이미지 생성 단계에서 구성을 확인하세요.';
       if (destination) showStep(destination, {focus: true});return true;
@@ -187,8 +195,8 @@ export function setupThreeStepStudio(api, {imageBatch, bgm} = {}) {
   }
   async function navigate(id) {
     if (!mutable() || id === activeStep) return;
-    const current = state(), hasScenes = Boolean(api.getProject?.()?.scenes?.length);
-    if (activeStep === 'script' && id !== 'script' && (dirty || intervalDirty || !hasScenes || current.timingConfirmed === false)) {await applyDraft(id);return;}
+    const hasScenes = Boolean(api.getProject?.()?.scenes?.length);
+    if (activeStep === 'script' && id !== 'script' && (dirty || intervalDirty || needsTimelineApply || !hasScenes)) {await applyDraft(id);return;}
     try {await flush({strict: true});showStep(id, {focus: true});} catch (error) {report(error);}
   }
   function normalizeStep(value) {
@@ -196,9 +204,9 @@ export function setupThreeStepStudio(api, {imageBatch, bgm} = {}) {
     if (value === 2 || value === '2' || value === 'images' || value === 'image') return 'images';
     if (value === 3 || value === '3' || ['delivery', 'edit', 'editing', 'upload'].includes(value)) return 'delivery';return null;
   }
-  function showStep(value, {focus = false} = {}) {
+  function showStep(value, {focus = false, restoring = false} = {}) {
     const id = normalizeStep(value);if (!id) return false;
-    if (id !== activeStep && busy() && !applying) {api.toast?.('현재 작업을 마친 뒤 단계를 이동해 주세요.');return false;}
+    if (id !== activeStep && busy() && !applying && !restoring) {api.toast?.('현재 작업을 마친 뒤 단계를 이동해 주세요.');return false;}
     activeStep = id;document.body.dataset.workflowStep = id;
     for (const step of steps) {
       const selected = id === step.id, panel = panels.get(step.id), tab = tabs.get(step.id);panel.hidden = !selected;panel.inert = !selected;
@@ -214,11 +222,11 @@ export function setupThreeStepStudio(api, {imageBatch, bgm} = {}) {
     try {
       const nextOwner = scope(), current = state();
       if (nextOwner !== owner) {
-        if (timer) clearTimeout(timer);timer = null;owner = nextOwner;dirty = false;intervalDirty = false;draftRevision++;
-        script.value = String(current.text || '');interval.value = String(current.intervalSeconds || 10);status.textContent = '';draftStatus.textContent = '';advanced.open = false;applyStatus.clear();
+        if (timer) clearTimeout(timer);timer = null;owner = nextOwner;dirty = false;intervalDirty = false;needsTimelineApply = false;draftRevision++;
+        script.value = String(current.text || '');interval.value = String(current.intervalSeconds || 10);status.textContent = '';draftStatus.textContent = '';applyStatus.clear();
         const project = api.getProject?.(), scenes = project?.scenes || [], assets = api.getAssets?.();
         const filled = scenes.length && scenes.every(scene => scene.imageId && (!assets || assets.has(scene.imageId)));
-        showStep(filled ? 'delivery' : scenes.length ? 'images' : 'script');
+        showStep(filled ? 'delivery' : scenes.length ? 'images' : 'script', {restoring:true});
       } else {
         if (!dirty && document.activeElement !== script && script.value !== String(current.text || '')) script.value = String(current.text || '');
         if (!intervalDirty && document.activeElement !== interval) interval.value = String(current.intervalSeconds || 10);

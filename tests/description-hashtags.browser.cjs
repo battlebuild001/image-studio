@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const {chromium} = require('playwright');
+const {createYouTubePolicyFixture,selectRequiredThumbnail}=require('./youtube-policy-fixture.browser.cjs');
 const {reveal, openProductionSection, closeStudioWorkbench} = require('./ui-navigation.browser.cjs');
 
 // Independent expectations. Fixtures use the actual editor/IndexedDB and media;
@@ -29,7 +30,8 @@ const occurrences = (text, exact) => text.split(exact).length - 1;
   const clientId = '123456789012-descriptionhashtags.apps.googleusercontent.com';
   const channelId = 'UC' + 'h'.repeat(22);
   const headers = {'Access-Control-Allow-Origin':'*', 'Access-Control-Allow-Headers':'*', 'Access-Control-Allow-Methods':'GET,POST,PUT,OPTIONS', 'Access-Control-Expose-Headers':'Location,Range'};
-  page.on('pageerror', cause => errors.push(cause.message));
+  const policy=createYouTubePolicyFixture({videoId:'hashtags001',channelId,headers});
+ page.on('pageerror', cause => errors.push(cause.message));
   page.on('dialog', dialog => dialog.accept());
   page.on('request', req => {if (req.method() === 'POST') posts.push(req.url());});
   await context.addInitScript(({token}) => {
@@ -43,7 +45,7 @@ const occurrences = (text, exact) => text.split(exact).length - 1;
     if (req.method() === 'OPTIONS') return route.fulfill({status:204, headers});
     assert.equal(req.headers().authorization, `Bearer ${token}`);
     if (url.pathname === '/youtube/v3/channels') return route.fulfill({headers, contentType:'application/json', body:JSON.stringify({items:[{id:channelId, snippet:{title:'해시태그 합성 채널'}}]})});
-    assert.equal(url.pathname, '/upload/youtube/v3/videos');
+    if(await policy.handle(route))return;assert.equal(url.pathname, '/upload/youtube/v3/videos');
     if (req.method() === 'POST') {
       videoPosts.push(req.postDataJSON());
       return route.fulfill({headers:{...headers, Location:'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&upload_id=description-hashtags-fixture'}, body:''});
@@ -188,6 +190,7 @@ const occurrences = (text, exact) => text.split(exact).length - 1;
     await page.locator('#connectYouTubeBtn').click(); await page.waitForFunction(() => document.querySelector('#connectYouTubeBtn').textContent === 'Google 계정으로 YouTube 연결' && !document.querySelector('#connectYouTubeBtn').disabled);
     await page.locator('#connectYouTubeBtn').click(); await page.waitForFunction(() => document.querySelector('#youtubeChannelStatus').textContent.includes('해시태그 합성 채널'));
     await open('youtube');
+    await selectRequiredThumbnail(page);
     assert.equal(await page.locator('#youtubeUploadReadiness').getAttribute('data-action'),'hashtags');
     assert.equal(await page.locator('#uploadYouTubeBtn').isDisabled(),true);
     assert.equal(await page.locator('#youtubeUploadNextActionBtn').innerText(),'설명에 해시태그 반영');
@@ -196,7 +199,7 @@ const occurrences = (text, exact) => text.split(exact).length - 1;
     wireDescription = visible(UPLOAD_BODY,BASE_LINE,false);
     assert.equal(await description('youtube'),wireDescription);
     await page.waitForFunction(() => !document.querySelector('#uploadYouTubeBtn').disabled);
-    await page.locator('#uploadYouTubeBtn').click(); await durable(p => p.production.youtube.uploads?.length === 1);
+    await page.locator('#uploadYouTubeBtn').click(); await durable(p => p.production.youtube.uploads?.length === 1&&p.production.youtube.uploads.at(-1).publicationStatus==='completed');
     assert.equal(videoPosts.length,1); assert.equal(videoPosts[0].snippet.description,wireDescription); assert.deepEqual(videoPosts[0].snippet.tags,BASE_TAGS);
     assert.deepEqual(Object.keys(videoPosts[0]).sort(),['snippet','status']); assert.equal('hashtagLine' in videoPosts[0].snippet,false);
     assert.deepEqual(timing(await stored()),timing(original)); assert.deepEqual(await mediaHashes(),originalMedia);
@@ -214,10 +217,10 @@ const occurrences = (text, exact) => text.split(exact).length - 1;
     assert.equal(await description('youtube'),wireDescription); assert.equal(await page.locator('#youtubeDescriptionHashtags').isChecked(),true);
     await page.locator('#youtubeTagGame').selectOption('warhammer40k'); await click('youtube','SelectRecommendedTagsBtn'); await closeStudioWorkbench(page);
     const current=await page.locator('#workspaceTabList [aria-selected=true]').innerText(); const other=(await page.locator('#workspaceTabList [role=tab]').allTextContents()).find(name => name!==current);
-    await page.locator('#workspaceTabList').getByRole('tab',{name:other,exact:true}).click(); await ready(); await open('youtube');
+    await reveal(page,'#workspaceTabList');await page.locator('#workspaceTabList').getByRole('tab',{name:other,exact:true}).click(); await ready(); await open('youtube');
     assert.equal(await description('youtube'),''); assert.deepEqual(await selected('youtube'),[]); assert.equal(await page.locator('#youtubeDescriptionHashtags').isChecked(),true);
     assert.match(await page.locator('#youtubeDescriptionHashtagPreview').innerText(),/적용한 게임 태그가 없어요/u); assert.equal((await stored()).production?.youtube?.hashtagLine,undefined);
-    await closeStudioWorkbench(page); await page.locator('#workspaceTabList').getByRole('tab',{name:current,exact:true}).click(); await ready(); await durable(p=>p.id===original.id);
+    await closeStudioWorkbench(page); await reveal(page,'#workspaceTabList');await page.locator('#workspaceTabList').getByRole('tab',{name:current,exact:true}).click(); await ready(); await durable(p=>p.id===original.id);
     await open('youtube'); assert.equal(await description('youtube'),wireDescription);
     await closeStudioWorkbench(page); await reveal(page,'#newProjectBtn'); await page.locator('#newProjectBtn').click(); await durable(p=>p.id!==original.id);
     await page.locator('#projectInput').setInputFiles('/tmp/description-hashtags-project.bth.json'); await durable(p=>p.id===original.id);
@@ -237,7 +240,7 @@ const occurrences = (text, exact) => text.split(exact).length - 1;
       }
     }
     assert.deepEqual(errors,[]); assert.deepEqual(unexpected,[]); assert.equal(videoPosts.length,1);
-    assert.equal(posts.length,1,'Only the explicitly reviewed intercepted video initiation may POST');
+    assert.equal(policy.thumbnails.length,1);assert.equal(posts.length,2,'Only the explicitly reviewed video initiation and mandatory PNG thumbnail may POST');
     await fs.writeFile('/tmp/description-hashtags-browser-result.json',JSON.stringify({passed:true,groups:6,metadataTagsAndVisibleHashtagsSeparate:true,explicitOnly:true,legacyManualDescriptionPreserved:true,singleOwnedLine:true,miniatureOnly:true,maxFive:true,noWhitespaceInTokens:true,supportBlockIntact:true,supportToggleStable:true,manualHashtagsPreserved:true,overflowAtomic:true,exactMockedWireDescription:true,exactMockedWireTags:true,savedOwnershipAndPreference:true,backupReloadOwnerSafe:true,sourceTimingAndMediaPreserved:true,desktop:true,mobile375:true,mobile390:true,mockedVideoPosts:videoPosts.length,googleCalls:googleCalls.length,liveProviderRequests:0},null,2)+'\n');
     console.log('PASS desktop and375/390px display options, preview and explicit actions fit without horizontal overflow, browser errors, live providers or native exports');
   } catch(cause) {

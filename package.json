@@ -106,7 +106,10 @@
     "test:bgm-browser": "node tests/bgm-studio.browser.cjs",
     "test:multi-video-browser": "node tests/multi-video-workflow.browser.cjs",
     "test:multi-video-native-browser": "node tests/multi-video-native.browser.cjs",
-    "test:multi-video-features-browser": "node tests/multi-video-features.browser.cjs"
+    "test:multi-video-features-browser": "node tests/multi-video-features.browser.cjs",
+    "test:live-release-browser": "node tests/live-release-smoke.browser.cjs",
+    "test:loaded-navigation-browser": "node tests/verification-images-loaded-navigation.browser.cjs",
+    "test:multi-error-recovery-browser": "node tests/verification-multi-error-recovery.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

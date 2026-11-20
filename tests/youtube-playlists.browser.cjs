@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const {chromium} = require('playwright');
+const {selectRequiredThumbnail}=require('./youtube-policy-fixture.browser.cjs');
 const {reveal, openProductionSection, closeStudioWorkbench} = require('./ui-navigation.browser.cjs');
 
 // The real app, project storage, GIS adapter and upload client run here. Every
@@ -88,6 +89,14 @@ const {reveal, openProductionSection, closeStudioWorkbench} = require('./ui-navi
         if (postMode === 'ambiguous') return route.abort('failed');
         return body(route, item);
       }
+      if (url.pathname === '/youtube/v3/videos') {
+        const payload=method==='PUT'?request.postDataJSON():null;
+        const state=uploads.find(item=>item.videoId===(payload?.id||url.searchParams.get('id')));
+        assert.ok(state,'Publication operates on the already uploaded video');
+        if(method==='GET')return body(route,{items:[{id:state.videoId,snippet:{channelId:state.channelId},status:state.publication||{privacyStatus:'private'}}]});
+        assert.equal(method,'PUT');assert.ok(thumbnails.some(item=>item.videoId===state.videoId),'Thumbnail precedes public/scheduled publication');
+        state.publication=payload.status;return body(route,{id:state.videoId,snippet:{channelId:state.channelId},status:state.publication});
+      }
       if (url.pathname === '/upload/youtube/v3/thumbnails/set') {
         assert.equal(method, 'POST');
         thumbnails.push({videoId: url.searchParams.get('videoId'), bytes: request.postDataBuffer().length});
@@ -134,6 +143,7 @@ const {reveal, openProductionSection, closeStudioWorkbench} = require('./ui-navi
     await page.waitForFunction(() => !document.querySelector('#youtubePlaylistSelect').disabled);
   }
   async function upload() {
+    if(await page.locator('#youtubeThumbnailSelect').inputValue()===''){await page.locator('#youtubeThumbnailSelect').selectOption('0');await page.waitForFunction(()=>!document.querySelector('#youtubeThumbnailPreview').hidden&&!document.querySelector('#youtubeThumbnailSelect').disabled);}
     await page.waitForFunction(() => !document.querySelector('#uploadYouTubeBtn').disabled);
     await page.locator('#uploadYouTubeBtn').click();
   }
@@ -159,12 +169,12 @@ const {reveal, openProductionSection, closeStudioWorkbench} = require('./ui-navi
     assert.equal(requests.length, 0);assert.equal(await page.evaluate(() => window.__playlistScopes?.length || 0), 0);
     await open('settings');await page.locator('#youtubeClientId').fill(clientId);await page.locator('#saveYouTubeClientBtn').click();
     await baseConnect();assert.equal(playlistCalls(), 0);
-    const scopes = await page.evaluate(() => window.__playlistScopes);assert.equal(scopes.length, 1);assert.equal(scopes[0].includes('youtube.force-ssl'), false);
+    const scopes = await page.evaluate(() => window.__playlistScopes);assert.equal(scopes.length, 1);assert.equal(scopes[0].includes('youtube.force-ssl'), true, 'Explicit normal connection includes publication management');
     assert.equal(await page.locator('#youtubePlaylistSelect').inputValue(), '');
     await pickFile();await upload();await durable(value => value.production.youtube.uploads?.length === 1);
     assert.equal(uploads.length, 1);assert.equal(playlistCalls(), 0);assert.equal(playlistPosts.length, 0);
     assert.equal(uploads[0].resource.snippet.description, description);assert.deepEqual(uploads[0].resource.snippet.tags, tags);
-    pass('opening the actual app and uploading with no playlist makes no playlist calls and requests only the original OAuth scopes');
+    pass('opening the actual app and uploading with no playlist makes no playlist calls; explicit normal connection requests video publication access');
 
     listMode = 'failure';await page.locator('#loadYouTubePlaylistsBtn').click();await page.waitForFunction(() => !document.querySelector('#loadYouTubePlaylistsBtn').disabled && document.querySelector('#youtubePlaylistError').textContent);
     assert.equal(await page.locator('#youtubeDescription').inputValue(), description);assert.equal((await page.locator('#youtubePlaylistError').innerText()).includes(token), false);
@@ -196,9 +206,9 @@ const {reveal, openProductionSection, closeStudioWorkbench} = require('./ui-navi
     await page.waitForFunction(() => !document.querySelector('#youtubeThumbnailSelect').disabled);
     assert.equal(uploads.length, 2);assert.equal(playlistPosts.length, 1);assert.deepEqual(playlistPosts[0], {playlistId: playlistA, videoId: 'plfixture02'});
     assert.deepEqual(lookups.at(-1), {playlistId: playlistA, videoId: 'plfixture02'});
-    assert.equal(uploads[1].resource.status.privacyStatus, 'private');assert.equal(uploads[1].resource.status.publishAt, publishAt);
+    assert.equal(uploads[1].resource.status.privacyStatus, 'private');assert.equal(uploads[1].resource.status.publishAt, undefined);assert.equal(uploads[1].publication.publishAt, publishAt);
     assert.equal(uploads[1].resource.snippet.description, description);assert.deepEqual(uploads[1].resource.snippet.tags, tags);
-    assert.equal(state.production.youtube.uploads.at(-1).publishAt, publishAt);assert.equal(thumbnails.length, 1);assert.equal(thumbnails[0].videoId, 'plfixture02');assert.ok(thumbnails[0].bytes > 1000);
+    assert.equal(state.production.youtube.uploads.at(-1).publishAt, publishAt);assert.equal(thumbnails.length, 2);assert.equal(thumbnails[1].videoId, 'plfixture02');assert.ok(thumbnails[1].bytes > 1000);
     pass('a private scheduled synthetic upload keeps the exact description, tags and thumbnail, persists its receipt, then adds that exact completed video once');
 
     await page.locator('#youtubeScheduleEnabled').uncheck();await choose(playlistB);await pickFile('playlist-forbidden.webm');postMode = 'forbidden';await upload();
@@ -241,7 +251,7 @@ const {reveal, openProductionSection, closeStudioWorkbench} = require('./ui-navi
       for (const id of ['youtubePlaylistSelect', 'loadYouTubePlaylistsBtn']) {const bounds = await page.locator('#' + id).boundingBox();assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width + 1, id + ' must fit mobile');}
       await page.screenshot({path: '/tmp/youtube-playlists-' + width + '.png', fullPage: true});
     }
-    await closeStudioWorkbench(page);await page.locator('#workspaceTabList').getByRole('tab', {name: '사만', exact: true}).click();await ready();await open();
+    await closeStudioWorkbench(page);await reveal(page,'#workspaceTabList');await page.locator('#workspaceTabList').getByRole('tab', {name: '사만', exact: true}).click();await ready();await open();
     assert.equal(await page.locator('#youtubePlaylistSelect').inputValue(), '');assert.equal(await page.locator('#youtubePlaylistPending').isVisible(), false);
     assert.equal((await stored()).production?.youtube?.uploads?.length || 0, 0);assert.equal(uploads.length, 4);
     assert.deepEqual(errors, []);assert.deepEqual(requestErrors, []);assert.deepEqual(unexpected, []);
@@ -269,7 +279,7 @@ const {reveal, openProductionSection, closeStudioWorkbench} = require('./ui-navi
     await receiptPage.locator('#youtubeVideoSource').selectOption('file');const receiptBytes = Buffer.alloc(4096, 51);receiptBytes.set([0x1a, 0x45, 0xdf, 0xa3]);
     await receiptPage.locator('#youtubeVideoInput').setInputFiles({name: 'receipt-storage-failure.webm', mimeType: 'video/webm', buffer: receiptBytes});
     await receiptPage.locator('#youtubeThumbnailSelect').selectOption('0');await receiptPage.waitForFunction(() => !document.querySelector('#youtubeThumbnailSelect').disabled && !document.querySelector('#uploadYouTubeBtn').disabled);
-    await receiptPage.locator('#uploadYouTubeBtn').click();await receiptPage.waitForFunction(() => !document.querySelector('#youtubeReceiptPending').hidden && !document.querySelector('#retryYouTubeReceiptBtn').disabled);
+    await selectRequiredThumbnail(receiptPage);await receiptPage.locator('#uploadYouTubeBtn').click();await receiptPage.waitForFunction(() => !document.querySelector('#youtubeReceiptPending').hidden && !document.querySelector('#retryYouTubeReceiptBtn').disabled);
     assert.equal(uploads.length, beforeReceipt.uploads + 1);assert.equal(playlistPosts.length, beforeReceipt.posts);assert.equal(playlistCalls(), beforeReceipt.playlistCalls);assert.equal(thumbnails.length, beforeReceipt.thumbnails);
     assert.equal(await receiptPage.locator('#youtubeReceiptVideoLink').getAttribute('href'), 'https://www.youtube.com/watch?v=plfixture05');
     assert.equal(await receiptPage.locator('#uploadYouTubeBtn').isDisabled(), true);assert.equal(await receiptPage.locator('#armYouTubeAutoBtn').isDisabled(), true);
@@ -279,14 +289,14 @@ const {reveal, openProductionSection, closeStudioWorkbench} = require('./ui-navi
     await receiptPage.evaluate(() => {receiptFixture.changeSelection();receiptFixture.fail = false;});
     await receiptPage.locator('#retryYouTubeReceiptBtn').click();await receiptPage.waitForFunction(() => document.querySelector('#youtubeReceiptPending').hidden && !document.querySelector('#youtubeThumbnailSelect').disabled && receiptFixture.saved.project.production.youtube.playlistTransfers.some(value => value.status === 'added'));
     const receiptState = await receiptPage.evaluate(() => ({record: receiptFixture.failedRecord, saved: receiptFixture.saved.project.production.youtube, failures: receiptFixture.failures}));
-    assert.equal(receiptState.failures, 2);assert.deepEqual(receiptState.saved.uploads, [receiptState.record]);assert.equal(receiptState.saved.playlistSelection.id, playlistB);
+    assert.equal(receiptState.failures, 2);assert.deepEqual(receiptState.saved.uploads,[{...receiptState.record,thumbnailStatus:'uploaded',publicationStatus:'completed'}]);assert.equal(receiptState.saved.playlistSelection.id, playlistB);
     assert.equal(uploads.length, beforeReceipt.uploads + 1);assert.equal(playlistPosts.length, beforeReceipt.posts + 1);assert.deepEqual(playlistPosts.at(-1), {playlistId: playlistA, videoId: 'plfixture05'});assert.equal(thumbnails.length, beforeReceipt.thumbnails + 1);assert.equal(thumbnails.at(-1).videoId, 'plfixture05');
     pass('failed local receipt saving blocks new uploads and playlist/thumbnail writes; recovery persists the exact completed record and processes its frozen selections once');
 
     const beforeExpiry = {uploads: uploads.length, posts: playlistPosts.length, calls: playlistCalls(), thumbnails: thumbnails.length};
     await receiptPage.locator('#youtubeVideoInput').setInputFiles({name: 'receipt-auth-expiry.webm', mimeType: 'video/webm', buffer: receiptBytes});
     await receiptPage.evaluate(() => {receiptFixture.expireNext = true;});
-    await receiptPage.locator('#uploadYouTubeBtn').click();await receiptPage.waitForFunction(() => receiptFixture.saved.project.production.youtube.playlistTransfers.some(value => value.videoId === 'plfixture06' && ['failed', 'needs-check', 'pending'].includes(value.status)) && !document.querySelector('#youtubePlaylistPending').hidden && !document.querySelector('#skipYouTubePlaylistBtn').disabled);
+    await selectRequiredThumbnail(receiptPage);await receiptPage.locator('#uploadYouTubeBtn').click();await receiptPage.waitForFunction(() => receiptFixture.saved.project.production.youtube.playlistTransfers.some(value => value.videoId === 'plfixture06' && ['failed', 'needs-check', 'pending'].includes(value.status)) && !document.querySelector('#youtubePlaylistPending').hidden && !document.querySelector('#skipYouTubePlaylistBtn').disabled);
     assert.equal(uploads.length, beforeExpiry.uploads + 1);assert.equal(playlistPosts.length, beforeExpiry.posts);assert.equal(playlistCalls(), beforeExpiry.calls);assert.equal(thumbnails.length, beforeExpiry.thumbnails);
     assert.equal(await receiptPage.locator('#youtubePlaylistPendingLink').getAttribute('href'), 'https://www.youtube.com/watch?v=plfixture06');assert.equal(await receiptPage.locator('#retryYouTubePlaylistBtn').isDisabled(), true);
     assert.equal(await receiptPage.locator('#uploadYouTubeBtn').isDisabled(), true);
@@ -298,18 +308,20 @@ const {reveal, openProductionSection, closeStudioWorkbench} = require('./ui-navi
     assert.deepEqual(await receiptPage.evaluate(() => receiptFixture.saved.project.production.youtube.uploads.at(-1)), expiredReceipt);
     pass('OAuth expiry while saving a successful video still persists a pending playlist transfer; explicit reconnection and retry finish the same video without another initialization');
 
+    await receiptPage.locator('#retryYouTubeThumbnailBtn').click();await receiptPage.waitForFunction(()=>document.querySelector('#youtubeThumbnailPending').hidden&&receiptFixture.saved.project.production.youtube.uploads.at(-1).publicationStatus==='completed');
+    assert.equal(uploads.length,beforeExpiry.uploads+1);assert.equal(thumbnails.length,beforeExpiry.thumbnails+1);
     const beforeClose = {uploads: uploads.length, posts: playlistPosts.length, calls: playlistCalls(), thumbnails: thumbnails.length};
     await receiptPage.locator('#youtubeVideoInput').setInputFiles({name: 'receipt-close-during-save.webm', mimeType: 'video/webm', buffer: receiptBytes});
-    await receiptPage.evaluate(() => {receiptFixture.holdNext = true;});await receiptPage.locator('#uploadYouTubeBtn').click();
+    await receiptPage.evaluate(() => {receiptFixture.holdNext = true;});await selectRequiredThumbnail(receiptPage);await receiptPage.locator('#uploadYouTubeBtn').click();
     await receiptPage.waitForFunction(() => typeof receiptFixture.releasePersistence === 'function');
     assert.equal(uploads.length, beforeClose.uploads + 1);assert.equal(playlistCalls(), beforeClose.calls);assert.equal(thumbnails.length, beforeClose.thumbnails);
     await receiptPage.evaluate(() => {receiptFixture.studio.onClose();receiptFixture.releasePersistence();receiptFixture.releasePersistence = null;});
     await receiptPage.waitForFunction(() => receiptFixture.holdCompleted);await receiptPage.evaluate(() => receiptFixture.studio.onOpen());
-    assert.equal(await receiptPage.locator('#youtubeReceiptPending').isVisible(), true);assert.equal(await receiptPage.locator('#youtubeReceiptVideoLink').getAttribute('href'), 'https://www.youtube.com/watch?v=plfixture07');
+    const pendingReceiptVisible=await receiptPage.locator('#youtubeReceiptPending').isVisible();assert.equal(pendingReceiptVisible||await receiptPage.locator('#youtubeThumbnailPending').isVisible(),true);assert.equal(await receiptPage.locator(pendingReceiptVisible?'#youtubeReceiptVideoLink':'#youtubeThumbnailVideoLink').getAttribute('href'),'https://www.youtube.com/watch?v=plfixture07');
     assert.equal(await receiptPage.locator('#uploadYouTubeBtn').isDisabled(), true);assert.equal(await receiptPage.locator('#armYouTubeAutoBtn').isDisabled(), true);assert.equal(playlistCalls(), beforeClose.calls);
-    await receiptPage.locator('#retryYouTubeReceiptBtn').click();await receiptPage.waitForFunction(() => document.querySelector('#youtubeReceiptPending').hidden && receiptFixture.saved.project.production.youtube.playlistTransfers.some(value => value.videoId === 'plfixture07' && value.status === 'added'));
+    await receiptPage.locator(pendingReceiptVisible?'#retryYouTubeReceiptBtn':'#retryYouTubeThumbnailBtn').click();await receiptPage.waitForFunction(()=>document.querySelector('#youtubeThumbnailPending').hidden&&document.querySelector('#youtubeReceiptPending').hidden&&!receiptFixture.studio.getUploadBusy());if(await receiptPage.locator('#youtubePlaylistPending').isVisible())await receiptPage.locator('#retryYouTubePlaylistBtn').click();await receiptPage.waitForFunction(()=>receiptFixture.saved.project.production.youtube.playlistTransfers.some(value=>value.videoId==='plfixture07'&&value.status==='added'));
     assert.equal(uploads.length, beforeClose.uploads + 1);assert.equal(playlistPosts.length, beforeClose.posts + 1);assert.deepEqual(playlistPosts.at(-1), {playlistId: playlistB, videoId: 'plfixture07'});
-    assert.deepEqual(await receiptPage.evaluate(() => receiptFixture.saved.project.production.youtube.uploads.at(-1)), await receiptPage.evaluate(() => receiptFixture.heldRecord));
+    assert.deepEqual(await receiptPage.evaluate(() => receiptFixture.saved.project.production.youtube.uploads.at(-1)), await receiptPage.evaluate(() => ({...receiptFixture.heldRecord,thumbnailStatus:'uploaded',publicationStatus:'completed'})));
     await receiptPage.close();assert.deepEqual(errors, []);assert.deepEqual(requestErrors, []);assert.deepEqual(unexpected, []);
     pass('closing during receipt persistence preserves the completed video and recovery guard; returning and retrying adds the saved video once without another upload');
     await fs.writeFile('/tmp/youtube-playlists-browser-result.json', JSON.stringify({passed: true, groups: 9, syntheticLocalMedia: true, videoInitializations: uploads.length, playlistInsertAttempts: playlistPosts.length, membershipQueries: lookups.length, thumbnailUploads: thumbnails.length, receiptPersistenceFailureRecovery: true, postReceiptAuthExpiryRecovery: true, closeDuringReceiptPersistenceRecovery: true, timingPreserved: true, sourceMediaBytesPreserved: true, liveGoogleRequests: 0, paidRequests: 0, nativeExports: 0, screenshots: [1440, 390, 375]}, null, 2) + '\n');

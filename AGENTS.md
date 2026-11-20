@@ -69,6 +69,15 @@ Keep the drama-series queue inside the shorts step and preserve reviewed title,
 description and thumbnail selection across Previous/Next navigation.
 Preserve the three primary workflow steps (대본 입력 → 이미지 생성 → 편집·저장·업로드) and route legacy section openers to the
 correct dialog; never put delivery tools back inside project settings.
+Loading an existing project restores its proper work area even while media hydration
+is busy. Unchanged tab navigation is readonly: never replan a saved manual timeline,
+SRT, scene image or narration offset merely because scenePlan is absent/stale.
+Track real user script/interval edits separately from autosave when deciding whether
+to apply a timeline. Preserve advanced-drawer state across workspace switches and
+modal pointer interactions so native opener/keyboard focus remains visible.
+Position the advanced popup within the viewport; document.scrollWidth alone cannot
+detect negative popup coordinates. Test 1440/390/375px and short landscape bounds.
+
 
 - `production-run-studio.js/.css`, `production-run-engine.js`, `production-run-protocol.js`
   and `workflow-*-runner.js` provide the explicit combined production flow. Preserve the
@@ -573,6 +582,11 @@ voice/images. Use the shared `image-studio-native-video-export` Web Lock for mai
 and queue exports. Bind the budget only inside each request lease, restore the
 original owner afterward, and settle all workers before clearing state/cancelling.
 No simultaneous native exports, automatic paid retries or reload autorun.
+On the first parallel provider failure, abort queued request leases before releasing
+the failing API lease and before awaiting failed-status persistence. Slow local saves
+must not allow the next job/request to dispatch. Settle all active work, preserve the
+original failure and completed results, then permit explicit re-preparation/restart.
+
 Keep the queue modal open while active; Stop settles work before closing.
 Validate per-job isolation, every original catalog route, source-workspace recovery,
 real parallel overlap/provider+render maxima, actual multiple MP4s, media hashes,

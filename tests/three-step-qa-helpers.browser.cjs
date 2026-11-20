@@ -16,7 +16,7 @@ function narrationWave(seconds = 6) {
 }
 
 async function storedProject(page) {
-  return page.evaluate(async () => (await (await import('/project.js')).loadProject())?.project);
+  return page.evaluate(async () => (await (await import('./project.js')).loadProject())?.project);
 }
 
 async function waitProject(page, predicate, label = 'durable project update') {
@@ -30,7 +30,7 @@ async function waitProject(page, predicate, label = 'durable project update') {
 
 async function mediaHashes(page) {
   return page.evaluate(async () => {
-    const loaded = await (await import('/project.js')).loadProject();
+    const loaded = await (await import('./project.js')).loadProject();
     return Promise.all([...loaded.assets].sort(([a], [b]) => a.localeCompare(b)).map(async ([id, asset]) => ({
       id, type: asset.blob.type, size: asset.blob.size,
       hash: [...new Uint8Array(await crypto.subtle.digest('SHA-256', await asset.blob.arrayBuffer()))].join(','),
@@ -71,7 +71,7 @@ async function verifyNativeExport(page, output = '/tmp/three-step-native.mp4') {
   assert.ok(before.audio.narrationId && before.audio.bgmId && before.settings.subtitles);
   assert.ok(before.scenes.every(scene => scene.imageId && scene.caption));
   const expectedMusic = await page.evaluate(async () => {
-    const {loadProject} = await import('/project.js'), engine = await import('/engine.js'), loaded = await loadProject();
+    const {loadProject} = await import('./project.js'), engine = await import('./engine.js'), loaded = await loadProject();
     await engine.prepareAssets(loaded.assets);
     const asset = loaded.assets.get(loaded.project.audio.bgmId), window = engine.getAudioWindow(loaded.project, loaded.assets, 'bgm');
     const source = asset.audioBuffer.getChannelData(0), rate = 24000, seconds = engine.getDuration(loaded.project), music = new Float32Array(Math.round(rate * seconds));
@@ -96,7 +96,7 @@ async function verifyNativeExport(page, output = '/tmp/three-step-native.mp4') {
   const ends = probe.streams.map(stream => Math.max(...probe.packets.filter(packet => packet.stream_index === stream.index).map(packet => Number(packet.pts_time || 0) + Number(packet.duration_time || 0))));
   assert.ok(ends.every(end => end > 5.7 && end < 6.5), 'Both exported streams retain the six-second timeline: ' + JSON.stringify(ends));
   const frames = await page.evaluate(async () => {
-    const {loadProject} = await import('/project.js'), engine = await import('/engine.js'), loaded = await loadProject();await engine.prepareAssets(loaded.assets);
+    const {loadProject} = await import('./project.js'), engine = await import('./engine.js'), loaded = await loadProject();await engine.prepareAssets(loaded.assets);
     const media = document.createElement('video');media.muted = true;media.src = document.querySelector('#downloadVideoLink').href;document.body.append(media);
     await new Promise((resolve, reject) => {media.onloadedmetadata = resolve;media.onerror = reject;});
     const actual = document.createElement('canvas'), expected = document.createElement('canvas');actual.width = expected.width = 1280;actual.height = expected.height = 720;
