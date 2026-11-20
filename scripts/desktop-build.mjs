@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {execFile} from 'node:child_process';
 import {copyFile,lstat,mkdir,mkdtemp,open,readFile,readdir,rm,stat,writeFile} from 'node:fs/promises';
-import {dirname,extname,join,resolve,sep} from 'node:path';
+import {dirname,extname,join,resolve,sep,win32} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
@@ -95,13 +95,23 @@ function sevenZipMembers(output){
  const section=output.replaceAll('\r\n','\n').split('\n----------\n')[1];assert.ok(section,'Missing 7-Zip member directory');
  return section.trim().split(/\n\n+/u).map(block=>Object.fromEntries(block.split('\n').map(line=>{const at=line.indexOf(' = ');return at<0?null:[line.slice(0,at),line.slice(at+3)];}).filter(Boolean))).filter(item=>item.Path);
 }
+/** Windows builder's reduced 7za cannot decode NSIS; installed users never need
+ * this developer-only verifier tool. Explicit tool overrides remain authoritative. */
+export async function selectNsisVerificationTool({platform=process.platform,env=process.env,isFile=async file=>{try{return(await stat(file)).isFile();}catch{return false;}},builderTool=()=>require('app-builder-lib/out/toolsets/7zip.js').getPath7za()}={}){
+ const override=env.ELECTRON_BUILDER_7ZIP_PATH?.trim();
+ if(override){assert.ok(await isFile(override),'ELECTRON_BUILDER_7ZIP_PATH must point to an existing executable');return override;}
+ if(platform!=='win32')return builderTool();
+ const folders=[...new Set([env.ProgramW6432,env.ProgramFiles,env['ProgramFiles(x86)']].filter(value=>typeof value==='string'&&value.trim()))];
+ for(const folder of folders){const directory=win32.join(folder,'7-Zip'),executable=win32.join(directory,'7z.exe');if(await isFile(executable)&&await isFile(win32.join(directory,'7z.dll')))return executable;}
+ throw new Error('Windows 설치 파일 검증에는 개발 PC의 전체 7-Zip(7z.exe·7z.dll)이 필요해요. 7-Zip을 설치하거나 NSIS를 지원하는 ELECTRON_BUILDER_7ZIP_PATH를 지정해 주세요. 앱 사용자 PC에는 필요하지 않아요.');
+}
 async function verifyNsisPayload(path,{asarSha256,executableSha256,installer}={}){
- const seven=await require('app-builder-lib/out/toolsets/7zip.js').getPath7za(),execute=promisify(execFile),run=async args=>(await execute(seven,args,{maxBuffer:4*1024*1024})).stdout;
- const listing=await run(['l','-slt',path]);assert.match(listing,/\bType = Nsis\b/u,'Executable must be a real NSIS archive');const entries=sevenZipMembers(listing),packageEntry=entries.find(entry=>/(?:^|[/\\])app-64\.7z$/u.test(entry.Path));assert.ok(packageEntry,'NSIS artifact is missing its x64 app payload');assert.ok(Number(packageEntry.Size)>32*1024*1024,'NSIS runtime payload is unexpectedly small');
+ const seven=await selectNsisVerificationTool(),execute=promisify(execFile),run=async args=>(await execute(seven,args,{maxBuffer:4*1024*1024})).stdout;
+ const listing=await run(['l','-slt','-tNsis',path]);assert.match(listing,/\bType = Nsis\b/u,'NSIS verification requires a full 7-Zip tool with the NSIS handler');const entries=sevenZipMembers(listing),packageEntry=entries.find(entry=>/(?:^|[/\\])app-64\.7z$/u.test(entry.Path));assert.ok(packageEntry,'NSIS artifact is missing its x64 app payload');assert.ok(Number(packageEntry.Size)>32*1024*1024,'NSIS runtime payload is unexpectedly small');
  const uninstaller=entries.find(entry=>/(?:^|[/\\])Uninstall [^/\\]+\.exe$/iu.test(entry.Path));if(installer)assert.ok(uninstaller,'Installer must include its real uninstaller');
  const staging=await mkdtemp(join(tmpdir(),'content-studio-nsis-verify-'));
  try{
-  await run(['t','-bd',path]);await run(['e','-y','-bd',path,packageEntry.Path,...(installer?[uninstaller.Path]:[]),`-o${staging}`]);const embedded=join(staging,'app-64.7z');await run(['t','-bd',embedded]);const payloadEntries=sevenZipMembers(await run(['l','-slt',embedded]));
+  await run(['t','-bd','-tNsis',path]);await run(['e','-y','-bd','-tNsis',path,packageEntry.Path,...(installer?[uninstaller.Path]:[]),`-o${staging}`]);const embedded=join(staging,'app-64.7z');await run(['t','-bd',embedded]);const payloadEntries=sevenZipMembers(await run(['l','-slt',embedded]));
   for(const name of ['ContentStudio.exe','resources/app.asar','ffmpeg.dll','icudtl.dat','resources.pak','snapshot_blob.bin','v8_context_snapshot.bin','locales/ko.pak','LICENSE.electron.txt','LICENSES.chromium.html'])assert.ok(payloadEntries.some(entry=>entry.Path.replaceAll('\\','/')===name),`NSIS payload missing runtime: ${name}`);
   const extracted=join(staging,'app');await mkdir(extracted);await run(['e','-y','-bd',embedded,'resources/app.asar','ContentStudio.exe',`-o${extracted}`]);assert.equal(digest(await readFile(join(extracted,'app.asar'))),asarSha256,'NSIS payload differs from the verified app');await inspectPortableExecutable(join(extracted,'ContentStudio.exe'),{requireX64:true});assert.equal(digest(await readFile(join(extracted,'ContentStudio.exe'))),executableSha256,'NSIS runtime differs from the verified x64 executable');
   if(installer)await inspectPortableExecutable(join(staging,uninstaller.Path.split(/[/\\]/u).at(-1)));
