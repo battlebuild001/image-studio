@@ -839,6 +839,11 @@ for credential values in chat. Inspect configured presence without exposing valu
   only, never in projects or backups. Opening drawers must not invoke AI/network
   requests or paid actions. Keep batch count/cost/acknowledgement controls visible
   in the generation dialog and retain the explicit confirmation gate.
+  Show every current image-start blocker beside the disabled Start control,
+  including API configuration/checking, an unapplied reference, stale composition,
+  timing, empty targets and acknowledgement. Recovery may recheck configuration
+  with a GET or navigate/focus the relevant control; it must never generate,
+  research, apply a staged reference, opt into replacement or bypass acknowledgement.
 - Native details summaries must retain keyboard behavior and be excluded from
   global editor shortcuts. Restore focus only when a closed dialog's native opener
   is hidden; never steal focus from a newer visible user target. Retain accessible

@@ -118,7 +118,7 @@ const {chromium} = require('playwright');
     await closeSettings();
     console.log('PASS actual Settings API-key input, non-paid verification, no-network Save, masked memory-only credential and rejected-key preservation');
 
-    await page.locator('#workflowScriptBtn').click();await page.waitForFunction(() => document.querySelector('#scriptServiceState').dataset.state === 'ready');
+    await reveal(page,'#toolNavigationBtn');await page.locator('#toolNavigationBtn').click();await page.locator('#toolNavigationSearch').fill('대본 작성');await page.locator('[data-tool-id=script-draft]').click();await page.waitForFunction(() => document.querySelector('#scriptServiceState').dataset.state === 'ready');
     await change('researchSource', references);await change('scriptInstructions', direction);await change('scriptMinutes', '8');await change('scriptPace', '330');
     await page.locator('#generateScriptBtn').click();await page.waitForFunction(() => document.querySelector('#generatedScriptTitle').textContent === '신호와 어소리티의 시대');
     assert.equal(await page.locator('#generatedScript').inputValue(), spokenNarrative);assert.notEqual(narrative, references);

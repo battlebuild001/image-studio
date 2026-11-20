@@ -2,13 +2,15 @@
 
 Windows 10·11 64비트에서 설치하거나 압축을 풀어 실행하는 별도 프로그램입니다. 기존 대본·음성·이미지·자막·한 번에 제작·검수·업로드 화면을 앱 안에서 사용합니다. Chrome, Node.js 또는 로컬 서버를 별도로 설치하지 않습니다.
 
-## Windows 10·11 다운로드 · 1.1.3
+## Windows 10·11 다운로드 · 1.1.4
 
-- 설치형: https://github.com/battlebuild001/image-studio/releases/download/desktop-v1.1.3/Content-Studio-Setup-1.1.3-x64.exe
-- 무설치 실행형: https://github.com/battlebuild001/image-studio/releases/download/desktop-v1.1.3/Content-Studio-1.1.3-Windows-x64-Portable.exe
-- 압축형: https://github.com/battlebuild001/image-studio/releases/download/desktop-v1.1.3/Content-Studio-1.1.3-Windows-x64.zip
+- 설치형: https://github.com/battlebuild001/image-studio/releases/download/desktop-v1.1.4/Content-Studio-Setup-1.1.4-x64.exe
+- 무설치 실행형: https://github.com/battlebuild001/image-studio/releases/download/desktop-v1.1.4/Content-Studio-1.1.4-Windows-x64-Portable.exe
+- 압축형: https://github.com/battlebuild001/image-studio/releases/download/desktop-v1.1.4/Content-Studio-1.1.4-Windows-x64.zip
 
-1.1.3에는 최신 **대본 입력 → 이미지 생성 → 편집·저장·업로드**와 **여러 영상 동시 제작**이 포함됩니다. 영상별 전체 편집기, 단락 쉬기·음성 샘플, 내장 BGM, 자료 검색·레퍼런스, AI 검수, 이미지 교체, 썸네일·설명·태그·재생목록·공개/예약·쇼츠·드라마 기능을 유지합니다. AI나 YouTube 기능을 사용하지 않는 편집·저장·내보내기는 설치된 프로그램 안에서 처리합니다.
+1.1.4에는 최신 **대본 입력 → 이미지 생성 → 편집·저장·업로드**와 **여러 영상 동시 제작**이 포함됩니다. 영상별 전체 편집기, 단락 쉬기·음성 샘플, 내장 BGM, 자료 검색·레퍼런스, AI 검수, 이미지 교체, 썸네일·설명·태그·재생목록·공개/예약·쇼츠·드라마 기능을 유지합니다. AI나 YouTube 기능을 사용하지 않는 편집·저장·내보내기는 설치된 프로그램 안에서 처리합니다.
+
+1.1.4에서는 이미지 생성 시작 버튼이 비활성화된 이유를 바로 위에 표시합니다. API 연결 확인, 적용하지 않은 레퍼런스, 변경된 구성, 타이밍·생성 대상·확인란을 구분하고 해당 설정으로 바로 이동할 수 있습니다. **API 연결 다시 확인**은 설정 조회만 하며 이미지를 생성하지 않습니다. 레퍼런스는 미리보기 후 **이 이미지 사용하기**를 눌러 적용해야 합니다. 1.1.3 사용자는 프로그램 상단 **업데이트**에서 새 버전을 설치할 수 있습니다.
 
 1.1.3은 GitHub 설치 파일의 다운로드 주소 이동(HTTP 302)을 Electron이 취소하던 오류와 Windows 경로 표기 차이로 정상 저장 폴더를 거부하던 오류를 수정합니다. 1.1.1·1.1.2에서는 기존 업데이트 코드로 수정본을 다운로드할 수 없으므로 위 설치 파일을 직접 실행해 주세요. 프로젝트와 설정은 유지합니다. 수정본은 실제 배포 설치 파일 전체를 다운로드하고 SHA-256·PE를 검증한 뒤 제공합니다.
 
