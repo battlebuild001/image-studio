@@ -30,6 +30,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Install isolated UI test driver
         run: npm install --no-save --package-lock=false --no-audit --no-fund playwright
+      - name: Install the pinned Electron runtime for source verification
+        shell: pwsh
+        run: |
+          node node_modules/electron/install.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path (Join-Path $PWD 'node_modules/electron/dist/electron.exe'))) { throw 'The pinned Electron runtime was not installed.' }
       - name: Verify real Windows download before packaging
         shell: pwsh
         run: |
