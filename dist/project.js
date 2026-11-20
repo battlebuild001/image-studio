@@ -6,6 +6,8 @@ import {normalizeProductionState, referencedProductionAssetIds, referencedProduc
 export const SCHEMA_VERSION = 1;
 export const MAX_BACKUP_BYTES = 250 * 1024 * 1024;
 export const MAX_ASSET_BYTES = 180 * 1024 * 1024;
+// Includes retained image/voice versions and voice samples as well as scenes.
+export const MAX_ASSET_COUNT = 2000;
 const MAX_REFERENCE_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_REFERENCE_BYTES = 20 * 1024 * 1024;
 export const DB_NAME = 'bth-blkout-image-studio';
@@ -969,7 +971,7 @@ export async function importProjectBackup(input) {
   }
   if (!plainObject(data) || data.kind !== 'bth-image-studio' || data.version !== SCHEMA_VERSION) fail('BLKOUT Image Studio 프로젝트 파일을 선택해 주세요.');
   const project = validateProject(data.project);
-  if (!Array.isArray(data.assets) || data.assets.length > 207) fail('프로젝트 미디어 목록이 올바르지 않습니다.');
+  if (!Array.isArray(data.assets) || data.assets.length > MAX_ASSET_COUNT) fail('프로젝트 미디어 목록이 올바르지 않습니다.');
   const assets = new Map();
   let totalBytes = 0;
   for (const entry of data.assets) {

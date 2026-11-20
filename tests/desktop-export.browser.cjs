@@ -5,6 +5,7 @@ const os=require('node:os');
 const {promisify}=require('node:util');
 const run=promisify(require('node:child_process').execFile);
 const {output,wait,exists,launchDesktop,installDialogMocks,stored,stopDesktop}=require('./desktop-app.browser.cjs');
+const {reveal}=require('./ui-navigation.browser.cjs');
 
 function wave(voice=false){
  const rate=24000,count=rate*2.5,bytes=Buffer.alloc(44+count*2);
@@ -52,11 +53,11 @@ function audioSegment(raw,start,end){
  try{
   runtime=await launchDesktop(profile);const{app,page}=runtime,backup=await backupForExport(page);
   await page.locator('#projectInput').setInputFiles({name:'데스크톱 싱크 검증.bth.json',mimeType:'application/json',buffer:Buffer.from(backup)});await stored(page,value=>value.id==='desktop-export-fixture');
-  await page.locator('#productionRunBtn').click();await page.locator('#productionRunFreeBtn').click();await page.locator('#productionRunSync').selectOption('local');await page.waitForFunction(()=>document.querySelector('#productionRunConfirm')&&!document.querySelector('#productionRunConfirm').disabled);await page.locator('#productionRunConfirm').check();await page.waitForFunction(()=>!document.querySelector('#startProductionRunBtn').disabled);await page.locator('#startProductionRunBtn').click();
+  await reveal(page,'#productionRunBtn');await page.locator('#productionRunBtn').click();await page.locator('#productionRunFreeBtn').click();await page.locator('#productionRunSync').selectOption('local');await page.waitForFunction(()=>document.querySelector('#productionRunConfirm')&&!document.querySelector('#productionRunConfirm').disabled);await page.locator('#productionRunConfirm').check();await page.waitForFunction(()=>!document.querySelector('#startProductionRunBtn').disabled);await page.locator('#startProductionRunBtn').click();
   const repaired=await stored(page,value=>value.production?.run?.status==='completed','completed desktop local production pipeline');assert.deepEqual(repaired.scenes.map(scene=>scene.duration),[.5,1.25,1.25,.5]);assert.deepEqual(repaired.captions,JSON.parse(backup).project.captions);await page.locator('#closeProductionRunBtn').click();
   console.log('PASS the real desktop one-run local workflow synchronizes protected title cards, original speech captions and original voice without contacting providers');
 
-  await page.locator('#exportBtn').click();await page.waitForFunction(()=>!document.querySelector('#startExportBtn').disabled);
+  await reveal(page,'#exportBtn');await page.locator('#exportBtn').click();await page.waitForFunction(()=>!document.querySelector('#startExportBtn').disabled);
   const capabilities=await page.evaluate(()=>(import('./engine.js')).then(engine=>engine.getExportCapabilities()));
   const requested=process.env.CONTENT_STUDIO_DESKTOP_TEST_FORMAT||'mp4',format=requested==='auto'?(capabilities.mp4?'mp4':'webm'):requested;
   assert.ok(capabilities[format],`The actual Electron runtime cannot export ${format.toUpperCase()}: ${capabilities.reason||'no encoder'}`);

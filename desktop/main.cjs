@@ -2,7 +2,7 @@
 const {app,BrowserWindow,Menu,dialog,ipcMain,protocol,session,shell,safeStorage,net,powerSaveBlocker}=require('electron');
 const fs=require('node:fs/promises');
 const path=require('node:path');
-const {APP_ORIGIN,isTrustedAppUrl,isSafeExternalUrl,createProtocolHandler}=require('./protocol.cjs');
+const {APP_ORIGIN,isTrustedAppUrl,isSafeExternalUrl,publicHelpUrl,createProtocolHandler}=require('./protocol.cjs');
 const {createVault,createSettingsStore}=require('./vault.cjs');
 const {createProjectFileStore,safeName}=require('./files.cjs');
 const {createDesktopYouTubeOAuth}=require('./oauth.cjs');
@@ -86,7 +86,7 @@ function installMenu(){
     {label:'파일',submenu:[action('새 프로젝트','new-project','CmdOrCtrl+N'),action('프로젝트 열기…','open-project','CmdOrCtrl+O'),{type:'separator'},action('프로젝트 저장','save-project','CmdOrCtrl+S'),action('다른 폴더에 저장…','save-project-as','CmdOrCtrl+Shift+S'),action('영상 내보내기','export-video','CmdOrCtrl+E'),{type:'separator'},action('API 연결 설정','api-settings','CmdOrCtrl+,'),{type:'separator'},{role:process.platform==='darwin'?'close':'quit',label:'종료'}]},
     {label:'편집',submenu:[{role:'undo',label:'실행 취소'},{role:'redo',label:'다시 실행'},{type:'separator'},{role:'cut',label:'잘라내기'},{role:'copy',label:'복사'},{role:'paste',label:'붙여넣기'},{role:'selectAll',label:'전체 선택'}]},
     {label:'보기',submenu:[{role:'resetZoom',label:'기본 크기'},{role:'zoomIn',label:'확대'},{role:'zoomOut',label:'축소'},{type:'separator'},{role:'togglefullscreen',label:'전체 화면'},...(!app.isPackaged?[{role:'toggleDevTools',label:'개발자 도구'}]:[])]},
-    {label:'도움말',submenu:[{label:'사용 안내',click:()=>external('https://battlebuild001.github.io/image-studio/').catch(()=>{})},{label:'개인정보처리방침',click:()=>external('https://battlebuild001.github.io/image-studio/privacy.html').catch(()=>{})},{type:'separator'},{label:'보안 연결 설정 초기화…',click:resetVault},{type:'separator'},{label:'Content Studio 정보',click:()=>dialog.showMessageBox(window,{type:'info',title:'Content Studio',message:'Content Studio '+app.getVersion(),detail:'Windows용 영상 제작 프로그램\n프로젝트와 미디어는 이 PC에 저장됩니다. AI 생성과 업로드는 실행한 기능의 외부 API 연결을 사용합니다.'})}]}
+    {label:'도움말',submenu:[{label:'사용 안내',click:()=>external('https://battlebuild001.github.io/image-studio/').catch(()=>{})},{label:'개인정보처리방침',click:()=>external('https://battlebuild001.github.io/image-studio/youtube-privacy.html').catch(()=>{})},{type:'separator'},{label:'보안 연결 설정 초기화…',click:resetVault},{type:'separator'},{label:'Content Studio 정보',click:()=>dialog.showMessageBox(window,{type:'info',title:'Content Studio',message:'Content Studio '+app.getVersion(),detail:'Windows용 영상 제작 프로그램\n프로젝트와 미디어는 이 PC에 저장됩니다. AI 생성과 업로드는 실행한 기능의 외부 API 연결을 사용합니다.'})}]}
   ]));
 }
 function installSession(){
@@ -120,11 +120,10 @@ function createWindow(){
   const contents=window.webContents;
   contents.setWindowOpenHandler(({url})=>{
     if(isSafeExternalUrl(url))external(url).catch(()=>{});
-    else if(url===APP_ORIGIN+'/privacy.html')external('https://battlebuild001.github.io/image-studio/privacy.html').catch(()=>{});
-    else if(url===APP_ORIGIN+'/terms.html')external('https://battlebuild001.github.io/image-studio/terms.html').catch(()=>{});
+    else if(publicHelpUrl(url))external(publicHelpUrl(url)).catch(()=>{});
     return{action:'deny'};
   });
-  contents.on('will-navigate',(event,url)=>{if(!isTrustedAppUrl(url)){event.preventDefault();if(isSafeExternalUrl(url))external(url).catch(()=>{});}});
+  contents.on('will-navigate',(event,url)=>{if(!isTrustedAppUrl(url)){event.preventDefault();const help=publicHelpUrl(url);if(help)external(help).catch(()=>{});else if(isSafeExternalUrl(url))external(url).catch(()=>{});}});
   contents.on('will-redirect',(event)=>event.preventDefault());
   contents.on('will-attach-webview',event=>event.preventDefault());
   contents.on('will-prevent-unload',event=>{

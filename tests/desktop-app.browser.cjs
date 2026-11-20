@@ -4,6 +4,7 @@ const path=require('node:path');
 const os=require('node:os');
 const {createHash}=require('node:crypto');
 const {_electron}=require('playwright');
+const {reveal}=require('./ui-navigation.browser.cjs');
 
 const root=path.resolve(__dirname,'..');
 const output=path.resolve(process.env.CONTENT_STUDIO_DESKTOP_TEST_OUTPUT||path.join(os.tmpdir(),'content-studio-desktop-test'));
@@ -93,7 +94,7 @@ async function appChecks(){
   const vaultFile=path.join(profile,'secure-settings-v1.bin');assert.equal(await exists(vaultFile),secureRetention);if(secureRetention){const encrypted=await fs.readFile(vaultFile,'utf8');assert.equal(encrypted.includes(settingsFixture),false);assert.equal(JSON.parse(encrypted).version,1);}
 
   backup=await syntheticBackup(page);await page.locator('#projectInput').setInputFiles({name:'데스크톱 합성 프로젝트.bth.json',mimeType:'application/json',buffer:Buffer.from(backup)});original=await stored(page,value=>value.id==='desktop-native-project');hashes=await mediaHashes(page);
-  await page.locator('#saveProjectBtn').click();for(let at=0;at<300&&!await exists(path.join(folder,'project.json'));at++)await wait(30);assert.equal(await exists(path.join(folder,'project.json')),true);
+  await reveal(page,'#saveProjectBtn');await page.locator('#saveProjectBtn').click();for(let at=0;at<300&&!await exists(path.join(folder,'project.json'));at++)await wait(30);assert.equal(await exists(path.join(folder,'project.json')),true);
   const manifest=JSON.parse(await fs.readFile(path.join(folder,'project.json'),'utf8'));assert.equal(manifest.kind,'content-studio-folder');assert.equal(manifest.version,1);assert.deepEqual(manifest.project,original);assert.equal(manifest.assets.length,5);
   for(const asset of manifest.assets){assert.match(asset.file,/^assets\/[A-Za-z0-9_-]+\.[A-Za-z0-9]+$/u);const bytes=await fs.readFile(path.join(folder,asset.file));assert.equal(digest(bytes),hashes[asset.id].sha256);assert.equal(bytes.length,hashes[asset.id].bytes);}
   assert.ok(!JSON.stringify(manifest).includes('"data":'));assert.equal(JSON.stringify(manifest).includes(settingsFixture),false);assert.deepEqual(await mediaHashes(page),hashes);
@@ -101,7 +102,7 @@ async function appChecks(){
 
   await page.locator('#projectMenuSummary').click();await page.locator('#newProjectBtn').click();await stored(page,value=>value.id!==original.id&&value.scenes.length===0);if(!await page.locator('#openProjectBtn').isVisible())await page.locator('#projectMenuSummary').click();await page.locator('#openProjectBtn').click();const reopened=await stored(page,value=>value.id===original.id);assert.deepEqual(reopened,original);assert.deepEqual(await mediaHashes(page),hashes);await page.locator('#projectTitle').click();
   const trace=await app.evaluate(()=>globalThis.__desktopDialogControl);assert.ok(trace.opened.some(value=>value.properties.includes('openDirectory')));assert.ok(trace.opened.some(value=>value.properties.includes('openFile')));
-  await page.locator('#projectTitle').fill('데스크톱에서 수정한 제목');const edited=await stored(page,value=>value.title==='데스크톱에서 수정한 제목');await page.locator('#saveProjectBtn').click();for(let at=0;at<300;at++){const value=JSON.parse(await fs.readFile(path.join(folder,'project.json'),'utf8'));if(value.project.title===edited.title)break;await wait(30);}
+  await page.locator('#projectTitle').fill('데스크톱에서 수정한 제목');const edited=await stored(page,value=>value.title==='데스크톱에서 수정한 제목');await reveal(page,'#saveProjectBtn');await page.locator('#saveProjectBtn').click();for(let at=0;at<300;at++){const value=JSON.parse(await fs.readFile(path.join(folder,'project.json'),'utf8'));if(value.project.title===edited.title)break;await wait(30);}
   assert.equal(JSON.parse(await fs.readFile(path.join(folder,'project.json'),'utf8')).project.title,edited.title);original=edited;
   console.log('PASS native Open restores the real saved folder through the existing project validator, and later Save updates that chosen project while preserving every media byte and separate display/voice script');
 

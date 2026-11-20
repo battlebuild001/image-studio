@@ -5,6 +5,8 @@ const crypto = require('node:crypto');
 const {pathToFileURL} = require('node:url');
 
 const MAX_BACKUP_BYTES = 250 * 1024 * 1024, MAX_MEDIA_BYTES = 180 * 1024 * 1024, MAX_MANIFEST_BYTES = 32 * 1024 * 1024;
+// Keep parity with project.js, including retained versions and voice samples.
+const MAX_ASSET_COUNT = 2000;
 const ID = /^[A-Za-z0-9_-]{1,180}$/u;
 const EXTENSIONS = {'image/png':'png','image/jpeg':'jpg','image/webp':'webp','image/svg+xml':'svg','image/gif':'gif','image/avif':'avif','image/bmp':'bmp','audio/wav':'wav','audio/x-wav':'wav','audio/mpeg':'mp3','audio/mp3':'mp3','audio/mp4':'m4a','audio/aac':'aac','audio/ogg':'ogg','audio/flac':'flac','audio/webm':'webm','video/mp4':'mp4','video/webm':'webm'};
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -88,7 +90,7 @@ function createProjectFileStore({dialog,getWindow=()=>undefined,defaultDirectory
     const selected=await fs.realpath(result.filePaths[0]);await regularFile(selected,MAX_BACKUP_BYTES);
     const text=await fs.readFile(selected,'utf8');let manifest;try{manifest=JSON.parse(text);}catch{throw error('DESKTOP_PROJECT_INVALID','프로젝트 JSON을 읽지 못했어요.');}
     if(manifest?.kind==='bth-image-studio') {await validate(text);return{cancelled:false,backupText:text,name:path.basename(selected),folderToken:null};}
-    if(!plain(manifest)||manifest.kind!=='content-studio-folder'||manifest.version!==1||!Array.isArray(manifest.assets)||manifest.assets.length>207)throw error('DESKTOP_PROJECT_INVALID','Content Studio 폴더의 project.json이나 프로젝트 백업 파일을 선택해 주세요.');
+    if(!plain(manifest)||manifest.kind!=='content-studio-folder'||manifest.version!==1||!Array.isArray(manifest.assets)||manifest.assets.length>MAX_ASSET_COUNT)throw error('DESKTOP_PROJECT_INVALID','Content Studio 폴더의 project.json이나 프로젝트 백업 파일을 선택해 주세요.');
     const directory=path.dirname(selected),records=[];let total=0;
     for(const asset of manifest.assets) {
       const ext=extension(asset?.type);
@@ -109,4 +111,4 @@ function createProjectFileStore({dialog,getWindow=()=>undefined,defaultDirectory
   }
   return{chooseProjectFolder,saveProjectBundle,openProjectBundle,saveExport,clearGrants:()=>grants.clear()};
 }
-module.exports={createProjectFileStore,validateBackup,atomicWrite,safeName,MAX_BACKUP_BYTES,MAX_MEDIA_BYTES};
+module.exports={createProjectFileStore,validateBackup,atomicWrite,safeName,MAX_BACKUP_BYTES,MAX_MEDIA_BYTES,MAX_ASSET_COUNT};

@@ -4,7 +4,7 @@ import {test} from 'node:test';
 const module = await import('../dist/project.js');
 const {createProject, createScene, validateProject, parseSrt, exportSrt, splitScript,
   distributeDurations, getTimeline, getCaptions, exportProjectBackup, importProjectBackup,
-  duplicateScenes, updateScenes, splitScene, mergeScenes, shiftCaptions, referencedAssetIds} = module;
+  duplicateScenes, updateScenes, splitScene, mergeScenes, shiftCaptions, referencedAssetIds, MAX_ASSET_COUNT} = module;
 
 test('new workspaces use a neutral default title while existing project titles survive validation and backup', async () => {
   assert.equal(createProject().title, '새 콘텐츠 프로젝트');
@@ -597,5 +597,7 @@ test('backup media bounds allow 200 scene images, two audio files and five disti
   assert.equal(document.assets.length, 207);
   assert.equal((await importProjectBackup(document)).assets.size, 207);
   document.assets.push({id: 'extra-image', name: 'extra.png', type: 'image/png', data: btoa('extra')});
+  assert.equal((await importProjectBackup(document)).assets.size,207,'unreferenced extras are still pruned within the retained-history media bound');
+  document.assets.push(...Array.from({length:MAX_ASSET_COUNT+1-document.assets.length},(_,index)=>({id:'overflow-'+index,name:'extra.png',type:'image/png',data:btoa('extra')})));
   await assert.rejects(importProjectBackup(document), /프로젝트 미디어 목록/);
 });

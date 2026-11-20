@@ -10,7 +10,7 @@ import {createProject,createScene,exportProjectBackup,importProjectBackup} from 
 const require=createRequire(import.meta.url);
 const {createVault,createSettingsStore,validateSettingsPatch}=require('../desktop/vault.cjs');
 const {createProjectFileStore}=require('../desktop/files.cjs');
-const {isTrustedAppUrl,isSafeExternalUrl,createProtocolHandler}=require('../desktop/protocol.cjs');
+const {isTrustedAppUrl,isSafeExternalUrl,publicHelpUrl,createProtocolHandler}=require('../desktop/protocol.cjs');
 const {safeNormalizeServerBase}=require('../desktop/network.cjs');
 const OPENAI='sk-synthetic-desktop-host-test-only',TYPECAST='synthetic-typecast-host-test-only';
 async function temp(t){const directory=await fs.mkdtemp(path.join(os.tmpdir(),'content-studio-host-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));return directory;}
@@ -118,4 +118,10 @@ test('native export writes exact bytes only to an explicitly selected save desti
   const directory=await temp(t),nativeDialog=dialogs(directory),files=createProjectFileStore({dialog:nativeDialog,defaultDirectory:directory}),bytes=new Uint8Array([0,1,128,255]).buffer;
   const result=await files.saveExport({suggestedName:'export.mp4',bytes});assert.equal(result.name,'export.mp4');assert.equal(result.bytes,4);assert.deepEqual(await fs.readFile(path.join(directory,'export.mp4')),Buffer.from(bytes));
   nativeDialog.showSaveDialog=async()=>({canceled:true});assert.deepEqual(await files.saveExport({suggestedName:'export.mp4',bytes}),{cancelled:true});await assert.rejects(files.saveExport({filename:'/tmp/arbitrary',bytes}),cause=>cause.code==='DESKTOP_EXPORT_INPUT');
+});
+
+test('packaged local privacy links route only known trusted pages to the real public help page',()=>{
+ const target='https://battlebuild001.github.io/image-studio/youtube-privacy.html';
+ for(const page of ['youtube-privacy.html','privacy.html','terms.html'])assert.equal(publicHelpUrl('studio://app/'+page),target);
+ for(const value of ['studio://evil/youtube-privacy.html','studio://app:123/youtube-privacy.html','studio://user@app/youtube-privacy.html','studio://app/main.js','https://evil/youtube-privacy.html','not-a-url'])assert.equal(publicHelpUrl(value),null);
 });

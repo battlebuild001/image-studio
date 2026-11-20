@@ -12,6 +12,12 @@ function isTrustedAppUrl(value) {
 function isSafeExternalUrl(value) {
   try {const url = new URL(value);return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password && !/[\u0000-\u0020\u007f]/u.test(value) && value.length <= 4096;} catch {return false;}
 }
+function publicHelpUrl(value) {
+  try {const url=new URL(value);if(url.protocol!=='studio:'||url.hostname!=='app'||url.port||url.username||url.password)return null;
+    if(!['/youtube-privacy.html','/privacy.html','/terms.html'].includes(url.pathname))return null;
+    return 'https://battlebuild001.github.io/image-studio/youtube-privacy.html';
+  } catch {return null;}
+}
 function resolveAsset(root, value) {
   const url = new URL(value);
   if (url.protocol !== 'studio:' || url.hostname !== 'app' || url.port || url.username || url.password) return null;
@@ -35,4 +41,4 @@ function createProtocolHandler({root, fetchFile} = {}) {
     } catch {return new Response('Not found', {status:404});}
   };
 }
-module.exports = {APP_ORIGIN,CSP,MIME,isTrustedAppUrl,isSafeExternalUrl,resolveAsset,createProtocolHandler};
+module.exports = {APP_ORIGIN,CSP,MIME,isTrustedAppUrl,isSafeExternalUrl,publicHelpUrl,resolveAsset,createProtocolHandler};

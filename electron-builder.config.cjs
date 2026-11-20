@@ -11,6 +11,9 @@ module.exports = {
   nodeGypRebuild: false,
   buildDependenciesFromSource: false,
   forceCodeSigning: false,
+  // Distribution is manual. Never infer a release provider from developer tokens
+  // or generate updater metadata for this app, which has no automatic updater.
+  publish: null,
   extraMetadata: {
     main: 'desktop/main.cjs',
     description: 'Korean desktop video production studio',
