@@ -2,13 +2,15 @@
 
 Windows 10·11 64비트에서 설치하거나 압축을 풀어 실행하는 별도 프로그램입니다. 기존 대본·음성·이미지·자막·한 번에 제작·검수·업로드 화면을 앱 안에서 사용합니다. Chrome, Node.js 또는 로컬 서버를 별도로 설치하지 않습니다.
 
-## Windows 10·11 다운로드 · 1.1.0
+## Windows 10·11 다운로드 · 1.1.1
 
-- 설치형: https://github.com/battlebuild001/image-studio/releases/download/desktop-v1.1.0/Content-Studio-Setup-1.1.0-x64.exe
-- 무설치 실행형: https://github.com/battlebuild001/image-studio/releases/download/desktop-v1.1.0/Content-Studio-1.1.0-Windows-x64-Portable.exe
-- 압축형: https://github.com/battlebuild001/image-studio/releases/download/desktop-v1.1.0/Content-Studio-1.1.0-Windows-x64.zip
+- 설치형: https://github.com/battlebuild001/image-studio/releases/download/desktop-v1.1.1/Content-Studio-Setup-1.1.1-x64.exe
+- 무설치 실행형: https://github.com/battlebuild001/image-studio/releases/download/desktop-v1.1.1/Content-Studio-1.1.1-Windows-x64-Portable.exe
+- 압축형: https://github.com/battlebuild001/image-studio/releases/download/desktop-v1.1.1/Content-Studio-1.1.1-Windows-x64.zip
 
-1.1.0에는 최신 **대본 입력 → 이미지 생성 → 편집·저장·업로드**와 **여러 영상 동시 제작**이 포함됩니다. 영상별 전체 편집기, 단락 쉬기·음성 샘플, 내장 BGM, 자료 검색·레퍼런스, AI 검수, 이미지 교체, 썸네일·설명·태그·재생목록·공개/예약·쇼츠·드라마 기능을 유지합니다. AI나 YouTube 기능을 사용하지 않는 편집·저장·내보내기는 설치된 프로그램 안에서 처리합니다.
+1.1.1에는 최신 **대본 입력 → 이미지 생성 → 편집·저장·업로드**와 **여러 영상 동시 제작**이 포함됩니다. 영상별 전체 편집기, 단락 쉬기·음성 샘플, 내장 BGM, 자료 검색·레퍼런스, AI 검수, 이미지 교체, 썸네일·설명·태그·재생목록·공개/예약·쇼츠·드라마 기능을 유지합니다. AI나 YouTube 기능을 사용하지 않는 편집·저장·내보내기는 설치된 프로그램 안에서 처리합니다.
+
+1.1.1에서는 여러 영상 제작 현황의 각 카드에서 **영상 상단 제목**, **제목 표시 여부**, **YouTube 업로드 제목**을 각각 설정하고 저장할 수 있습니다. 업로드 제목만 바꾸면 완성 영상은 유지하며, 화면 상단 문구를 바꾸면 재인코딩이 필요합니다. 기존 버전과 같은 앱 데이터 폴더를 사용합니다.
 
 처음에는 설치형을 실행해 설치한 뒤 바탕화면 **Content Studio**를 엽니다. 브라우저의 프로젝트는 웹앱에서 **프로젝트 저장**으로 `.bth.json` 백업을 받은 다음 프로그램의 **파일 → 프로젝트 열기**로 가져오세요. 브라우저에 저장한 API 키는 프로그램으로 자동 복사하지 않으며 프로그램의 API 연결에서 따로 설정합니다.
 

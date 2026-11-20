@@ -1,6 +1,6 @@
 {
   "name": "bth-blkout-image-studio",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -112,7 +112,9 @@
     "test:multi-error-recovery-browser": "node tests/verification-multi-error-recovery.browser.cjs",
     "test:desktop": "node scripts/run-desktop-tests.mjs",
     "test:desktop-smoke": "node scripts/run-desktop-tests.mjs --smoke",
-    "test:desktop-export": "node scripts/run-desktop-tests.mjs --export"
+    "test:desktop-export": "node scripts/run-desktop-tests.mjs --export",
+    "test:multi-titles-browser": "node tests/multi-video-titles.browser.cjs",
+    "test:desktop-titles": "node tests/desktop-multi-titles.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

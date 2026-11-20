@@ -561,6 +561,11 @@ regressions and test:dual-scripts-browser for visible subtitle/voice separation.
 It reuses the independent bulk store, supports <=20 jobs and 1..3 simultaneous
 pipelines, and retains the complete single-video 3-step editor and all 41 catalog
 routes per job. Do not replace the per-job editor with a reduced control subset.
+Per-job inline title controls edit `project.title`, `settings.branding` and the
+independent YouTube draft title via `bulk-video-engine.updateTitles`. Preserve
+manual upload metadata, media and receipts; visual-title changes invalidate the
+encoded video, whereas upload-title-only edits retain video/playback review.
+Retain dirty fields/focus across queue renders and guard unsaved navigation/close.
 Optional `multi-video-features.js` stages reuse research/actual Commons media,
 local generated music, real caption runners, quality checks and publishing helpers.
 Their requests must go through the job adapter; opening/typing/preparing is free.
