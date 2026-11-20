@@ -25,8 +25,26 @@ const {launchDesktop,stopDesktop}=require('./desktop-app.browser.cjs');
    const aliasChanged=directory!==canonicalDirectory,samePhysicalDirectory=originalInfo.dev===canonicalInfo.dev&&originalInfo.ino===canonicalInfo.ino;
    const allowed=new Set(['api.github.com','github.com','release-assets.githubusercontent.com','objects.githubusercontent.com']);
    const events=[],progress=[];let metadata,controller,launches=0,quits=0,report;
-   const safeError=cause=>({name:String(cause?.name||'Error'),code:String(cause?.code||''),message:String(cause?.message||'').replace(/https?:\/\/[^\s'"<>]+/giu,'[URL]').slice(0,500)});
-   const transport=createElectronUpdateFetch({request:options=>net.request(options)});
+   // CI alone may authenticate this fixed public metadata GET to avoid the
+   // shared runner's anonymous rate limit. No token enters the renderer, fetch
+   // options, asset requests or production updater implementation.
+   const ciToken=process.env.GITHUB_ACTIONS==='true'?process.env.CONTENT_STUDIO_CI_GITHUB_TOKEN||'':'';
+   if(ciToken&&!/^[A-Za-z0-9_]{10,1024}$/u.test(ciToken))throw Error('The CI metadata token format is invalid');
+   const metadataAuthentication=ciToken?'github-actions-read-only-api':'anonymous';
+   let authenticatedMetadataRequests=0,authenticatedAssetRequests=0;
+
+   const safeText=value=>{let text=String(value||'');if(ciToken)text=text.split(ciToken).join('[CI TOKEN]');return text.replace(/https?:\/\/[^\s'"<>]+/giu,'[URL]').slice(0,500);};
+   const safeError=cause=>({name:safeText(cause?.name||'Error'),code:safeText(cause?.code),message:safeText(cause?.message)});
+   const transport=createElectronUpdateFetch({request:options=>{
+    const client=net.request(options);
+    if(ciToken&&options.url===RELEASE_API)client.setHeader('Authorization','Bearer '+ciToken);
+    const authorization=client.getHeader('Authorization');
+    if(authorization!==undefined&&authorization!==null){
+     if(options.url===RELEASE_API)authenticatedMetadataRequests++;else authenticatedAssetRequests++;
+     if(options.url!==RELEASE_API||!ciToken){client.on('error',()=>{});client.abort();throw Error('Authentication must be confined to the explicit CI metadata request');}
+    }
+    return client;
+   }});
    const fetchImpl=async(url,options)=>{
     const parsed=new URL(url);if(!allowed.has(parsed.hostname)||parsed.protocol!=='https:')throw Error('Unexpected update transport host');
     if(options.credentials!=='omit'||options.redirect!=='manual'||Object.keys(options.headers||{}).some(name=>/authorization|cookie|api.key/iu.test(name)))throw Error('The updater must not forward credentials');
@@ -57,7 +75,7 @@ const {launchDesktop,stopDesktop}=require('./desktop-app.browser.cjs');
     report={passed:true,transport:'electron-net-request',comparisonVersion:'1.1.1',offeredVersion:completed.version,bytes:info.size,sha256,realDownload:true,verifiedInstaller:true,independentSha256:true,windowsPeVerified:true,installerNotExecuted:true,installerLaunches:launches,installerQuitCalls:quits,metadataVersion:metadata.tag_name,requestEvents:events,progress};
    }catch(cause){report={passed:false,transport:'electron-net-request',error:safeError(cause),state:controller?.getState?.(),requestEvents:events,progress,installerNotExecuted:launches===0&&quits===0,installerLaunches:launches,installerQuitCalls:quits};}
    finally{controller?.dispose();await fs.rm(directory,{recursive:true,force:true}).catch(()=>{});}
-   return{...report,aliasChanged,samePhysicalDirectory};
+   return{...report,aliasChanged,samePhysicalDirectory,metadataAuthentication,authenticatedMetadataRequests,authenticatedAssetRequests};
   });
   const report={...result,hostPlatform:process.platform,windowsRuntimeExecuted:process.platform==='win32',actualElectron:true,application,realProviderRequests:0,realGoogleRequests:0};
   await fs.writeFile(output,JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report));
