@@ -1213,6 +1213,12 @@ pronunciation, audio quality, account permissions or billing.
 on explicit action. Keep download/version/size/SHA-256/PE and HTTPS redirect checks,
 private filesystem grants and final busy/unsaved guards before spawning the reviewed
 NSIS installer. Never execute a renderer-supplied path, URL or arbitrary arguments.
+Real update transfers must use the `net.request` adapter in
+`desktop/update-transport.cjs`. Electron `net.fetch` rejects manual HTTP redirects,
+so a successful Node-fetch mock does not verify GitHub binary downloads. Require
+an actual official installer download through the packaged Windows transport,
+size/SHA-256/PE verification and a ready state before publishing an updater fix;
+keep real installer execution disabled in validation.
 `desktop-updates.js/.css` provides the native-only Update button/menu flow. Startup,
 project open and web mode must not check, download or install. Flush/save before
 installation; retain media, settings and profiles. Portable/ZIP conversion to the

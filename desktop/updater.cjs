@@ -13,6 +13,13 @@ const failure=(code,message)=>Object.assign(new Error(message),{code});
 const invalidRelease=()=>failure('DESKTOP_UPDATE_RELEASE','공식 업데이트 정보를 확인하지 못했어요. 잠시 뒤 다시 확인해 주세요.');
 const cancelled=()=>Object.assign(failure('DESKTOP_UPDATE_CANCELLED','업데이트 다운로드를 취소했어요.'),{name:'AbortError'});
 const clone=value=>JSON.parse(JSON.stringify(value));
+function downloadFailure(cause,stage){
+ if(cause.code?.startsWith('DESKTOP_'))return cause;
+ if(stage==='folder')return failure('DESKTOP_UPDATE_FOLDER','업데이트 저장 폴더를 준비하지 못했어요. 저장 공간과 폴더 쓰기 권한을 확인해 주세요.');
+ if(stage==='write')return failure('DESKTOP_UPDATE_WRITE','업데이트 파일을 저장하지 못했어요. 저장 공간과 쓰기 권한을 확인해 주세요.');
+ return failure('DESKTOP_UPDATE_CONNECT',stage==='stream'?'업데이트 파일 전송을 마치지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.':'업데이트 서버에 연결하지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.');
+}
+
 function versionParts(value){
  if(typeof value!=='string'||!/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u.test(value))throw invalidRelease();
  const result=value.split('.').map(Number);if(result.some(value=>!Number.isSafeInteger(value)||value>1000000))throw invalidRelease();return result;
@@ -87,7 +94,7 @@ function createDesktopUpdater({currentVersion,directory,fetchImpl=globalThis.fet
  async function responseFor(url,{signal,metadata=false}={}){
   let selected=trustedUrl(url,{api:metadata});
   for(let count=0;count<=4;count++){
-   const response=await fetchImpl(selected.href,{method:'GET',headers:{Accept:metadata?'application/vnd.github+json':'application/octet-stream','User-Agent':`Content-Studio/${currentVersion}`},credentials:'omit',cache:'no-store',redirect:'manual',signal});
+   let response;try{response=await fetchImpl(selected.href,{method:'GET',headers:{Accept:metadata?'application/vnd.github+json':'application/octet-stream','User-Agent':`Content-Studio/${currentVersion}`},credentials:'omit',cache:'no-store',redirect:'manual',signal});}catch(cause){if(signal.aborted)throw cancelled();throw downloadFailure(cause,'connect');}
    if(signal.aborted)throw cancelled();
    if([301,302,303,307,308].includes(response.status)){
     const location=response.headers.get('location');await response.body?.cancel?.().catch?.(()=>{});
@@ -99,43 +106,43 @@ function createDesktopUpdater({currentVersion,directory,fetchImpl=globalThis.fet
   throw invalidRelease();
  }
  async function check(){
-  assertIdle();const controller=new AbortController();active=controller;let timeout;emit({status:'checking',message:'새 버전을 확인하고 있어요.',error:''});
+  assertIdle();const controller=new AbortController();active=controller;let timeout,timedOut=false;emit({status:'checking',message:'새 버전을 확인하고 있어요.',error:'',errorCode:''});
   try{
-   timeout=setTimeout(()=>controller.abort(),metadataTimeoutMs);const response=await responseFor(RELEASE_API,{signal:controller.signal,metadata:true});const chunks=[];let bytes=0;
+   timeout=setTimeout(()=>{timedOut=true;controller.abort();},metadataTimeoutMs);const response=await responseFor(RELEASE_API,{signal:controller.signal,metadata:true});const chunks=[];let bytes=0;
    for await(const value of response.body){if(controller.signal.aborted)throw cancelled();const chunk=Buffer.from(value);bytes+=chunk.length;if(bytes>MAX_RELEASE_BYTES)throw invalidRelease();chunks.push(chunk);}
    const release=normalizeRelease(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(chunks))),currentVersion);
    if(controller.signal.aborted)throw cancelled();
-   if(!release.available){candidate=null;await cleanupPrepared();return emit({status:'up-to-date',version:release.version,message:'현재 최신 버전을 사용하고 있어요.',bytes:0,downloadedBytes:0,progress:0,error:''});}
+   if(!release.available){candidate=null;await cleanupPrepared();return emit({status:'up-to-date',version:release.version,message:'현재 최신 버전을 사용하고 있어요.',bytes:0,downloadedBytes:0,progress:0,error:'',errorCode:''});}
    const same=prepared&&candidate?.sha256===release.sha256&&candidate?.version===release.version;candidate=release;if(!same)await cleanupPrepared();
-   return emit({status:same?'ready':'available',version:release.version,bytes:release.bytes,downloadedBytes:same?release.bytes:0,progress:same?1:0,message:same?'검증된 업데이트를 설치할 수 있어요.':'새 버전을 다운로드하고 업데이트할 수 있어요.',error:''});
-  }catch(cause){if(controller.signal.aborted){emit({status:'cancelled',message:'업데이트 확인을 취소했어요.',error:''});throw cancelled();}emit({status:'failed',message:'업데이트를 확인하지 못했어요.',error:cause.code?.startsWith('DESKTOP_')?cause.message:invalidRelease().message});throw cause.code?.startsWith('DESKTOP_')?cause:invalidRelease();}
+   return emit({status:same?'ready':'available',version:release.version,bytes:release.bytes,downloadedBytes:same?release.bytes:0,progress:same?1:0,message:same?'검증된 업데이트를 설치할 수 있어요.':'새 버전을 다운로드하고 업데이트할 수 있어요.',error:'',errorCode:''});
+  }catch(cause){if(controller.signal.aborted&&!timedOut){emit({status:'cancelled',message:'업데이트 확인을 취소했어요.',error:'',errorCode:''});throw cancelled();}const safe=timedOut?failure('DESKTOP_UPDATE_TIMEOUT','업데이트 서버의 응답 시간이 초과됐어요. 잠시 뒤 다시 확인해 주세요.'):cause.code?.startsWith('DESKTOP_')?cause:invalidRelease();emit({status:'failed',message:'업데이트를 확인하지 못했어요.',error:safe.message,errorCode:safe.code});throw safe;}
   finally{clearTimeout(timeout);if(active===controller)active=null;}
  }
  async function download(){
   assertIdle();if(!candidate)throw failure('DESKTOP_UPDATE_NOT_CHECKED','먼저 업데이트 확인을 눌러 새 버전을 확인해 주세요.');if(prepared)return getState();
-  const selected={...candidate},controller=new AbortController();active=controller;let staging,handle,timeout;
-  emit({status:'downloading',version:selected.version,bytes:selected.bytes,downloadedBytes:0,progress:0,message:'업데이트 파일을 다운로드하고 있어요.',error:''});
+  const selected={...candidate},controller=new AbortController();active=controller;let staging,handle,timeout,timedOut=false,stage='folder';
+  emit({status:'downloading',version:selected.version,bytes:selected.bytes,downloadedBytes:0,progress:0,message:'업데이트 파일을 다운로드하고 있어요.',error:'',errorCode:''});
   try{
-   timeout=setTimeout(()=>controller.abort(),downloadTimeoutMs);await secureDirectory(directory);if(controller.signal.aborted)throw cancelled();staging=await fs.mkdtemp(path.join(directory,'download-'));await fs.chmod(staging,0o700);const partial=path.join(staging,selected.name+'.partial'),destination=path.join(staging,selected.name);
-   handle=await fs.open(partial,syncFs.constants.O_CREAT|syncFs.constants.O_EXCL|syncFs.constants.O_WRONLY|(syncFs.constants.O_NOFOLLOW||0),0o600);
-   const response=await responseFor(selected.url,{signal:controller.signal});const length=response.headers.get('content-length');if(length!==null&&(!/^\d+$/u.test(length)||Number(length)!==selected.bytes))throw failure('DESKTOP_UPDATE_FILE','업데이트 파일 크기가 달라요. 다시 다운로드해 주세요.');
-   let bytes=0,lastProgress=0;const hash=crypto.createHash('sha256');
-   for await(const value of response.body){if(controller.signal.aborted)throw cancelled();const chunk=Buffer.from(value);bytes+=chunk.length;if(bytes>selected.bytes||bytes>MAX_INSTALLER_BYTES)throw failure('DESKTOP_UPDATE_FILE','업데이트 파일 크기가 달라요. 다시 다운로드해 주세요.');hash.update(chunk);let offset=0;while(offset<chunk.length){const written=await handle.write(chunk,offset,chunk.length-offset);if(!written.bytesWritten)throw failure('DESKTOP_UPDATE_STORAGE','업데이트 파일을 저장하지 못했어요.');offset+=written.bytesWritten;}const progress=bytes/selected.bytes;if(progress-lastProgress>=.01||bytes===selected.bytes){lastProgress=progress;emit({downloadedBytes:bytes,progress});}}
+   timeout=setTimeout(()=>{timedOut=true;controller.abort();},downloadTimeoutMs);await secureDirectory(directory);if(controller.signal.aborted)throw cancelled();staging=await fs.mkdtemp(path.join(directory,'download-'));await fs.chmod(staging,0o700);const partial=path.join(staging,selected.name+'.partial'),destination=path.join(staging,selected.name);
+   stage='write';handle=await fs.open(partial,syncFs.constants.O_CREAT|syncFs.constants.O_EXCL|syncFs.constants.O_WRONLY|(syncFs.constants.O_NOFOLLOW||0),0o600);
+   stage='connect';const response=await responseFor(selected.url,{signal:controller.signal});const length=response.headers.get('content-length');if(length!==null&&(!/^\d+$/u.test(length)||Number(length)!==selected.bytes))throw failure('DESKTOP_UPDATE_FILE','업데이트 파일 크기가 달라요. 다시 다운로드해 주세요.');
+   stage='stream';let bytes=0,lastProgress=0;const hash=crypto.createHash('sha256');
+   for await(const value of response.body){if(controller.signal.aborted)throw cancelled();const chunk=Buffer.from(value);bytes+=chunk.length;if(bytes>selected.bytes||bytes>MAX_INSTALLER_BYTES)throw failure('DESKTOP_UPDATE_FILE','업데이트 파일 크기가 달라요. 다시 다운로드해 주세요.');hash.update(chunk);let offset=0;while(offset<chunk.length){stage='write';const written=await handle.write(chunk,offset,chunk.length-offset);if(!written.bytesWritten)throw failure('DESKTOP_UPDATE_STORAGE','업데이트 파일을 저장하지 못했어요.');offset+=written.bytesWritten;}stage='stream';const progress=bytes/selected.bytes;if(progress-lastProgress>=.01||bytes===selected.bytes){lastProgress=progress;emit({downloadedBytes:bytes,progress});}}
    if(bytes!==selected.bytes||hash.digest('hex')!==selected.sha256)throw failure('DESKTOP_UPDATE_FILE','업데이트 파일 검증에 실패했어요. 다시 다운로드해 주세요.');
-   await handle.sync();await handle.close();handle=null;await fs.rename(partial,destination);const verified=await verifyInstaller(destination,selected);await verified.handle.close();if(controller.signal.aborted)throw cancelled();
-   prepared={directory:staging,file:destination,stat:verified.stat};staging=null;return emit({status:'ready',downloadedBytes:bytes,progress:1,message:'다운로드와 파일 검증을 마쳤어요. 저장한 작업을 유지하며 업데이트할 수 있어요.',error:''});
-  }catch(cause){if(controller.signal.aborted){emit({status:'cancelled',message:'업데이트 다운로드를 취소했어요.',error:''});throw cancelled();}const safe=cause.code?.startsWith('DESKTOP_')?cause:failure('DESKTOP_UPDATE_DOWNLOAD','업데이트를 다운로드하지 못했어요. 연결과 저장 공간을 확인한 뒤 다시 시도해 주세요.');emit({status:'failed',message:'업데이트 파일을 준비하지 못했어요.',error:safe.message});throw safe;}
+   stage='write';await handle.sync();await handle.close();handle=null;await fs.rename(partial,destination);const verified=await verifyInstaller(destination,selected);await verified.handle.close();if(controller.signal.aborted)throw cancelled();
+   prepared={directory:staging,file:destination,stat:verified.stat};staging=null;return emit({status:'ready',downloadedBytes:bytes,progress:1,message:'다운로드와 파일 검증을 마쳤어요. 저장한 작업을 유지하며 업데이트할 수 있어요.',error:'',errorCode:''});
+  }catch(cause){if(controller.signal.aborted&&!timedOut){emit({status:'cancelled',message:'업데이트 다운로드를 취소했어요.',error:'',errorCode:''});throw cancelled();}const safe=timedOut?failure('DESKTOP_UPDATE_TIMEOUT','업데이트 다운로드 시간이 초과됐어요. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.'):downloadFailure(cause,stage);emit({status:'failed',message:'업데이트 파일을 준비하지 못했어요.',error:safe.message,errorCode:safe.code});throw safe;}
   finally{clearTimeout(timeout);await handle?.close().catch(()=>{});if(staging)await removeOwned(staging);if(active===controller)active=null;}
  }
  async function install(input){
   assertIdle();if(input!==undefined&&(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>key!=='convertToInstalled')||typeof input.convertToInstalled!=='boolean'))throw failure('DESKTOP_UPDATE_INPUT','업데이트 설치 옵션을 확인해 주세요.');
   if(distribution!=='installed'&&input?.convertToInstalled!==true)throw failure('DESKTOP_UPDATE_CONVERSION','무설치·압축형은 설치형으로 전환해 업데이트합니다. 설치형 전환 버튼으로 진행해 주세요.');
   assertCanInstall();if(!prepared||!candidate||state.status!=='ready')throw failure('DESKTOP_UPDATE_NOT_READY','먼저 새 버전을 다운로드하고 파일 검증을 마쳐 주세요.');
-  const controller=new AbortController();active=controller;emit({status:'installing',message:'업데이트 설치를 시작하고 있어요.',error:''});let verified;
+  const controller=new AbortController();active=controller;emit({status:'installing',message:'업데이트 설치를 시작하고 있어요.',error:'',errorCode:''});let verified;
   try{
    await secureDirectory(prepared.directory);verified=await verifyInstaller(prepared.file,candidate,prepared.stat);assertCanInstall();if(controller.signal.aborted)throw cancelled();
    await launch(prepared.file,['/S','--updated','--force-run','/currentuser']);await verified.handle.close();verified=null;quit();return getState();
-  }catch(cause){const safe=cause.code?.startsWith('DESKTOP_')?cause:failure('DESKTOP_UPDATE_INSTALL','업데이트 설치를 시작하지 못했어요. 다시 시도해 주세요.');emit({status:['DESKTOP_UPDATE_FILE','DESKTOP_UPDATE_STORAGE'].includes(safe.code)?'failed':'ready',message:'설치를 시작하지 못했어요. 현재 프로그램과 프로젝트는 유지됩니다.',error:safe.message});if(['DESKTOP_UPDATE_FILE','DESKTOP_UPDATE_STORAGE'].includes(safe.code))await cleanupPrepared();throw safe;}
+  }catch(cause){const safe=cause.code?.startsWith('DESKTOP_')?cause:failure('DESKTOP_UPDATE_INSTALL','업데이트 설치를 시작하지 못했어요. 다시 시도해 주세요.');emit({status:['DESKTOP_UPDATE_FILE','DESKTOP_UPDATE_STORAGE'].includes(safe.code)?'failed':'ready',message:'설치를 시작하지 못했어요. 현재 프로그램과 프로젝트는 유지됩니다.',error:safe.message,errorCode:safe.code});if(['DESKTOP_UPDATE_FILE','DESKTOP_UPDATE_STORAGE'].includes(safe.code))await cleanupPrepared();throw safe;}
   finally{await verified?.handle.close().catch(()=>{});if(active===controller)active=null;}
  }
  return{check,download,install,getState,cancel(){if(active&&state.status!=='installing'){active.abort();return{cancelled:true};}return{cancelled:false};},isBusy:()=>Boolean(active)||state.status==='installing',dispose(){disposed=true;active?.abort();if(state.status!=='installing')cleanupPrepared().catch(()=>{});}};

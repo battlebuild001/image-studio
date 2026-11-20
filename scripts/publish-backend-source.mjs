@@ -19,7 +19,7 @@ const ROOT_FILES = ['package.json', 'package-lock.json', 'render.yaml', 'docs/AI
 // exactly the native entry points needed by package.json and the shared tests;
 // never walk a desktop directory that could also contain local user data.
 const OPTIONAL_DESKTOP_SOURCE = new Set(['desktop/main.cjs', 'desktop/preload.cjs', 'desktop/files.cjs',
-  'desktop/protocol.cjs', 'desktop/updater.cjs', 'desktop/vault.cjs', 'desktop/network.cjs', 'desktop/oauth.cjs',
+  'desktop/protocol.cjs', 'desktop/updater.cjs', 'desktop/update-transport.cjs', 'desktop/vault.cjs', 'desktop/network.cjs', 'desktop/oauth.cjs',
   'desktop/assets/icon.png', 'desktop/assets/icon.ico', 'desktop/assets/icon.svg',
   'electron-builder.config.cjs', 'docs/DESKTOP.md']);
 const TEST_FIXTURES = new Set(['tests/fixtures/reference-test.txt', 'tests/fixtures/reference-test.pdf', 'tests/fixtures/reference-test.docx']);

@@ -8,6 +8,7 @@ const {createProjectFileStore,safeName}=require('./files.cjs');
 const {createDesktopYouTubeOAuth}=require('./oauth.cjs');
 const {createDesktopNetwork,safeNormalizeServerBase}=require('./network.cjs');
 const {createDesktopUpdater,detectDistribution}=require('./updater.cjs');
+const {createElectronUpdateFetch}=require('./update-transport.cjs');
 
 app.setName('Content Studio');
 // Installer and portable builds share one stable profile. Tests can select an
@@ -121,7 +122,7 @@ function createWindow(){
   host.oauth=createDesktopYouTubeOAuth({vault,openExternal:external,fetchImpl:(...args)=>net.fetch(...args)});
   const current=host;
   host.network=createDesktopNetwork({fetchImpl:(...args)=>net.fetch(...args),serverBase:()=>{if(current.sessionServerBase!==undefined)return current.sessionServerBase;try{return current.settings.load().settings.server?.baseUrl||'';}catch{return '';}}});
-  host.updater=createDesktopUpdater({currentVersion:app.getVersion(),directory:path.join(app.getPath('userData'),'updates'),fetchImpl:(...args)=>net.fetch(...args),isPackaged:app.isPackaged,distribution:detectDistribution({isPackaged:app.isPackaged}),getActivity:()=>({busy:Boolean(current.renderer.busy||current.nativeWork>0||current.network.getActiveCount()>0),unsaved:current.renderer.unsaved}),onProgress:value=>{if(window&&!window.isDestroyed()&&isTrustedAppUrl(window.webContents.getURL()))window.webContents.send('desktop:update:progress',value);updatePower();},quit:()=>{updaterQuitting=true;app.quit();}});
+  host.updater=createDesktopUpdater({currentVersion:app.getVersion(),directory:path.join(app.getPath('userData'),'updates'),fetchImpl:createElectronUpdateFetch({request:options=>net.request(options)}),isPackaged:app.isPackaged,distribution:detectDistribution({isPackaged:app.isPackaged}),getActivity:()=>({busy:Boolean(current.renderer.busy||current.nativeWork>0||current.network.getActiveCount()>0),unsaved:current.renderer.unsaved}),onProgress:value=>{if(window&&!window.isDestroyed()&&isTrustedAppUrl(window.webContents.getURL()))window.webContents.send('desktop:update:progress',value);updatePower();},quit:()=>{updaterQuitting=true;app.quit();}});
   window=new BrowserWindow({title:'Content Studio',width:1440,height:960,minWidth:1024,minHeight:700,backgroundColor:'#10191d',show:false,autoHideMenuBar:false,icon:path.join(__dirname,'assets',process.platform==='win32'?'icon.ico':'icon.png'),webPreferences:{preload:path.join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,backgroundThrottling:false,webviewTag:false,spellcheck:false}});
   const contents=window.webContents;
   contents.setWindowOpenHandler(({url})=>{
