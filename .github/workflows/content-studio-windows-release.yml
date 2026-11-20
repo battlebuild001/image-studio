@@ -1,0 +1,60 @@
+name: Content Studio Windows 1.1.0 delivery
+on:
+  push:
+    branches: [codex/desktop-windows-1-1-0-20261120]
+    paths: [.github/workflows/content-studio-windows-release.yml]
+permissions:
+  contents: write
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install pinned build dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Build and verify standalone Windows installers
+        run: node scripts/desktop-build.mjs --win --source-archive --output "${{ runner.temp }}/content-studio-release"
+      - name: Install isolated UI test driver
+        run: npm install --no-save --package-lock=false --no-audit --no-fund playwright
+      - name: Execute the actual packaged Windows application
+        shell: pwsh
+        run: |
+          $env:CONTENT_STUDIO_ELECTRON = "${{ runner.temp }}/content-studio-release/win-unpacked/ContentStudio.exe"
+          $env:CONTENT_STUDIO_PACKAGED = '1'
+          node scripts/run-desktop-tests.mjs --smoke
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Record Windows runtime verification and checksums
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $folder = "${{ runner.temp }}/content-studio-release"
+          $testPath = Join-Path ([IO.Path]::GetTempPath()) 'desktop-app-browser-result.json'
+          $result = Get-Content -Raw $testPath | ConvertFrom-Json
+          if (-not $result.passed -or $result.hostPlatform -ne 'win32' -or -not $result.windowsRuntimeExecuted) { throw 'The packaged Windows smoke test did not pass.' }
+          $manifestPath = Join-Path $folder 'desktop-release.json'
+          $manifest = Get-Content -Raw $manifestPath | ConvertFrom-Json
+          $manifest.windowsRuntimeExecuted = $true
+          $manifest | Add-Member -NotePropertyName windowsSmokeTest -NotePropertyValue @{passed=$true; platform='win32'; nativeFolderSaveOpen=$result.nativeFolderSaveOpen; stableOriginProcessRestart=$result.stableOriginProcessRestart; source='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'}
+          [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 30) + "`n", [Text.UTF8Encoding]::new($false))
+          $names = @('Content-Studio-Setup-1.1.0-x64.exe','Content-Studio-1.1.0-Windows-x64-Portable.exe','Content-Studio-1.1.0-Windows-x64.zip','Content-Studio-Source-1.1.0.zip','desktop-release.json')
+          $sums = foreach ($name in $names) { $hash = (Get-FileHash (Join-Path $folder $name) -Algorithm SHA256).Hash.ToLower(); "$hash  $name" }
+          [IO.File]::WriteAllText((Join-Path $folder 'SHA256SUMS.txt'), (($sums -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+          $notes = gh release view desktop-v1.1.0 --repo battlebuild001/image-studio --json body --jq .body
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          [IO.File]::WriteAllText((Join-Path $folder 'Content-Studio-1.1.0-Start-Here.txt'), ($notes -join "`n"), [Text.UTF8Encoding]::new($false))
+      - name: Upload verified files to the prepared draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $folder = "${{ runner.temp }}/content-studio-release"
+          $names = @('Content-Studio-Setup-1.1.0-x64.exe','Content-Studio-1.1.0-Windows-x64-Portable.exe','Content-Studio-1.1.0-Windows-x64.zip','Content-Studio-Source-1.1.0.zip','desktop-release.json','SHA256SUMS.txt','Content-Studio-1.1.0-Start-Here.txt')
+          $paths = $names | ForEach-Object { Join-Path $folder $_ }
+          gh release upload desktop-v1.1.0 --repo battlebuild001/image-studio --clobber @paths
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
