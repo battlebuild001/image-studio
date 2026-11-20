@@ -1,0 +1,150 @@
+name: Content Studio Windows 1.1.4 delivery
+on:
+  push:
+    branches: [codex/desktop-windows-1-1-4-20261120]
+    paths: [.github/workflows/content-studio-windows-1-1-4-release.yml]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install pinned build dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Check the full NSIS-capable archive verifier and build regressions
+        shell: pwsh
+        run: |
+          $full7zip = Join-Path $env:ProgramFiles '7-Zip/7z.exe'
+          $full7zipDll = Join-Path $env:ProgramFiles '7-Zip/7z.dll'
+          if (-not (Test-Path $full7zip) -or -not (Test-Path $full7zipDll)) { throw 'Full 7-Zip (7z.exe and 7z.dll) was not found on the Windows runner.' }
+          $formats = & $full7zip i
+          if ($LASTEXITCODE -ne 0 -or -not (($formats -join "`n") -match '(?i)\bnsis\b')) { throw 'The archive verifier must support NSIS.' }
+          node --test tests/desktop-build-config.test.mjs tests/desktop-build-verification.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install isolated UI test driver
+        run: npm install --no-save --package-lock=false --no-audit --no-fund playwright
+      - name: Install the pinned Electron runtime for source verification
+        shell: pwsh
+        run: |
+          node node_modules/electron/install.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path (Join-Path $PWD 'node_modules/electron/dist/electron.exe'))) { throw 'The pinned Electron runtime was not installed.' }
+      - name: Verify real Windows download before packaging
+        shell: pwsh
+        run: |
+          $env:CONTENT_STUDIO_ELECTRON = Join-Path $PWD 'node_modules/electron/dist/electron.exe'
+          $env:CONTENT_STUDIO_PACKAGED = '0'
+          node tests/desktop-update-download.browser.cjs
+          $verifyExit = $LASTEXITCODE
+          $sourceReport = Join-Path ([IO.Path]::GetTempPath()) 'desktop-update-download-result.json'
+          if (Test-Path $sourceReport) { Copy-Item $sourceReport "${{ runner.temp }}/desktop-source-update-download-result.json" }
+          if ($verifyExit -ne 0) { exit $verifyExit }
+          if (-not (Test-Path $sourceReport)) { throw 'The source Windows real update download report was not produced.' }
+          $sourceDownload = Get-Content -Raw $sourceReport | ConvertFrom-Json
+          if (-not $sourceDownload.passed -or $sourceDownload.hostPlatform -ne 'win32' -or -not $sourceDownload.windowsRuntimeExecuted -or -not $sourceDownload.realDownload -or -not $sourceDownload.verifiedInstaller -or -not $sourceDownload.installerNotExecuted -or $sourceDownload.application.version -ne '1.1.4' -or $sourceDownload.offeredVersion -ne '1.1.3' -or $sourceDownload.bytes -ne 122349960 -or $sourceDownload.sha256 -ne '877064888979bb95c67ccd6f193c780a9d32e517550f12602c897c930f3af847' -or $sourceDownload.installerLaunches -ne 0) { throw 'The source Windows update proof must download and verify the complete public 1.1.3 installer without executing it.' }
+      - name: Build and strictly verify the new Windows installers
+        shell: pwsh
+        run: |
+          $folder = "${{ runner.temp }}/content-studio-release"
+          node scripts/desktop-build.mjs --win --source-archive --output $folder
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "$folder/desktop-release.json")) { throw 'The verified desktop release manifest was not produced.' }
+      - name: Execute the actual packaged Windows application
+        shell: pwsh
+        run: |
+          $env:CONTENT_STUDIO_ELECTRON = "${{ runner.temp }}/content-studio-release/win-unpacked/ContentStudio.exe"
+          $env:CONTENT_STUDIO_PACKAGED = '1'
+          node scripts/run-desktop-tests.mjs --smoke
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/desktop-multi-titles.browser.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/desktop-update-native.browser.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/desktop-bgm-selection.browser.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/desktop-update-download.browser.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/desktop-image-readiness.browser.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Record Windows runtime verification and checksums
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $folder = "${{ runner.temp }}/content-studio-release"
+          $testPath = Join-Path ([IO.Path]::GetTempPath()) 'desktop-app-browser-result.json'
+          $result = Get-Content -Raw $testPath | ConvertFrom-Json
+          if (-not $result.passed -or $result.hostPlatform -ne 'win32' -or -not $result.windowsRuntimeExecuted -or -not $result.nativeFolderSaveOpen -or -not $result.stableOriginProcessRestart) { throw 'The packaged Windows smoke test did not pass.' }
+          $titlesPath = Join-Path ([IO.Path]::GetTempPath()) 'desktop-multi-titles-result.json'
+          $titles = Get-Content -Raw $titlesPath | ConvertFrom-Json
+          if (-not $titles.passed -or $titles.hostPlatform -ne 'win32' -or -not $titles.windowsRuntimeExecuted -or $titles.version -ne '1.1.4' -or -not $titles.application.isPackaged) { throw 'The packaged Windows inline title workflow did not pass.' }
+          $updaterPath = Join-Path ([IO.Path]::GetTempPath()) 'desktop-update-native-result.json'
+          $updater = Get-Content -Raw $updaterPath | ConvertFrom-Json
+          if (-not $updater.passed -or $updater.hostPlatform -ne 'win32' -or -not $updater.windowsRuntimeExecuted -or -not $updater.application.isPackaged -or $updater.application.version -ne '1.1.4' -or -not $updater.updaterBridgeFrozen -or -not $updater.helpMenuRoute) { throw 'The packaged Windows update bridge and menu workflow did not pass.' }
+          $bgmPath = Join-Path ([IO.Path]::GetTempPath()) 'desktop-bgm-selection-result.json'
+          $bgm = Get-Content -Raw $bgmPath | ConvertFrom-Json
+          if (-not $bgm.passed -or $bgm.hostPlatform -ne 'win32' -or -not $bgm.windowsRuntimeExecuted -or -not $bgm.application.isPackaged -or $bgm.application.version -ne '1.1.4' -or -not $bgm.nativeChooserRestored -or -not $bgm.originalBgmPreserved -or -not $bgm.builtinAdvancedPreserved) { throw 'The packaged Windows music chooser restore did not pass.' }
+          $downloadPath = Join-Path ([IO.Path]::GetTempPath()) 'desktop-update-download-result.json'
+          $download = Get-Content -Raw $downloadPath | ConvertFrom-Json
+          if (-not $download.passed -or $download.hostPlatform -ne 'win32' -or -not $download.windowsRuntimeExecuted -or -not $download.application.isPackaged -or $download.application.version -ne '1.1.4' -or -not $download.realDownload -or -not $download.verifiedInstaller -or -not $download.installerNotExecuted -or $download.transport -ne 'electron-net-request' -or -not $download.independentSha256 -or -not $download.windowsPeVerified -or $download.installerLaunches -ne 0) { throw 'The packaged Windows real update download did not pass.' }
+          $imageReadinessPath = Join-Path ([IO.Path]::GetTempPath()) 'desktop-image-readiness-result.json'
+          $imageReadiness = Get-Content -Raw $imageReadinessPath | ConvertFrom-Json
+          if (-not $imageReadiness.passed -or $imageReadiness.hostPlatform -ne 'win32' -or -not $imageReadiness.windowsRuntimeExecuted -or -not $imageReadiness.actualElectron -or -not $imageReadiness.application.isPackaged -or $imageReadiness.application.version -ne '1.1.4' -or -not $imageReadiness.scenes55 -or -not $imageReadiness.blockerReasonsVisible -or -not $imageReadiness.readOnlyRecovery -or -not $imageReadiness.referenceApplied -or -not $imageReadiness.startEnabledWithoutGeneration -or -not $imageReadiness.sourceProjectAndPlanPreserved -or $imageReadiness.realProviderRequests -ne 0 -or $imageReadiness.realGoogleRequests -ne 0) { throw 'The packaged Windows 55-scene image readiness and read-only recovery workflow did not pass.' }
+          if ($download.offeredVersion -ne '1.1.3' -or $download.bytes -ne 122349960 -or $download.sha256 -ne '877064888979bb95c67ccd6f193c780a9d32e517550f12602c897c930f3af847' -or -not $download.samePhysicalDirectory -or $download.installerQuitCalls -ne 0) { throw 'The packaged Windows real update proof must verify the public 1.1.3 installer without executing or quitting for installation.' }
+          $manifestPath = Join-Path $folder 'desktop-release.json'
+          $manifest = Get-Content -Raw $manifestPath | ConvertFrom-Json
+          if ($manifest.version -ne '1.1.4' -or $manifest.platform -ne 'win32' -or $manifest.architecture -ne 'x64') { throw 'The build manifest does not describe Content Studio 1.1.4 for Windows x64.' }
+          $manifest.windowsRuntimeExecuted = $true
+          $manifest | Add-Member -Force -NotePropertyName windowsSmokeTest -NotePropertyValue @{passed=$true; platform='win32'; nativeFolderSaveOpen=$result.nativeFolderSaveOpen; stableOriginProcessRestart=$result.stableOriginProcessRestart; source='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'}
+          $manifest | Add-Member -Force -NotePropertyName windowsInlineTitlesTest -NotePropertyValue @{passed=$true; platform='win32'; source='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'; details=$titles}
+          $manifest | Add-Member -Force -NotePropertyName windowsUpdaterTest -NotePropertyValue @{passed=$true; platform='win32'; source='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'; details=$updater}
+          $manifest | Add-Member -Force -NotePropertyName windowsBgmSelectionTest -NotePropertyValue @{passed=$true; platform='win32'; source='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'; details=$bgm}
+          $manifest | Add-Member -Force -NotePropertyName windowsActualUpdateDownloadTest -NotePropertyValue @{passed=$true; platform='win32'; source='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'; details=$download}
+          $manifest | Add-Member -Force -NotePropertyName windowsImageReadinessTest -NotePropertyValue @{passed=$true; platform='win32'; source='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'; details=$imageReadiness}
+          [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 30) + "`n", [Text.UTF8Encoding]::new($false))
+          $names = @('Content-Studio-Setup-1.1.4-x64.exe','Content-Studio-1.1.4-Windows-x64-Portable.exe','Content-Studio-1.1.4-Windows-x64.zip','Content-Studio-Source-1.1.4.zip','desktop-release.json')
+          $sums = foreach ($name in $names) { $hash = (Get-FileHash (Join-Path $folder $name) -Algorithm SHA256).Hash.ToLower(); "$hash  $name" }
+          [IO.File]::WriteAllText((Join-Path $folder 'SHA256SUMS.txt'), (($sums -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+          $notes = gh release view desktop-v1.1.4 --repo battlebuild001/image-studio --json body --jq .body
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          [IO.File]::WriteAllText((Join-Path $folder 'Content-Studio-1.1.4-Start-Here.txt'), ($notes -join "`n"), [Text.UTF8Encoding]::new($false))
+      - name: Upload verified files to the prepared draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $folder = "${{ runner.temp }}/content-studio-release"
+          $names = @('Content-Studio-Setup-1.1.4-x64.exe','Content-Studio-1.1.4-Windows-x64-Portable.exe','Content-Studio-1.1.4-Windows-x64.zip','Content-Studio-Source-1.1.4.zip','desktop-release.json','SHA256SUMS.txt','Content-Studio-1.1.4-Start-Here.txt')
+          $paths = $names | ForEach-Object { Join-Path $folder $_ }
+          $release = gh release view desktop-v1.1.4 --repo battlebuild001/image-studio --json isDraft,tagName | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not $release.isDraft -or $release.tagName -ne 'desktop-v1.1.4') { throw 'Upload is allowed only to the prepared desktop-v1.1.4 draft release.' }
+          gh release upload desktop-v1.1.4 --repo battlebuild001/image-studio --clobber @paths
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain completed installers and verification files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: content-studio-windows-1.1.4-verified
+          path: |
+            ${{ runner.temp }}/content-studio-release/*.exe
+            ${{ runner.temp }}/content-studio-release/*.zip
+            ${{ runner.temp }}/content-studio-release/*.json
+            ${{ runner.temp }}/content-studio-release/*.txt
+            ${{ runner.temp }}/desktop-app-browser-result.json
+            ${{ runner.temp }}/desktop-multi-titles-result.json
+            ${{ runner.temp }}/desktop-update-native-result.json
+            ${{ runner.temp }}/desktop-bgm-selection-result.json
+            ${{ runner.temp }}/desktop-update-download-result.json
+            ${{ runner.temp }}/desktop-source-update-download-result.json
+            ${{ runner.temp }}/desktop-image-readiness-result.json
+          compression-level: 0
+          if-no-files-found: ignore
+          retention-days: 5
