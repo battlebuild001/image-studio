@@ -77,7 +77,7 @@ test('native redirect response preserves the updater controller allowlist instea
 });
 
 test('metadata and download timeouts are failed states with their own safe code, separate from user cancellation',async t=>{
- const stalled=(_url,options)=>new Promise((_resolve,reject)=>options.signal.addEventListener('abort',()=>reject(new DOMException('abort','AbortError')),{once:true}));
+ const stalled=(_url,options)=>new Promise((_resolve,reject)=>{const abort=()=>reject(new DOMException('abort','AbortError'));if(options.signal.aborted){abort();return;}options.signal.addEventListener('abort',abort,{once:true});});
  const metadata=controller(await temp(t),stalled,{metadataTimeoutMs:5});await assert.rejects(metadata.check(),cause=>cause.code==='DESKTOP_UPDATE_TIMEOUT');assert.equal(metadata.getState().status,'failed');assert.equal(metadata.getState().errorCode,'DESKTOP_UPDATE_TIMEOUT');
  const directory=await temp(t),download=controller(directory,(url,options)=>url===RELEASE_API?Promise.resolve(Response.json(release())):stalled(url,options),{downloadTimeoutMs:5});await download.check();await assert.rejects(download.download(),cause=>cause.code==='DESKTOP_UPDATE_TIMEOUT');assert.equal(download.getState().status,'failed');assert.equal(download.getState().errorCode,'DESKTOP_UPDATE_TIMEOUT');assert.deepEqual(await fs.readdir(directory),[]);
 });
