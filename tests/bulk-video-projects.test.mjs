@@ -6,6 +6,13 @@ import {getScenePlanStatus} from '../dist/script-planning.js';
 import {defaultProductionBudget} from '../dist/production-budget.js';
 
 const script = '  첫 번째 사건은 관측소에서 시작합니다. 🌟\n\n시간이 흐른 뒤 새 도시에 도착합니다.  ';
+test('multiple-script input preserves the same Korean gloss cleanup as the single-video editor',()=>{
+ const project=buildBulkScriptProject({script:'헤드리스(Headless)가 도착했습니다. 이동(6인치) 후 공격합니다.',durationSeconds:10});
+ assert.equal(project.scriptDraft.displayScript,'헤드리스가 도착했습니다. 이동(6인치) 후 공격합니다.');
+ assert.equal(project.scriptDraft.draftScript,project.scriptDraft.displayScript);
+ assert.equal(project.scenes.map(scene=>scene.caption).join(''),project.scriptDraft.displayScript);
+ assert.equal(getScenePlanStatus(project).valid,true);
+});
 function baseProject() {
   const original = buildBulkScriptProject({script: '이전 대본입니다.', title: '이전 영상', durationSeconds: 10});
   original.scenes[0].imageId = 'original-image';original.audio = {...original.audio, narrationId: 'original-narration', narrationOffset: 3, bgmId: 'music', bgmStart: 1, bgmEnd: 5};

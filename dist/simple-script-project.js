@@ -26,12 +26,12 @@ export function prepareSimpleScriptProject(project,assets,{text,intervalSeconds=
  if(!clean)throw new Error('영상에 사용할 대본을 먼저 입력해 주세요.');
  if(!Number.isFinite(intervalSeconds)||intervalSeconds<1||intervalSeconds>600)throw new Error('이미지 전환 간격은 1~600초 사이로 입력해 주세요.');
  const textChanged=writeSimpleScriptDraft(next,clean),duration=simpleScriptDuration(next,assets,clean),valid=getScenePlanStatus(next).valid;
- if(!textChanged&&valid&&next.scenePlan.intervalSeconds===intervalSeconds&&Math.abs(next.scenePlan.durationSeconds-duration.seconds)<.01)return{project:next,changed:false};
  const preserved={...(next.scenePlan?.visualBrief!==undefined?{visualBrief:next.scenePlan.visualBrief}:{}),...(next.scenePlan?.imageInstructions!==undefined?{imageInstructions:next.scenePlan.imageInstructions}:{})};
  const compact=value=>String(value||'').normalize('NFC').replace(/\s/gu,'');
  const keepCaptions=next.captionMode!=='auto'&&next.captions?.length&&compact(next.captions.map(cue=>cue.text).join(''))===compact(clean);
  const cards=protectedTitleDurations(next,assets),parts=protectedTitleScenes(next,assets),bodyDuration=duration.seconds-cards.introSeconds-cards.outroSeconds;
  const planned=planTimedScenes(clean,parts.body,{intervalSeconds,totalSeconds:bodyDuration,targetBasis:duration.basis,keepImages:true,timedCaptions:keepCaptions?next.captions.map(cue=>({...cue,start:Math.max(0,cue.start-cards.introSeconds),end:Math.max(.001,cue.end-cards.introSeconds)})):[]});
+ if(!textChanged&&valid&&next.scenePlan.intervalSeconds===intervalSeconds&&Math.abs(next.scenePlan.durationSeconds-duration.seconds)<.01&&parts.body.length===planned.scenes.length&&parts.body.every((scene,index)=>Math.abs(scene.duration-planned.scenes[index].duration)<.01)&&(!assets.has(next.audio?.narrationId)||(next.audio.narrationOffset||0)>=cards.introSeconds))return{project:next,changed:false};
  next.scenes=[...parts.intro,...planned.scenes,...parts.outro];
  if(next.scenes.length>200)throw new Error('제목 화면을 포함해 장면은 최대 200개까지 만들 수 있어요. 전환 간격을 늘려 주세요.');
  let start=0;const items=next.scenes.map(scene=>{const previous=planned.items.find(item=>item.sceneId===scene.id)||next.scenePlan?.items?.find(item=>item.sceneId===scene.id);const item={sceneId:scene.id,start,end:start+scene.duration,caption:scene.caption,prompt:previous?.prompt||'기존 제목 화면 이미지를 유지하세요.'};start=item.end;return item;});

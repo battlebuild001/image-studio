@@ -103,7 +103,10 @@
     "test:three-step-export-browser": "STUDIO_NATIVE_EXPORT=1 node tests/three-step-studio.browser.cjs",
     "test:thumbnail-required-browser": "node tests/youtube-required-thumbnail.browser.cjs",
     "test:image-reference-workflow-browser": "node tests/image-reference-workflow.browser.cjs",
-    "test:bgm-browser": "node tests/bgm-studio.browser.cjs"
+    "test:bgm-browser": "node tests/bgm-studio.browser.cjs",
+    "test:multi-video-browser": "node tests/multi-video-workflow.browser.cjs",
+    "test:multi-video-native-browser": "node tests/multi-video-native.browser.cjs",
+    "test:multi-video-features-browser": "node tests/multi-video-features.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",

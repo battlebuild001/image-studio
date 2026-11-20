@@ -3,9 +3,9 @@
 ## Purpose
 
 Korean browser-based video editor combining user-provided images, narration,
-captions, motion, and optional BGM. The primary navigation is 대본 → 타이밍 → 이미지
-→ 편집·저장. Narration and subtitles are optional tools in the initially closed
-음성·자막 drawer. Users may generate or import externally prepared narration
+captions, motion, and optional BGM. The primary navigation is 대본 입력 → 이미지 생성 → 편집·저장·업로드.
+Voice and built-in BGM generation are available in step 1; specialist tools remain
+in the initially closed advanced-tools group. Users may generate or import externally prepared narration
 and either import images or explicitly request optional reference-based image generation.
 Keep the default workflow free from paid video-generation APIs and preserve the
 Korean interface. Manual draft editing and document extraction work without APIs.
@@ -545,6 +545,38 @@ budget accounting once, credential-free backups and mobile. Keep real short vide
 exports sequential and distinguish mocked feature checks from live speech quality.
 Use test:voice-durable-browser for actual persisted sample/pause/preferences
 regressions and test:dual-scripts-browser for visible subtitle/voice separation.
+
+## Multiple videos with full feature access
+
+`multi-video-studio.js/.css` adds the always visible 여러 영상 동시 제작 button.
+It reuses the independent bulk store, supports <=20 jobs and 1..3 simultaneous
+pipelines, and retains the complete single-video 3-step editor and all 41 catalog
+routes per job. Do not replace the per-job editor with a reduced control subset.
+Optional `multi-video-features.js` stages reuse research/actual Commons media,
+local generated music, real caption runners, quality checks and publishing helpers.
+Their requests must go through the job adapter; opening/typing/preparing is free.
+Show concrete job/image/paid counts, upper bounds and example-rate costs before Run.
+
+`multi-video-editor-session.js` and main's openMultiVideoJob preserve the original
+workspace project/media/history/selection and redirect queue edits to getSnapshot /
+replaceSnapshot with a content-bound token. Save completion updates the token only
+on success. Normal workspace autosave must never receive the edited queue project.
+Derived shorts/new identities are separate library projects, not parent replacements.
+Retain the entire production metadata, settings and real Blob references; update
+cached video only with a matching export source signature. Receipt/uncertain-transfer
+history survives source changes. A changed frame/audio input invalidates cached
+video/playback review, while publishing metadata edits preserve video bytes.
+
+`bulk-video-scheduler.js` limits provider requests, native exports and Google
+transfers independently to 1. Job pipelines can overlap: A encodes while B prepares
+voice/images. Use the shared `image-studio-native-video-export` Web Lock for main
+and queue exports. Bind the budget only inside each request lease, restore the
+original owner afterward, and settle all workers before clearing state/cancelling.
+No simultaneous native exports, automatic paid retries or reload autorun.
+Keep the queue modal open while active; Stop settles work before closing.
+Validate per-job isolation, every original catalog route, source-workspace recovery,
+real parallel overlap/provider+render maxima, actual multiple MP4s, media hashes,
+cancel/reload recovery, mandatory thumbnail/public staging and mobile widths.
 
 ## Bulk video queue
 

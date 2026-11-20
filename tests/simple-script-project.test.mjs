@@ -28,3 +28,11 @@ test('reconfirming simple cadence preserves intro/outro duration, IDs, artwork a
  assert.equal(result.project.scenePlan.durationSeconds,18);assert.equal(result.project.audio.narrationOffset,2);assert.equal(result.project.scenes.length,4);assert.deepEqual(result.project.scenes[0],project.scenes[0]);assert.deepEqual(result.project.scenes.at(-1),project.scenes.at(-1));assert.equal(result.project.scenes[1].imageId,'body-image');assert.equal(getScenePlanStatus(result.project).valid,true);
  assert.equal(prepareSimpleScriptProject(result.project,assets,{text:'전장의 규칙을 설명합니다.',intervalSeconds:3}).changed,false);
 });
+
+test('reapplying the same interval repairs a valid voice-fit plan whose physical cadence drifted',()=>{
+ const assets=new Map([['voice',{duration:12}]]),base=createProject({audio:{narrationId:'voice'}});
+ const prepared=prepareSimpleScriptProject(base,assets,{text:'첫 문장입니다. 다음 사건을 설명합니다.',intervalSeconds:4}).project;
+ prepared.scenePlan.intervalSeconds=3;assert.equal(getScenePlanStatus(prepared).valid,true);
+ const fixed=prepareSimpleScriptProject(prepared,assets,{text:prepared.scriptDraft.displayScript,intervalSeconds:3});
+ assert.equal(fixed.changed,true);assert.deepEqual(fixed.project.scenes.map(scene=>scene.duration),[3,3,3,3]);assert.equal(getScenePlanStatus(fixed.project).valid,true);
+});

@@ -1,6 +1,7 @@
 import {createProject, validateProject} from './project.js';
 import {planTimedScenes, narrationPlanKey} from './script-planning.js';
 import {normalizeBudgetSettings} from './production-budget.js';
+import {stripEnglishParentheticalGlosses} from './script-protocol.js';
 
 /** Create a separate script project before the queue synthesizes narration using the reviewed time/cadence.
  * This is local planning only. No existing scene/narration/result is reused and
@@ -12,7 +13,7 @@ export function buildBulkScriptProject({baseProject, script, title = '대량 제
   }
   if (typeof title !== 'string' || !title.trim() || title.length > 200) throw new Error('영상 제목을 1~200자로 입력해 주세요.');
   if (!Number.isFinite(durationSeconds) || durationSeconds < 1 || durationSeconds > 3600) throw new Error('영상 길이는 1초~60분 사이로 지정해 주세요.');
-  const base = validateProject(baseProject ?? createProject()), text = script.replace(/\u0000/gu, '');
+  const base = validateProject(baseProject ?? createProject()), text = stripEnglishParentheticalGlosses(script.replace(/\u0000/gu, ''));
   const timing = planTimedScenes(text, [], {totalSeconds: durationSeconds, intervalSeconds, targetBasis: 'target', keepImages: false});
   const project = createProject({title, aspect: base.aspect, settings: structuredClone(base.settings),
     imageStudio: structuredClone(base.imageStudio), scenes: timing.scenes,
