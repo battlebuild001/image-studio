@@ -21,13 +21,13 @@ export function setupDesktopUpdates(api,{bridge,document=globalThis.document}={}
   if(disposed)return;availability();const running=active(),ready=state.status==='ready',available=Boolean(state.version&&state.version!==state.currentVersion&&['available','ready','cancelled','failed'].includes(state.status));
   version.textContent=state.currentVersion?`현재 버전 ${state.currentVersion}${state.version&&state.version!==state.currentVersion?` → 새 버전 ${state.version}`:''}`:'현재 버전 확인 중';
   status.textContent=state.message||({idle:'버튼을 눌러 새 버전을 확인하세요.',checking:'새 버전을 확인하고 있어요.',available:'새 버전을 설치할 수 있어요.','up-to-date':'현재 최신 버전을 사용하고 있어요.',downloading:'업데이트 파일을 다운로드하고 있어요.',ready:'파일 검증이 끝났어요. 설치 후 프로그램을 다시 시작합니다.',installing:'새 버전을 설치하기 위해 프로그램을 종료하고 있어요.',cancelled:'다운로드를 취소했어요.',unsupported:'Windows 설치 프로그램에서 업데이트할 수 있어요.',failed:'업데이트를 마치지 못했어요. 다시 확인해 주세요.'}[state.status]||'업데이트 상태를 확인해 주세요.');
-  error.textContent=state.error||'';progress.hidden=state.status!=='downloading';progress.value=Math.max(0,Math.min(1,Number(state.progress)||0));size.hidden=!state.bytes;size.textContent=state.bytes?`${state.downloadedBytes?`${(state.downloadedBytes/1048576).toFixed(1)} / `:''}${(state.bytes/1048576).toFixed(1)} MB`:'';
+  error.textContent=state.error?`${state.error}${/^DESKTOP_[A-Z0-9_]{1,80}$/u.test(state.errorCode||'')?` · 오류 코드: ${state.errorCode}`:''}`:'';progress.hidden=state.status!=='downloading';progress.value=Math.max(0,Math.min(1,Number(state.progress)||0));size.hidden=!state.bytes;size.textContent=state.bytes?`${state.downloadedBytes?`${(state.downloadedBytes/1048576).toFixed(1)} / `:''}${(state.bytes/1048576).toFixed(1)} MB`:'';
   const convert=available&&['portable','unpacked'].includes(state.distribution);conversion.hidden=!convert;conversion.textContent=convert?'현재 무설치판입니다. 설치형으로 업데이트하고 새 바탕화면 바로가기를 만듭니다. 기존 무설치 실행 파일은 그대로 남으며, 다음부터 새 바로가기로 실행하세요.':'';
   check.disabled=running||workflowBlocked||state.status==='unsupported';install.hidden=!available;install.disabled=running||workflowBlocked;install.textContent=convert?'설치형으로 업데이트':ready?'설치하고 다시 시작':'다운로드하고 업데이트';
   cancel.hidden=!['checking','downloading'].includes(state.status);cancel.textContent=state.status==='checking'?'확인 취소':'다운로드 취소';close.disabled=running;
  }
- function fail(cause){state={...state,status:'failed',error:cause?.message||'업데이트를 마치지 못했어요.'};render();}
- async function checkNow(){if(active()||disposed||state.status==='unsupported')return;working=true;state={...state,error:''};render();try{state=await bridge.updates.check();}catch(cause){if(cause?.name!=='AbortError')fail(cause);}finally{working=false;render();}}
+ function fail(cause){state={...state,status:'failed',error:cause?.message||'업데이트를 마치지 못했어요.',errorCode:/^DESKTOP_[A-Z0-9_]{1,80}$/u.test(cause?.code||'')?cause.code:''};render();}
+ async function checkNow(){if(active()||disposed||state.status==='unsupported')return;working=true;state={...state,error:'',errorCode:''};render();try{state=await bridge.updates.check();}catch(cause){if(cause?.name!=='AbortError')fail(cause);}finally{working=false;render();}}
  async function open(){if(disposed)return;availability();if(workflowBlocked){api.toast?.('진행 중인 작업을 마친 뒤 업데이트를 확인해 주세요.');return;}if(!dialog.open)dialog.showModal();if(!active())await checkNow();}
  async function saveBeforeInstall(){
   if(api.getDesktopActivity?.().busy||api.canMutate?.()===false)throw new Error('진행 중인 작업을 마친 뒤 업데이트해 주세요.');
@@ -38,7 +38,7 @@ export function setupDesktopUpdates(api,{bridge,document=globalThis.document}={}
   await bridge.setBusy?.(value);
  }
  async function installNow(){
-  if(active()||disposed)return;working=true;state={...state,error:''};render();
+  if(active()||disposed)return;working=true;state={...state,error:'',errorCode:''};render();
   try{
    await saveBeforeInstall();
    if(state.status!=='ready'){state=await bridge.updates.download();render();}
