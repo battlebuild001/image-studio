@@ -11,8 +11,8 @@ module.exports = {
   nodeGypRebuild: false,
   buildDependenciesFromSource: false,
   forceCodeSigning: false,
-  // Distribution is manual. Never infer a release provider from developer tokens
-  // or generate updater metadata for this app, which has no automatic updater.
+  // Releases are published explicitly. The manual in-app updater reads verified
+  // public GitHub assets directly; never infer a publisher from developer tokens.
   publish: null,
   extraMetadata: {
     main: 'desktop/main.cjs',

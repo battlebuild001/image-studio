@@ -46,6 +46,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/desktop-multi-titles.browser.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/desktop-update-native.browser.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Record Windows runtime verification and checksums
         shell: pwsh
         env:
@@ -58,12 +60,16 @@ jobs:
           $titlesPath = Join-Path ([IO.Path]::GetTempPath()) 'desktop-multi-titles-result.json'
           $titles = Get-Content -Raw $titlesPath | ConvertFrom-Json
           if (-not $titles.passed -or $titles.hostPlatform -ne 'win32' -or -not $titles.windowsRuntimeExecuted -or $titles.version -ne '1.1.1' -or -not $titles.application.isPackaged) { throw 'The packaged Windows inline title workflow did not pass.' }
+          $updaterPath = Join-Path ([IO.Path]::GetTempPath()) 'desktop-update-native-result.json'
+          $updater = Get-Content -Raw $updaterPath | ConvertFrom-Json
+          if (-not $updater.passed -or $updater.hostPlatform -ne 'win32' -or -not $updater.windowsRuntimeExecuted -or -not $updater.application.isPackaged -or $updater.application.version -ne '1.1.1' -or -not $updater.updaterBridgeFrozen -or -not $updater.helpMenuRoute) { throw 'The packaged Windows update bridge and menu workflow did not pass.' }
           $manifestPath = Join-Path $folder 'desktop-release.json'
           $manifest = Get-Content -Raw $manifestPath | ConvertFrom-Json
           if ($manifest.version -ne '1.1.1' -or $manifest.platform -ne 'win32' -or $manifest.architecture -ne 'x64') { throw 'The build manifest does not describe Content Studio 1.1.1 for Windows x64.' }
           $manifest.windowsRuntimeExecuted = $true
           $manifest | Add-Member -Force -NotePropertyName windowsSmokeTest -NotePropertyValue @{passed=$true; platform='win32'; nativeFolderSaveOpen=$result.nativeFolderSaveOpen; stableOriginProcessRestart=$result.stableOriginProcessRestart; source='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'}
           $manifest | Add-Member -Force -NotePropertyName windowsInlineTitlesTest -NotePropertyValue @{passed=$true; platform='win32'; source='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'; details=$titles}
+          $manifest | Add-Member -Force -NotePropertyName windowsUpdaterTest -NotePropertyValue @{passed=$true; platform='win32'; source='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'; details=$updater}
           [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 30) + "`n", [Text.UTF8Encoding]::new($false))
           $names = @('Content-Studio-Setup-1.1.1-x64.exe','Content-Studio-1.1.1-Windows-x64-Portable.exe','Content-Studio-1.1.1-Windows-x64.zip','Content-Studio-Source-1.1.1.zip','desktop-release.json')
           $sums = foreach ($name in $names) { $hash = (Get-FileHash (Join-Path $folder $name) -Algorithm SHA256).Hash.ToLower(); "$hash  $name" }
@@ -96,6 +102,7 @@ jobs:
             ${{ runner.temp }}/content-studio-release/*.txt
             ${{ runner.temp }}/desktop-app-browser-result.json
             ${{ runner.temp }}/desktop-multi-titles-result.json
+            ${{ runner.temp }}/desktop-update-native-result.json
           compression-level: 0
           if-no-files-found: ignore
           retention-days: 5

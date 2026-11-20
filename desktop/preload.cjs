@@ -23,9 +23,20 @@ contextBridge.exposeInMainWorld('contentStudioDesktop',Object.freeze({
   setBusy:input=>invoke('desktop:status',input),
   onMenuAction:callback=>{
     if(typeof callback!=='function')throw new TypeError('메뉴 이벤트 처리 함수를 확인해 주세요.');
-    const listener=(_event,action)=>{if(['new-project','open-project','save-project','save-project-as','export-video','api-settings'].includes(action))callback(action);};
+    const listener=(_event,action)=>{if(['new-project','open-project','save-project','save-project-as','export-video','api-settings','check-update'].includes(action))callback(action);};
     ipcRenderer.on('desktop:menu',listener);return()=>ipcRenderer.removeListener('desktop:menu',listener);
   },
+  updates:Object.freeze({
+    check:()=>invoke('desktop:update:check'),
+    download:()=>invoke('desktop:update:download'),
+    install:input=>invoke('desktop:update:install',input),
+    cancel:()=>invoke('desktop:update:cancel'),
+    getState:()=>invoke('desktop:update:state'),
+    onProgress:callback=>{
+      if(typeof callback!=='function')throw new TypeError('업데이트 이벤트 처리 함수를 확인해 주세요.');
+      const listener=(_event,value)=>callback(value);ipcRenderer.on('desktop:update:progress',listener);return()=>ipcRenderer.removeListener('desktop:update:progress',listener);
+    }
+  }),
   youtube:Object.freeze({
     getConfig:()=>invoke('desktop:youtube:config'),
     importConfig:()=>invoke('desktop:youtube:import'),

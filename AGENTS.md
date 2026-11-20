@@ -1205,6 +1205,18 @@ cancellation/error/stale preservation and unconfigured static Pages behavior.
 Current CLOVA credentials are absent: fixture tests do not verify live Korean
 pronunciation, audio quality, account permissions or billing.
 
+## Manual desktop updates
+
+`desktop/updater.cjs` checks only this repository's public stable desktop release
+on explicit action. Keep download/version/size/SHA-256/PE and HTTPS redirect checks,
+private filesystem grants and final busy/unsaved guards before spawning the reviewed
+NSIS installer. Never execute a renderer-supplied path, URL or arbitrary arguments.
+`desktop-updates.js/.css` provides the native-only Update button/menu flow. Startup,
+project open and web mode must not check, download or install. Flush/save before
+installation; retain media, settings and profiles. Portable/ZIP conversion to the
+installed edition needs an explicit labeled action. Mock installer execution in tests;
+routine validation must not actually replace the running environment's application.
+
 ## Source and deployment
 
 The latest public static editor is https://battlebuild001.github.io/image-studio/,

@@ -1,3 +1,4 @@
+import {setupDesktopUpdates} from './desktop-updates.js';
 import {importProjectBackup} from './project.js';
 import {getApiSettings} from './api-client.js';
 import {configureDesktopServer} from './desktop-fetch.js';
@@ -73,13 +74,14 @@ export async function initializeDesktopBridge(api={},options={}){
     const menu=document.querySelector('.studio-project-menu-body');
     if(menu&&!document.getElementById('desktopSaveProjectAsBtn')){const saveAs=document.createElement('button');saveAs.id='desktopSaveProjectAsBtn';saveAs.type='button';saveAs.className='ghost desktop-file-action';saveAs.textContent='다른 폴더에 저장';saveAs.title='이미지·음성과 프로젝트 설정을 선택한 폴더에 함께 저장해요.';const click=()=>run(()=>api.saveCurrentProject?.({saveAs:true}));saveAs.addEventListener('click',click);menu.append(saveAs);listeners.push(()=>saveAs.remove());}
   }
+  const updates=setupDesktopUpdates(api,{bridge,document});
   const unsubscribe=bridge.onMenuAction?.(action=>{
-    const actions={'open-project':()=>controller.openProject(),'save-project':()=>api.saveCurrentProject?.(),'save-project-as':()=>api.saveCurrentProject?.({saveAs:true}),'export-video':()=>api.openExport?.(),'api-settings':()=>api.openApiSettings?.(),'new-project':()=>api.newProject?.()};
+    const actions={'open-project':()=>controller.openProject(),'save-project':()=>api.saveCurrentProject?.(),'save-project-as':()=>api.saveCurrentProject?.({saveAs:true}),'export-video':()=>api.openExport?.(),'api-settings':()=>api.openApiSettings?.(),'new-project':()=>api.newProject?.(),'check-update':()=>updates?.open()};
     if(actions[action])run(actions[action]);
   });
   const updateActivity=()=>{
     if(disposed)return;
-    applyDesktopLabels(document);
+    applyDesktopLabels(document);updates?.renderAvailability();
     const activity=api.getDesktopActivity?.()||{},domBusy=Boolean(document?.querySelector('dialog[open][aria-busy="true"],dialog[open] [aria-busy="true"],.production-run-studio[aria-busy="true"]'));
     const value={busy:Boolean(activity.busy||controller.isOpening()||domBusy),unsaved:Boolean(activity.unsaved)};
     const signature=JSON.stringify(value);if(signature===lastBusy)return;lastBusy=signature;Promise.resolve(bridge.setBusy?.(value)).catch(()=>{});
@@ -88,5 +90,5 @@ export async function initializeDesktopBridge(api={},options={}){
   const timer=setInterval(updateActivity,750);timer.unref?.();updateActivity();
   let observer;if(document&&typeof MutationObserver!=='undefined'){observer=new MutationObserver(updateActivity);observer.observe(document.body,{attributes:true,childList:true,subtree:true,attributeFilter:['aria-busy','class','open']});}
   try{await bridge.getInfo?.();const baseUrl=getApiSettings().baseUrl;if(baseUrl)await configureDesktopServer(baseUrl,bridge);}catch(cause){handleError(cause);}
-  return{...controller,updateActivity,dispose(){disposed=true;clearInterval(timer);observer?.disconnect();if(typeof unsubscribe==='function')unsubscribe();listeners.forEach(remove=>remove());controller.dispose();}};
+  return{...controller,updateActivity,dispose(){disposed=true;clearInterval(timer);observer?.disconnect();if(typeof unsubscribe==='function')unsubscribe();listeners.forEach(remove=>remove());updates?.dispose();controller.dispose();}};
 }

@@ -114,7 +114,9 @@
     "test:desktop-smoke": "node scripts/run-desktop-tests.mjs --smoke",
     "test:desktop-export": "node scripts/run-desktop-tests.mjs --export",
     "test:multi-titles-browser": "node tests/multi-video-titles.browser.cjs",
-    "test:desktop-titles": "node tests/desktop-multi-titles.browser.cjs"
+    "test:desktop-titles": "node tests/desktop-multi-titles.browser.cjs",
+    "test:desktop-updates-browser": "node tests/desktop-updates.browser.cjs",
+    "test:desktop-update-native": "node tests/desktop-update-native.browser.cjs"
   },
   "dependencies": {
     "mammoth": "1.13.0",
